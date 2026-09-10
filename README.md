@@ -67,13 +67,29 @@ are not part of the Git repository; other checkouts use the prerequisites above.
 npm test
 npm run build
 npm run test:rust
+npm run test:core
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 npm run tauri build -- --no-bundle
 ```
 
-The last three commands require the Rust/Windows build prerequisites. Installer
+Rust checks require a Rust toolchain; the desktop build also requires the Windows
+build prerequisites. Installer
 packaging is deferred; this step builds a desktop executable only. Frontend
 integration follows [Tauri's Vite guide](https://v2.tauri.app/start/frontend/vite/).
+
+The database/ledger tests can run without Tauri or a webview using `npm run test:core`.
+The default Cargo `desktop` feature still builds the normal Tauri app. A portable
+GNU Rust/C compiler under `.tools/` is available in this checkout for core tests:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+. .\scripts\use-local-tools.ps1
+npm.cmd run test:core
+```
+
+This activation keeps Rust downloads and temporary build files inside the project.
+Use the MSVC toolchain and the prerequisites above for the desktop build; the
+portable core test toolchain does not replace those desktop requirements.
 
 ## Data safety
 

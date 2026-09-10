@@ -68,7 +68,9 @@ fn initialize(connection: &mut Connection) -> DatabaseResult<()> {
                 |row| row.get(0),
             )?;
             if objects != 0 {
-                return Err("Refusing to initialize an unversioned database containing data.".into());
+                return Err(
+                    "Refusing to initialize an unversioned database containing data.".into(),
+                );
             }
             transaction.execute_batch(INITIAL_SCHEMA)?;
             transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -119,7 +121,11 @@ mod tests {
     #[test]
     fn preserves_existing_unversioned_data() {
         let mut connection = Connection::open_in_memory().unwrap();
-        connection.execute_batch("CREATE TABLE existing (value TEXT); INSERT INTO existing VALUES ('keep');").unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE existing (value TEXT); INSERT INTO existing VALUES ('keep');",
+            )
+            .unwrap();
         assert!(initialize(&mut connection).is_err());
         let value: String = connection
             .query_row("SELECT value FROM existing", [], |row| row.get(0))
