@@ -1,4 +1,5 @@
-use rusqlite::{Connection, TransactionBehavior};
+use crate::migrations::{self, SCHEMA_VERSION};
+use rusqlite::Connection;
 use serde::Serialize;
 use std::{
     error::Error,
@@ -6,12 +7,10 @@ use std::{
     time::Duration,
 };
 
-const SCHEMA_VERSION: i64 = 1;
-const INITIAL_SCHEMA: &str = include_str!("../migrations/0001_budget.sql");
-type DatabaseResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+pub type DatabaseResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 pub struct Database {
-    connection: Connection,
+    pub(crate) connection: Connection,
     path: PathBuf,
 }
 
@@ -29,7 +28,7 @@ impl Database {
         let mut connection = Connection::open(path)?;
         connection.busy_timeout(Duration::from_secs(5))?;
         connection.pragma_update(None, "foreign_keys", "ON")?;
-        initialize(&mut connection)?;
+        migrations::initialize(&mut connection, Some(path))?;
         // Validate the singleton before retaining the connection in app state.
         let database = Self {
             connection,
@@ -55,35 +54,13 @@ impl Database {
     }
 }
 
-fn initialize(connection: &mut Connection) -> DatabaseResult<()> {
-    // Lock before inspecting the version: two app launches cannot both migrate.
-    let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let version: i64 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    match version {
-        SCHEMA_VERSION => {}
-        0 => {
-            let objects: i64 = transaction.query_row(
-                "SELECT COUNT(*) FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*'",
-                [],
-                |row| row.get(0),
-            )?;
-            if objects != 0 {
-                return Err(
-                    "Refusing to initialize an unversioned database containing data.".into(),
-                );
-            }
-            transaction.execute_batch(INITIAL_SCHEMA)?;
-            transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
-        }
-        _ => return Err("Unsupported schema version; the database was not changed.".into()),
-    }
-    transaction.commit()?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn initialize(connection: &mut Connection) -> DatabaseResult<()> {
+        migrations::initialize(connection, None)
+    }
 
     #[test]
     fn initializes_and_reopens_without_resetting_budget() {
@@ -103,7 +80,7 @@ mod tests {
         drop(database);
         let reopened = Database::open(&path).unwrap();
         assert_eq!(reopened.info().unwrap().name, "Test budget");
-        assert_eq!(reopened.info().unwrap().schema_version, 1);
+        assert_eq!(reopened.info().unwrap().schema_version, 2);
     }
 
     #[test]

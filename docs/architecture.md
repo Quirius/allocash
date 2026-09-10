@@ -21,27 +21,28 @@ Initialization errors leave the UI open with retry; database contents are not lo
 
 ## Storage, money and dates
 
-The first schema contains only the single budget's name and HUF currency setting.
-SQLite `user_version` is the migration version. `0001_budget.sql` is immutable once
-released. Later schema changes require a new migration, pre-migration backup and
-tests for rollback and preserved data. Initialization refuses populated unversioned
-databases and versions this app does not understand. No down migration deletes data.
+Schema version 1 contains the single budget's settings. Version 2 adds the ledger,
+categories, payees, flags and raw import staging. SQLite `user_version` tracks the
+migration version. Published migrations are immutable. Upgrades reserve the write
+lock, save and verify a standalone SQLite backup, and apply migrations atomically.
+The backup uses a separate read connection while the write reservation prevents
+concurrent writers; WAL data is included. A failed backup prevents the upgrade,
+and a failed migration rolls back while retaining the verified backup. Initialization
+refuses populated unversioned databases and unsupported versions.
 
-The ledger migration will use signed 64-bit integer forints. Rust must use checked
+The ledger uses signed 64-bit integer forints. Rust must use checked
 integer arithmetic. Money crosses JSON IPC as decimal strings and becomes `bigint`
 in TypeScript; JavaScript floating point is never used for financial calculations.
 Formatting already supports the full signed 64-bit range without rounding.
 
-Transaction dates will use validated `yyyy-mm-dd` calendar strings and display as
+Transaction dates use validated `yyyy-mm-dd` calendar strings and display as
 `yyyy.mm.dd.`. A transaction date is not a UTC timestamp. Use timestamps only for
 audit metadata such as creation time.
 
 ## Next implementation slice
 
-1. Add a tested ledger migration: ordered accounts with independent closed state,
-   category groups/categories, payees, stable flags and transaction source metadata.
-2. Define transfers as linked pairs with transactional writes; preserve the specified
-   cleared/uncleared asymmetry. Define scheduled versus posted instances explicitly.
+1. Add typed ledger operations and as-of balance calculations over the new schema.
+2. Validate transfer operations, status defaults and scheduled versus posted balances.
 3. Preserve raw YNAB export files and parse into staging data. Never silently drop a
    row or guess an ambiguous account type, flag, transfer or scheduled entry.
 4. Validate imported counts and as-of account balances with anonymized fixtures,
@@ -49,3 +50,28 @@ audit metadata such as creation time.
 
 Reconciliation and the Plan engine follow trustworthy imports and account balances.
 The complete scope and financial behavior are in the owner's project brief.
+
+## Ledger schema decisions
+
+Account kind (`cash`, `credit`, `loan`, `tracking`) is independent of its closed
+state, so closing/reopening preserves type and history. Names need not be unique:
+imported identifiers and explicit sort order determine identity and presentation.
+Foreign keys restrict deletion of referenced accounts, categories, payees and flags.
+
+Normal transactions store a signed integer amount. Transfers store one positive
+amount in `transfers`, with an outflow and inflow transaction referencing it.
+Deferred composite foreign keys require both correctly linked legs at commit;
+unique constraints and triggers prevent extra legs or transfers to the same account.
+The read-only `ledger_entries` view derives the two signed amounts. Each leg keeps
+its own date, category, memo, flag and cleared/posting state, preserving imported
+history even when the dates or states differ. Pair operations must use SQL transactions.
+
+`posting_state` distinguishes scheduled instances from posted ledger activity;
+scheduled instances must be uncleared. `scheduled_origin_id` is opaque provenance
+until recurrence definitions arrive in a later migration. It is not a recurrence rule.
+
+`import_batches` stores the original archive bytes and their hash; `import_rows`
+preserves original rows and file/row coordinates. A transaction can link to its
+source row, with duplicate use of that row rejected. Parsing, actual hash computation,
+cross-export duplicate detection and historical Plan preservation belong to the
+next importer phase. No imported categories or account types are inferred here.

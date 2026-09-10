@@ -10,17 +10,20 @@ ignored `.tools/` folder for portable Node.js, npm cache, browser checks and pre
 
 ## Current step
 
-The first v0.1 foundation is implemented:
+The v0.1 foundation and ledger schema are implemented:
 
 - Dark desktop shell with the Cash / Credit / Loans / Tracking / Closed groups.
-- Local SQLite initialization, versioned initial migration and persistent budget settings.
+- Versioned SQLite migrations, persistent budget settings and verified backups before upgrades.
+- Ledger tables for accounts, category groups/categories, payees, flags and transactions.
+- Transfers with one shared amount and two linked entries, plus raw import staging tables.
 - Visible database startup/error states and a browser-only layout preview.
 - Exact integer HUF formatting and timezone-free calendar date formatting.
 - Tests for formatting, schema initialization and preservation of existing data.
 
-Accounts, transactions and YNAB import are **not implemented yet**. No financial
-data is seeded. The next step is the ledger data model, followed by the importer
-and balance validation. See [the architecture](docs/architecture.md).
+Account/register screens, transaction entry UI and YNAB import are **not implemented
+yet**. No accounts or financial transactions are seeded; the six specified flag
+definitions are initialized. The next user-facing milestone is the importer and
+balance validation. See [the architecture](docs/architecture.md).
 
 ## Windows development setup
 
@@ -97,11 +100,14 @@ Keep real exports and backups outside the repository, or under the ignored
 `private-data/` directory. Database files and ZIP/native backups are ignored too.
 Only anonymized fixtures should ever be committed.
 
-Initial migration runs only against an empty database. Unknown schema versions
-and populated, unversioned databases are rejected without replacing their data.
-Existing version 1 databases are reopened without migration. Future upgrade
-migrations must add a verified backup-before-migration path. Automatic backups
-and native export/restore are not available in this foundation.
+Fresh databases initialize at schema version 2. Existing version 1 databases are
+backed up with SQLite's online backup API, checked for integrity, and then upgraded
+atomically. Backups live in a `backups/` folder beside the database. Each backup is
+a standalone SQLite file, including committed WAL data, and never overwrites an
+existing backup. A backup failure aborts the upgrade; a migration failure rolls
+back all schema changes. Unknown versions and populated unversioned databases are
+rejected. Reopening an up-to-date database does not repeat the migration or backup.
+Periodic backups and native export/restore UI are still future work.
 
 ## Git convention
 
