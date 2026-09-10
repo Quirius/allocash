@@ -1,0 +1,21 @@
+[package]
+name = "allocash"
+version = "0.1.0"
+description = "A local, offline HUF budgeting application"
+edition = "2021"
+rust-version = "1.85"
+
+[lib]
+name = "allocash_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"

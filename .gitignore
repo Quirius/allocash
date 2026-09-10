@@ -1,0 +1,21 @@
+node_modules/
+.tools/
+dist/
+coverage/
+src-tauri/target/
+src-tauri/gen/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+!.env.example
+
+# Personal financial data belongs outside source control.
+private-data/
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.db
+*.db-*
+*.sbudget
+*.zip
