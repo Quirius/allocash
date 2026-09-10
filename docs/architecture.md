@@ -41,11 +41,9 @@ audit metadata such as creation time.
 
 ## Next implementation slice
 
-1. Add typed ledger operations and as-of balance calculations over the new schema.
-2. Validate transfer operations, status defaults and scheduled versus posted balances.
-3. Preserve raw YNAB export files and parse into staging data. Never silently drop a
+1. Preserve raw YNAB export files and parse into staging data. Never silently drop a
    row or guess an ambiguous account type, flag, transfer or scheduled entry.
-4. Validate imported counts and as-of account balances with anonymized fixtures,
+2. Validate imported counts and as-of account balances with anonymized fixtures,
    then the owner's local export. Only then expose register/manual entry workflows.
 
 Reconciliation and the Plan engine follow trustworthy imports and account balances.
@@ -75,3 +73,21 @@ preserves original rows and file/row coordinates. A transaction can link to its
 source row, with duplicate use of that row rejected. Parsing, actual hash computation,
 cross-export duplicate detection and historical Plan preservation belong to the
 next importer phase. No imported categories or account types are inferred here.
+
+## Core API
+
+`src-tauri/src/ledger.rs` exposes typed operations on `Database` for accounts,
+categories/payees, transactions, transfers, status changes and as-of balances.
+Writes that touch multiple rows or inspect reconciled state reserve a write
+transaction. Failed writes roll back; edits to a transfer amount use its canonical
+record, and deleting either leg deletes the complete pair. Memo-only edits need
+no confirmation. Other implemented changes to reconciled amounts/states or paired
+deletions require an explicit confirmation argument from a future UI.
+
+The core API is not exposed as Tauri commands yet; the existing desktop command
+still only opens the database and returns budget details. Import/register work
+will add the user-facing operations after imported balances are validated.
+
+The default Cargo feature is `desktop`. Disabling it permits the actual SQLite
+and ledger tests to run without Tauri, using the same database implementation.
+Rust dependencies are locked in `src-tauri/Cargo.lock`.

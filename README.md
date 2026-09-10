@@ -10,20 +10,24 @@ ignored `.tools/` folder for portable Node.js, npm cache, browser checks and pre
 
 ## Current step
 
-The v0.1 foundation and ledger schema are implemented:
+The v0.1 ledger foundation is implemented:
 
 - Dark desktop shell with the Cash / Credit / Loans / Tracking / Closed groups.
 - Versioned SQLite migrations, persistent budget settings and verified backups before upgrades.
 - Ledger tables for accounts, category groups/categories, payees, flags and transactions.
 - Transfers with one shared amount and two linked entries, plus raw import staging tables.
+- Typed account/transaction operations, paired transfer edits/deletion and reconciled-edit confirmation.
+- Exact as-of balances with separate cleared, uncleared and reconciled totals.
 - Visible database startup/error states and a browser-only layout preview.
 - Exact integer HUF formatting and timezone-free calendar date formatting.
-- Tests for formatting, schema initialization and preservation of existing data.
+- Native Rust tests for migrations, backups, ledger invariants and preserved history,
+  plus frontend formatting and desktop-bridge tests.
 
 Account/register screens, transaction entry UI and YNAB import are **not implemented
 yet**. No accounts or financial transactions are seeded; the six specified flag
 definitions are initialized. The next user-facing milestone is the importer and
 balance validation. See [the architecture](docs/architecture.md).
+The backend accounting behavior is documented in [accounting rules](docs/accounting-rules.md).
 
 ## Windows development setup
 
