@@ -17,3 +17,24 @@ authoritative product brief and implementation guidance.
 Current stage: the first v0.1 foundation. Follow the implementation sequence in
 section 40 of the brief. Keep the Plan engine out of scope until the import and
 register layers have been validated.
+
+## Git workflow
+
+The owner authorizes committing and pushing after every completed, coherent edit.
+Treat related file edits as one logical change; run the appropriate checks, commit
+that change, and push it before moving to the next change or ending the task.
+No additional confirmation is needed for these routine commits and pushes.
+
+- Use Conventional Commits: `type(scope): imperative summary`, with types such as
+  `feat`, `fix`, `refactor`, `test`, `docs`, `build`, and `chore`.
+- Keep commits focused and independently understandable. Include relevant
+  validation and any unavailable checks in the commit body when helpful.
+- Stage only files belonging to the current change; keep personal data and local
+  tools ignored. Do not rewrite published history or force-push without an explicit request.
+- Push the current branch to its configured remote (currently `main` on `origin`).
+  Check for remote changes and resolve divergence without discarding others' work.
+- Add and push annotated semantic-version tags for completed, verified release
+  milestones, such as `v0.1.0-alpha.1` for a tested prerelease or `v0.1.0` for the
+  complete v0.1 milestone. Do not tag ordinary edits or move an existing tag.
+- The initial foundation has no release tag yet: native build verification and
+  the v0.1 import/register milestone are still outstanding.

@@ -86,3 +86,12 @@ and populated, unversioned databases are rejected without replacing their data.
 Existing version 1 databases are reopened without migration. Future upgrade
 migrations must add a verified backup-before-migration path. Automatic backups
 and native export/restore are not available in this foundation.
+
+## Git convention
+
+After each completed, coherent edit, run the appropriate checks, create a focused
+Conventional Commit (`type(scope): imperative summary`), and push the current
+branch. Use annotated semantic-version tags for verified release milestones;
+ordinary edits do not need tags. The foundation is not tagged as a release while
+native build verification remains outstanding. See [AGENTS.md](AGENTS.md) for the
+standing workflow instructions.
