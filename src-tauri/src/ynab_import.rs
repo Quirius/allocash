@@ -3,7 +3,7 @@
 //! This module deliberately does not create ledger records. A YNAB export can
 //! contain ambiguous account types, transfers, scheduled instances, and Plan
 //! history; those need an explicit mapping step. Until then, the archive and
-//! every CSV record are retained for a later, auditable import.
+//! every CSV or TSV record are retained for a later, auditable import.
 use crate::{database::Database, ledger::CalendarDate};
 use csv::{ReaderBuilder, StringRecord};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
@@ -22,7 +22,7 @@ const MAX_UNCOMPRESSED_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 pub enum ImportError {
     InvalidValue(&'static str),
     InvalidArchive(String),
-    InvalidCsv {
+    InvalidDelimited {
         source_file: String,
         message: String,
     },
@@ -38,8 +38,8 @@ impl fmt::Display for ImportError {
             Self::InvalidArchive(_) => {
                 formatter.write_str("The selected file is not a readable YNAB ZIP export.")
             }
-            Self::InvalidCsv { .. } => {
-                formatter.write_str("A CSV file in the selected export could not be read.")
+            Self::InvalidDelimited { .. } => {
+                formatter.write_str("A delimited file in the selected export could not be read.")
             }
             Self::DuplicateArchive => {
                 formatter.write_str("This exact YNAB export has already been staged.")
@@ -82,7 +82,7 @@ pub struct ImportFileSummary {
     pub source_file: String,
     pub kind: SourceFileKind,
     pub headers: Vec<String>,
-    /// Includes the header row, because every record is staged.
+    /// Includes the header row, because every delimited record is staged.
     pub raw_row_count: usize,
     pub data_row_count: usize,
 }
@@ -93,7 +93,7 @@ pub struct ImportValidationSummary {
     pub batch_id: String,
     pub sha256: String,
     pub archive_file_count: usize,
-    pub csv_file_count: usize,
+    pub delimited_file_count: usize,
     pub raw_row_count: usize,
     pub data_row_count: usize,
     pub register_row_count: usize,
@@ -215,17 +215,25 @@ fn parse_zip(source_bytes: &[u8]) -> ImportResult<(Vec<ParsedCsvFile>, usize, Ve
         if uncompressed_size > MAX_UNCOMPRESSED_ARCHIVE_BYTES {
             return Err(ImportError::InvalidArchive("Archive is too large.".into()));
         }
-        if !source_file.to_ascii_lowercase().ends_with(".csv") {
-            skipped_files.push(source_file);
-            continue;
-        }
+        let delimiter = match source_file
+            .rsplit_once('.')
+            .map(|(_, extension)| extension.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("csv") => b',',
+            Some("tsv") => b'\t',
+            _ => {
+                skipped_files.push(source_file);
+                continue;
+            }
+        };
         let mut contents = Vec::with_capacity(entry.size() as usize);
         entry.read_to_end(&mut contents).map_err(|error| {
             ImportError::InvalidArchive(format!("Could not read {source_file}: {error}"))
         })?;
         files.push(ParsedCsvFile {
             source_file: source_file.clone(),
-            rows: parse_csv(&source_file, &contents)?,
+            rows: parse_delimited(&source_file, &contents, delimiter)?,
         });
     }
     files.sort_by(|left, right| left.source_file.cmp(&right.source_file));
@@ -233,17 +241,22 @@ fn parse_zip(source_bytes: &[u8]) -> ImportResult<(Vec<ParsedCsvFile>, usize, Ve
     Ok((files, archive_file_count, skipped_files))
 }
 
-fn parse_csv(source_file: &str, contents: &[u8]) -> ImportResult<Vec<Vec<String>>> {
+fn parse_delimited(
+    source_file: &str,
+    contents: &[u8],
+    delimiter: u8,
+) -> ImportResult<Vec<Vec<String>>> {
     let contents = contents
         .strip_prefix(&[0xef, 0xbb, 0xbf])
         .unwrap_or(contents);
     let mut reader = ReaderBuilder::new()
         .has_headers(false)
         .flexible(true)
+        .delimiter(delimiter)
         .from_reader(Cursor::new(contents));
     let mut rows = Vec::new();
     for record in reader.records() {
-        let record = record.map_err(|error| ImportError::InvalidCsv {
+        let record = record.map_err(|error| ImportError::InvalidDelimited {
             source_file: source_file.to_owned(),
             message: error.to_string(),
         })?;
@@ -266,11 +279,11 @@ fn summarize(
 ) -> ImportValidationSummary {
     let mut warnings = Vec::new();
     if parsed_files.is_empty() {
-        warnings.push("The archive contains no CSV files to stage.".into());
+        warnings.push("The archive contains no CSV or TSV files to stage.".into());
     }
     if !skipped_files.is_empty() {
         warnings.push(format!(
-            "{} non-CSV source file(s) remain preserved in the archive but have no row staging.",
+            "{} non-delimited source file(s) remain preserved in the archive but have no row staging.",
             skipped_files.len()
         ));
     }
@@ -379,7 +392,7 @@ fn summarize(
         batch_id: batch_id.into(),
         sha256: sha256.into(),
         archive_file_count,
-        csv_file_count: parsed_files.len(),
+        delimited_file_count: parsed_files.len(),
         raw_row_count,
         data_row_count,
         register_row_count,
@@ -438,14 +451,19 @@ fn parse_export_date(value: &str) -> Option<CalendarDate> {
         || parts
             .iter()
             .any(|part| part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()))
-        || parts[2].len() != 4
     {
         return None;
     }
-    let month: u32 = parts[0].parse().ok()?;
-    let day: u32 = parts[1].parse().ok()?;
-    let year: u32 = parts[2].parse().ok()?;
-    CalendarDate::parse(&format!("{year:04}-{month:02}-{day:02}")).ok()
+    let (year, month, day) = if parts[0].len() == 4 {
+        // Modern YNAB TSV exports use the unambiguous yyyy/mm/dd form.
+        (parts[0], parts[1], parts[2])
+    } else if parts[2].len() == 4 {
+        // Older CSV exports use the locale-specific month/day/year form.
+        (parts[2], parts[0], parts[1])
+    } else {
+        return None;
+    };
+    CalendarDate::parse(&format!("{year:0>4}-{month:0>2}-{day:0>2}")).ok()
 }
 
 fn hex_sha256(source: &[u8]) -> String {

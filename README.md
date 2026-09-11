@@ -25,7 +25,7 @@ The v0.1 ledger foundation is implemented:
 
 Account/register screens, transaction entry UI and mapping YNAB data into the
 ledger are **not implemented yet**. An initial YNAB ZIP staging parser does
-preserve the original archive, hash it, retain every CSV row, and report
+preserve the original archive, hash it, retain every CSV/TSV row, and report
 source-level validation warnings without guessing ambiguous financial data. No
 accounts or financial transactions are seeded; the six specified flag definitions
 are initialized. The next user-facing milestone is the importer mapping and

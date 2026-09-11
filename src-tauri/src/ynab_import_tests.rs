@@ -43,7 +43,7 @@ fn stages_every_csv_record_and_reports_source_level_validation() {
         .unwrap();
 
     assert_eq!(summary.archive_file_count, 3);
-    assert_eq!(summary.csv_file_count, 2);
+    assert_eq!(summary.delimited_file_count, 2);
     assert_eq!(summary.raw_row_count, 6);
     assert_eq!(summary.data_row_count, 4);
     assert_eq!(summary.register_row_count, 2);
@@ -61,7 +61,7 @@ fn stages_every_csv_record_and_reports_source_level_validation() {
     assert!(summary
         .warnings
         .iter()
-        .any(|warning| warning.contains("non-CSV")));
+        .any(|warning| warning.contains("non-delimited")));
 
     let saved_bytes: Vec<u8> = database
         .connection
@@ -127,7 +127,7 @@ fn malformed_csv_does_not_leave_a_partial_batch() {
     let archive = writer.finish().unwrap().into_inner();
     assert!(matches!(
         database.stage_ynab_zip("broken.zip", &archive, &date("2026-09-11")),
-        Err(ImportError::InvalidCsv { .. })
+        Err(ImportError::InvalidDelimited { .. })
     ));
     assert_eq!(
         database
@@ -143,4 +143,21 @@ fn malformed_csv_does_not_leave_a_partial_batch() {
             .unwrap(),
         0
     );
+}
+
+#[test]
+fn stages_modern_ynab_tsv_files() {
+    let (_directory, mut database) = database();
+    let archive = fixture_zip(&[(
+        "Fixture/Register.tsv",
+        "Account\tDate\tPayee\tOutflow\tInflow\tCleared\nCash\t2026/09/10\tMarket\t1234\t\tCleared\nCash\t2026/10/10\tEmployer\t\t5000\tReconciled\n",
+    )]);
+    let summary = database
+        .stage_ynab_zip("fixture.zip", &archive, &date("2026-09-11"))
+        .unwrap();
+    assert_eq!(summary.delimited_file_count, 1);
+    assert_eq!(summary.register_row_count, 2);
+    assert_eq!(summary.account_names, ["Cash"]);
+    assert_eq!(summary.payee_names, ["Employer", "Market"]);
+    assert_eq!(summary.future_transaction_count, 1);
 }

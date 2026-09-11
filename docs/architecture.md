@@ -69,7 +69,7 @@ scheduled instances must be uncleared. `scheduled_origin_id` is opaque provenanc
 until recurrence definitions arrive in a later migration. It is not a recurrence rule.
 
 `import_batches` stores the original archive bytes and their SHA-256 hash;
-`import_rows` preserves every CSV row as its parsed cells with file/row coordinates.
+`import_rows` preserves every CSV/TSV row as its parsed cells with file/row coordinates.
 A transaction can link to its source row, with duplicate use of that row rejected.
 The staging parser rejects malformed CSV atomically, detects exact duplicate
 archives, and reports source-level account/category/payee/flag/date counts and
