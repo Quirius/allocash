@@ -218,7 +218,7 @@ fn materializes_categories_payees_and_known_flags() {
     let (_directory, mut database) = database();
     let archive = fixture_zip(&[(
         "Fixture/Register.tsv",
-        "Account\tFlag\tDate\tPayee\tCategory Group\tCategory\tOutflow\tInflow\nCash\tRed\t2026/09/10\tMarket\tLiving\tGroceries\t100\t0\nCash\tOrange\t2026/09/11\tLandlord\tFixed\tRent\t500\t0\n",
+        "Account\tFlag\tDate\tPayee\tCategory Group\tCategory\tOutflow\tInflow\nCash\tRed\t2026/09/10\tMarket\tLiving\tGroceries\t100\t0\nCash\tOrange - Correction\t2026/09/11\tLandlord\tFixed\tRent\t500\t0\n",
     )]);
     let summary = database
         .stage_ynab_zip("fixture.zip", &archive, &date("2026-09-11"))
@@ -299,4 +299,48 @@ fn materializes_ordinary_transactions_and_holds_transfers() {
     assert_eq!(entry.amount.0, -1234);
     assert_eq!(entry.entry.memo, "Food");
     assert_eq!(entry.entry.import_row_id.is_some(), true);
+}
+
+#[test]
+fn materializes_only_unique_reciprocal_transfer_pairs() {
+    let (_directory, mut database) = database();
+    let archive = fixture_zip(&[(
+        "Fixture/Register.tsv",
+        "Account\tFlag\tDate\tPayee\tCategory Group/Category\tCategory Group\tCategory\tMemo\tOutflow\tInflow\tCleared\nCash\t\t2026/09/10\tTransfer : Card\t\t\t\tSent\t1 000 Ft\t0 Ft\tCleared\nCard\t\t2026/09/10\tTransfer : Cash\t\t\t\tReceived\t0 Ft\t1 000 Ft\tUncleared\nCash\t\t2026/09/11\tTransfer : Missing\t\t\t\tHeld\t50 Ft\t0 Ft\tCleared\nCash\t\t2026/09/12\tTransfer : Card\t\t\t\tZero\t0 Ft\t0 Ft\tCleared\nCard\t\t2026/09/12\tTransfer : Cash\t\t\t\tZero\t0 Ft\t0 Ft\tCleared\n",
+    )]);
+    let summary = database
+        .stage_ynab_zip("fixture.zip", &archive, &date("2026-09-11"))
+        .unwrap();
+    let mappings = [
+        AccountImportMapping {
+            source_name: "Cash".into(),
+            kind: crate::ledger::AccountKind::Cash,
+            closed: false,
+            sort_order: 0,
+        },
+        AccountImportMapping {
+            source_name: "Card".into(),
+            kind: crate::ledger::AccountKind::Credit,
+            closed: false,
+            sort_order: 1,
+        },
+    ];
+    database
+        .materialize_import_accounts(&summary.batch_id, &summary.account_names, &mappings)
+        .unwrap();
+    database.materialize_import_references(&summary).unwrap();
+    let result = database.materialize_transfers(&summary).unwrap();
+    assert_eq!(result.paired_transfer_count, 1);
+    assert_eq!(result.unresolved_row_count, 3);
+    let accounts = database.accounts().unwrap();
+    let cash = accounts
+        .iter()
+        .find(|account| account.name == "Cash")
+        .unwrap();
+    let card = accounts
+        .iter()
+        .find(|account| account.name == "Card")
+        .unwrap();
+    assert_eq!(database.entries(&cash.id).unwrap()[0].amount.0, -1000);
+    assert_eq!(database.entries(&card.id).unwrap()[0].amount.0, 1000);
 }

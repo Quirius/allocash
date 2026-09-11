@@ -9,7 +9,7 @@ use crate::{
     ledger::{AccountKind, CalendarDate},
 };
 use csv::{ReaderBuilder, StringRecord};
-use rusqlite::{params, OptionalExtension, TransactionBehavior};
+use rusqlite::{params, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -125,6 +125,25 @@ pub struct TransactionMaterializationSummary {
     pub held_transfer_row_count: usize,
 }
 
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferMaterializationSummary {
+    pub paired_transfer_count: usize,
+    pub unresolved_row_count: usize,
+}
+
+struct TransferCandidate {
+    row_id: String,
+    account: String,
+    target: String,
+    date: CalendarDate,
+    amount: i64,
+    payee: String,
+    memo: String,
+    flag: String,
+    cleared: &'static str,
+}
+
 /// An explicit owner decision for an imported account. YNAB's current TSV
 /// export has account names but no trustworthy account-kind/closed metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -233,7 +252,7 @@ impl Database {
         if summary
             .flag_names
             .iter()
-            .any(|flag| !allowed_flags.contains(&flag.trim().to_ascii_lowercase().as_str()))
+            .any(|flag| source_flag_color(flag).is_none_or(|color| !allowed_flags.contains(&color)))
         {
             return Err(ImportError::InvalidValue(
                 "The export contains an unknown flag color.",
@@ -388,8 +407,7 @@ impl Database {
             });
             let payee_id =
                 (!payee.is_empty()).then(|| import_id(&summary.batch_id, "payee", payee));
-            let flag = get("flag").to_ascii_lowercase();
-            let flag_id = (!flag.is_empty()).then(|| format!("flag-{flag}"));
+            let flag_id = source_flag_color(get("flag")).map(|color| format!("flag-{color}"));
             transaction.execute(
                 "INSERT INTO transactions (id,account_id,transaction_date,payee_id,category_id,memo,flag_id,amount_huf,cleared_state,posting_state,origin,import_row_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'posted','import',?10)",
                 params![import_id(&summary.batch_id, "transaction", &row_id), import_id(&summary.batch_id, "account", account), date.as_str(), payee_id, category_id, get("memo"), flag_id, amount, cleared, row_id],
@@ -400,6 +418,141 @@ impl Database {
         Ok(TransactionMaterializationSummary {
             ordinary_transaction_count: ordinary,
             held_transfer_row_count: held,
+        })
+    }
+
+    /// Pairs only unique reciprocal legs with the same date and opposite exact
+    /// amount. Ambiguous or one-sided rows remain staged and are reported.
+    pub fn materialize_transfers(
+        &mut self,
+        summary: &ImportValidationSummary,
+    ) -> ImportResult<TransferMaterializationSummary> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let staged = load_staged_rows(&transaction, &summary.batch_id)?;
+        let mut headers: HashMap<String, Vec<String>> = HashMap::new();
+        let mut candidates = Vec::new();
+        for (row_id, source_file, row_number, raw_data) in staged {
+            let raw: RawCsvRow = serde_json::from_str(&raw_data)?;
+            if row_number == 1 {
+                headers.insert(
+                    source_file,
+                    raw.cells.iter().map(|v| normalize_header(v)).collect(),
+                );
+                continue;
+            }
+            let Some(header) = headers.get(&source_file) else {
+                return Err(ImportError::InvalidValue(
+                    "A staged source file has no header row.",
+                ));
+            };
+            if classify(header) != SourceFileKind::Register {
+                continue;
+            }
+            let get = |name| {
+                value(&raw.cells, field(header, name))
+                    .map(str::trim)
+                    .unwrap_or("")
+            };
+            let Some(target) = transfer_target(get("payee")) else {
+                continue;
+            };
+            let outflow = parse_huf(get("outflow"))?;
+            let inflow = parse_huf(get("inflow"))?;
+            if outflow < 0 || inflow < 0 || (outflow != 0 && inflow != 0) {
+                return Err(ImportError::InvalidValue(
+                    "Imported inflow/outflow columns are inconsistent.",
+                ));
+            }
+            let cleared = parse_cleared(get("cleared"))?;
+            candidates.push(TransferCandidate {
+                row_id,
+                account: get("account").into(),
+                target: target.into(),
+                date: parse_export_date(get("date")).ok_or(ImportError::InvalidValue(
+                    "An imported transaction has an invalid date.",
+                ))?,
+                amount: inflow
+                    .checked_sub(outflow)
+                    .ok_or(ImportError::InvalidValue(
+                        "An imported HUF amount is out of range.",
+                    ))?,
+                payee: get("payee").into(),
+                memo: get("memo").into(),
+                flag: get("flag").to_ascii_lowercase(),
+                cleared,
+            });
+        }
+        let mut used = vec![false; candidates.len()];
+        let mut pairs = Vec::new();
+        for index in 0..candidates.len() {
+            if used[index] {
+                continue;
+            }
+            let left = &candidates[index];
+            let matches = (0..candidates.len())
+                .filter(|other| {
+                    !used[*other] && *other != index && reciprocal(left, &candidates[*other])
+                })
+                .collect::<Vec<_>>();
+            if matches.len() == 1 {
+                let other = matches[0];
+                let reverse_matches = (0..candidates.len())
+                    .filter(|candidate| {
+                        !used[*candidate]
+                            && *candidate != other
+                            && reciprocal(&candidates[other], &candidates[*candidate])
+                    })
+                    .count();
+                if reverse_matches == 1 {
+                    used[index] = true;
+                    used[other] = true;
+                    pairs.push((index, other));
+                }
+            }
+        }
+        for (left_index, right_index) in &pairs {
+            let left = &candidates[*left_index];
+            let right = &candidates[*right_index];
+            let (out, incoming) = if left.amount < 0 {
+                (left, right)
+            } else {
+                (right, left)
+            };
+            let amount = out.amount.checked_abs().ok_or(ImportError::InvalidValue(
+                "An imported HUF amount is out of range.",
+            ))?;
+            let mut ids = [out.row_id.as_str(), incoming.row_id.as_str()];
+            ids.sort();
+            let transfer_id = import_id(&summary.batch_id, "transfer", &ids.join(":"));
+            let out_id = import_id(&summary.batch_id, "transaction", &out.row_id);
+            let in_id = import_id(&summary.batch_id, "transaction", &incoming.row_id);
+            transaction.execute(
+                "INSERT INTO transfers (id,amount_huf,outflow_id,inflow_id) VALUES (?1,?2,?3,?4)",
+                params![transfer_id, amount, out_id, in_id],
+            )?;
+            insert_import_transfer_leg(
+                &transaction,
+                summary,
+                out,
+                &out_id,
+                &transfer_id,
+                "outflow",
+            )?;
+            insert_import_transfer_leg(
+                &transaction,
+                summary,
+                incoming,
+                &in_id,
+                &transfer_id,
+                "inflow",
+            )?;
+        }
+        transaction.commit()?;
+        Ok(TransferMaterializationSummary {
+            paired_transfer_count: pairs.len(),
+            unresolved_row_count: used.iter().filter(|used| !**used).count(),
         })
     }
 }
@@ -807,11 +960,79 @@ pub fn parse_huf(value: &str) -> ImportResult<i64> {
 }
 
 fn is_transfer_like(payee: &str, combined_category: &str) -> bool {
-    let payee = payee.trim().to_ascii_lowercase();
     let category = combined_category.trim().to_ascii_lowercase();
-    payee.starts_with("transfer")
-        || payee.starts_with("payment")
-        || category == "category not needed"
+    transfer_target(payee).is_some() || category == "category not needed"
+}
+
+fn transfer_target(payee: &str) -> Option<&str> {
+    let (prefix, target) = payee.split_once(':')?;
+    let prefix = prefix.trim().to_ascii_lowercase();
+    let target = target.trim();
+    ((prefix == "transfer" || prefix == "payment") && !target.is_empty()).then_some(target)
+}
+
+fn source_flag_color(flag: &str) -> Option<&'static str> {
+    let color = flag
+        .trim()
+        .split_once(" - ")
+        .map_or(flag.trim(), |value| value.0)
+        .trim();
+    match color.to_ascii_lowercase().as_str() {
+        "red" => Some("red"),
+        "orange" => Some("orange"),
+        "yellow" => Some("yellow"),
+        "green" => Some("green"),
+        "blue" => Some("blue"),
+        "purple" => Some("purple"),
+        _ => None,
+    }
+}
+
+fn parse_cleared(value: &str) -> ImportResult<&'static str> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "uncleared" => Ok("uncleared"),
+        "cleared" => Ok("cleared"),
+        "reconciled" => Ok("reconciled"),
+        _ => Err(ImportError::InvalidValue(
+            "An imported cleared state is unknown.",
+        )),
+    }
+}
+
+fn reciprocal(left: &TransferCandidate, right: &TransferCandidate) -> bool {
+    left.amount != 0
+        && left.account == right.target
+        && left.target == right.account
+        && left.date.as_str() == right.date.as_str()
+        && left.amount.checked_neg() == Some(right.amount)
+}
+
+type StagedRow = (String, String, i64, String);
+
+fn load_staged_rows(transaction: &Transaction<'_>, batch_id: &str) -> ImportResult<Vec<StagedRow>> {
+    let mut query = transaction.prepare("SELECT id,source_file,row_number,raw_data FROM import_rows WHERE batch_id=?1 ORDER BY source_file,row_number")?;
+    let rows = query
+        .query_map([batch_id], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+fn insert_import_transfer_leg(
+    transaction: &Transaction<'_>,
+    summary: &ImportValidationSummary,
+    candidate: &TransferCandidate,
+    id: &str,
+    transfer_id: &str,
+    direction: &str,
+) -> ImportResult<()> {
+    let flag_id = source_flag_color(&candidate.flag).map(|color| format!("flag-{color}"));
+    transaction.execute(
+        "INSERT INTO transactions (id,account_id,transaction_date,payee_id,memo,flag_id,cleared_state,posting_state,origin,import_row_id,transfer_id,transfer_direction) VALUES (?1,?2,?3,?4,?5,?6,?7,'posted','import',?8,?9,?10)",
+        params![id, import_id(&summary.batch_id, "account", &candidate.account), candidate.date.as_str(), import_id(&summary.batch_id, "payee", &candidate.payee), candidate.memo, flag_id, candidate.cleared, candidate.row_id, transfer_id, direction],
+    )?;
+    Ok(())
 }
 
 fn hex_sha256(source: &[u8]) -> String {

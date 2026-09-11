@@ -84,6 +84,9 @@ Ordinary register rows parse HUF text directly to checked integers and retain
 their source-row provenance, dates, metadata and clearing state. Rows that look
 like transfers or payments remain in staging until both legs can be paired and
 validated; no one-sided account movement is written as ordinary spending.
+Transfer materialization requires one unique reciprocal leg with the same date
+and exact opposite nonzero amount. Zero-value, missing and ambiguous pairs stay
+in raw staging and appear in the unresolved-row count.
 
 ## Core API
 
