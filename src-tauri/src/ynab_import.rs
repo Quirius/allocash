@@ -118,6 +118,7 @@ pub struct AccountImportMapping {
     pub source_name: String,
     pub kind: AccountKind,
     pub closed: bool,
+    pub sort_order: i64,
 }
 
 /// Refuses an incomplete or stale account mapping before any ledger write.
@@ -138,6 +139,15 @@ pub fn validate_account_mappings(
             "Every imported account needs exactly one mapping.",
         ));
     }
+    let orders = mappings
+        .iter()
+        .map(|mapping| mapping.sort_order)
+        .collect::<BTreeSet<_>>();
+    if orders.len() != mappings.len() || orders.iter().any(|order| *order < 0) {
+        return Err(ImportError::InvalidValue(
+            "Imported account order must be unique and non-negative.",
+        ));
+    }
     if expected.len() != account_names.len() || expected.len() != supplied.len() {
         return Err(ImportError::InvalidValue(
             "The account mapping does not match the staged export.",
@@ -153,6 +163,50 @@ pub fn validate_account_mappings(
         ));
     }
     Ok(())
+}
+
+impl Database {
+    /// Creates only explicitly mapped accounts. Source rows remain staged; no
+    /// transactions are materialized until their full mapping is validated.
+    pub fn materialize_import_accounts(
+        &mut self,
+        batch_id: &str,
+        account_names: &[String],
+        mappings: &[AccountImportMapping],
+    ) -> ImportResult<()> {
+        validate_account_mappings(account_names, mappings)?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let exists: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM import_batches WHERE id=?1)",
+            [batch_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(ImportError::InvalidValue(
+                "The staged import batch was not found.",
+            ));
+        }
+        for mapping in mappings {
+            let id = format!(
+                "import-account-{}",
+                hex_sha256(format!("{batch_id}:{}", mapping.source_name).as_bytes())
+            );
+            transaction.execute(
+                "INSERT INTO accounts (id,name,kind,sort_order,closed) VALUES (?1,?2,?3,?4,?5)",
+                params![
+                    id,
+                    mapping.source_name,
+                    mapping.kind,
+                    mapping.sort_order,
+                    mapping.closed
+                ],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
 }
 
 #[derive(Serialize, Deserialize)]

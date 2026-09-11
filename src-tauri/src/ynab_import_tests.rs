@@ -170,14 +170,43 @@ fn account_mappings_must_cover_each_staged_name_once() {
             source_name: "Cash".into(),
             kind: crate::ledger::AccountKind::Cash,
             closed: false,
+            sort_order: 0,
         },
         AccountImportMapping {
             source_name: "Card".into(),
             kind: crate::ledger::AccountKind::Tracking,
             closed: true,
+            sort_order: 1,
         },
     ];
     assert!(validate_account_mappings(&names, &valid).is_ok());
     assert!(validate_account_mappings(&names, &valid[..1]).is_err());
     assert!(validate_account_mappings(&names, &[valid[0].clone(), valid[0].clone()]).is_err());
+}
+
+#[test]
+fn materializes_only_explicitly_mapped_accounts() {
+    let (_directory, mut database) = database();
+    database
+        .connection
+        .execute(
+            "INSERT INTO import_batches (id,source_name,source_bytes,sha256) VALUES ('batch','fixture.zip',X'00',?1)",
+            ["b".repeat(64)],
+        )
+        .unwrap();
+    let names = vec!["Closed asset".into()];
+    let mappings = vec![AccountImportMapping {
+        source_name: "Closed asset".into(),
+        kind: crate::ledger::AccountKind::Tracking,
+        closed: true,
+        sort_order: 0,
+    }];
+    database
+        .materialize_import_accounts("batch", &names, &mappings)
+        .unwrap();
+    let accounts = database.accounts().unwrap();
+    assert_eq!(accounts.len(), 1);
+    assert_eq!(accounts[0].name, "Closed asset");
+    assert_eq!(accounts[0].kind, crate::ledger::AccountKind::Tracking);
+    assert!(accounts[0].closed);
 }
