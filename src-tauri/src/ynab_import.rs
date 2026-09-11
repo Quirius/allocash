@@ -4,7 +4,10 @@
 //! contain ambiguous account types, transfers, scheduled instances, and Plan
 //! history; those need an explicit mapping step. Until then, the archive and
 //! every CSV or TSV record are retained for a later, auditable import.
-use crate::{database::Database, ledger::CalendarDate};
+use crate::{
+    database::Database,
+    ledger::{AccountKind, CalendarDate},
+};
 use csv::{ReaderBuilder, StringRecord};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
@@ -105,6 +108,51 @@ pub struct ImportValidationSummary {
     pub future_transaction_count: usize,
     pub files: Vec<ImportFileSummary>,
     pub warnings: Vec<String>,
+}
+
+/// An explicit owner decision for an imported account. YNAB's current TSV
+/// export has account names but no trustworthy account-kind/closed metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountImportMapping {
+    pub source_name: String,
+    pub kind: AccountKind,
+    pub closed: bool,
+}
+
+/// Refuses an incomplete or stale account mapping before any ledger write.
+pub fn validate_account_mappings(
+    account_names: &[String],
+    mappings: &[AccountImportMapping],
+) -> ImportResult<()> {
+    let expected = account_names
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let supplied = mappings
+        .iter()
+        .map(|mapping| mapping.source_name.as_str())
+        .collect::<BTreeSet<_>>();
+    if supplied.len() != mappings.len() {
+        return Err(ImportError::InvalidValue(
+            "Every imported account needs exactly one mapping.",
+        ));
+    }
+    if expected.len() != account_names.len() || expected.len() != supplied.len() {
+        return Err(ImportError::InvalidValue(
+            "The account mapping does not match the staged export.",
+        ));
+    }
+    if expected
+        .iter()
+        .zip(supplied.iter())
+        .any(|(left, right)| *left != *right)
+    {
+        return Err(ImportError::InvalidValue(
+            "The account mapping does not match the staged export.",
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize)]

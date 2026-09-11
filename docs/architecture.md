@@ -75,7 +75,8 @@ The staging parser rejects malformed CSV atomically, detects exact duplicate
 archives, and reports source-level account/category/payee/flag/date counts and
 warnings. Cross-export transaction duplicate detection, historical Plan
 preservation, and ledger mapping belong to the next importer phase. No imported
-categories or account types are inferred here.
+categories or account types are inferred here. Before ledger mapping begins,
+every staged account must have exactly one explicit kind/closed-state mapping.
 
 ## Core API
 

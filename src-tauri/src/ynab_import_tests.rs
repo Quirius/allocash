@@ -1,7 +1,7 @@
 use crate::{
     database::Database,
     ledger::CalendarDate,
-    ynab_import::{ImportError, SourceFileKind},
+    ynab_import::{validate_account_mappings, AccountImportMapping, ImportError, SourceFileKind},
 };
 use std::io::{Cursor, Write};
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
@@ -160,4 +160,24 @@ fn stages_modern_ynab_tsv_files() {
     assert_eq!(summary.account_names, ["Cash"]);
     assert_eq!(summary.payee_names, ["Employer", "Market"]);
     assert_eq!(summary.future_transaction_count, 1);
+}
+
+#[test]
+fn account_mappings_must_cover_each_staged_name_once() {
+    let names = vec!["Cash".into(), "Card".into()];
+    let valid = vec![
+        AccountImportMapping {
+            source_name: "Cash".into(),
+            kind: crate::ledger::AccountKind::Cash,
+            closed: false,
+        },
+        AccountImportMapping {
+            source_name: "Card".into(),
+            kind: crate::ledger::AccountKind::Tracking,
+            closed: true,
+        },
+    ];
+    assert!(validate_account_mappings(&names, &valid).is_ok());
+    assert!(validate_account_mappings(&names, &valid[..1]).is_err());
+    assert!(validate_account_mappings(&names, &[valid[0].clone(), valid[0].clone()]).is_err());
 }
