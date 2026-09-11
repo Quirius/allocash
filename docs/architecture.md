@@ -77,6 +77,9 @@ warnings. Cross-export transaction duplicate detection, historical Plan
 preservation, and ledger mapping belong to the next importer phase. No imported
 categories or account types are inferred here. Before ledger mapping begins,
 every staged account must have exactly one explicit kind/closed-state mapping.
+Mapped category groups, categories and payees use deterministic source-derived
+IDs and are inserted atomically in source order; imported flag colors reuse the
+six stable Allocash flag identities, while unknown colors abort the operation.
 
 ## Core API
 

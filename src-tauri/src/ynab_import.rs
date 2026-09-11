@@ -102,12 +102,20 @@ pub struct ImportValidationSummary {
     pub register_row_count: usize,
     pub account_names: Vec<String>,
     pub category_names: Vec<String>,
+    pub categories: Vec<ImportedCategory>,
     pub payee_names: Vec<String>,
     pub flag_names: Vec<String>,
     pub latest_transaction_date: Option<String>,
     pub future_transaction_count: usize,
     pub files: Vec<ImportFileSummary>,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, std::hash::Hash, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedCategory {
+    pub group_name: String,
+    pub name: String,
 }
 
 /// An explicit owner decision for an imported account. YNAB's current TSV
@@ -202,6 +210,77 @@ impl Database {
                     mapping.sort_order,
                     mapping.closed
                 ],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Creates reference records only after the staged summary is complete.
+    /// Existing flag identities are reused by color; unknown colors abort.
+    pub fn materialize_import_references(
+        &mut self,
+        summary: &ImportValidationSummary,
+    ) -> ImportResult<()> {
+        let allowed_flags = ["red", "orange", "yellow", "green", "blue", "purple"];
+        if summary
+            .flag_names
+            .iter()
+            .any(|flag| !allowed_flags.contains(&flag.trim().to_ascii_lowercase().as_str()))
+        {
+            return Err(ImportError::InvalidValue(
+                "The export contains an unknown flag color.",
+            ));
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let exists: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM import_batches WHERE id=?1)",
+            [&summary.batch_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(ImportError::InvalidValue(
+                "The staged import batch was not found.",
+            ));
+        }
+        let mut groups = Vec::new();
+        let mut seen_groups = HashSet::new();
+        for category in &summary.categories {
+            if seen_groups.insert(category.group_name.as_str()) {
+                groups.push(category.group_name.as_str());
+            }
+        }
+        for (order, group) in groups.iter().enumerate() {
+            transaction.execute(
+                "INSERT INTO category_groups (id,name,sort_order) VALUES (?1,?2,?3)",
+                params![
+                    import_id(&summary.batch_id, "group", group),
+                    group,
+                    order as i64
+                ],
+            )?;
+        }
+        for (order, category) in summary.categories.iter().enumerate() {
+            transaction.execute(
+                "INSERT INTO categories (id,group_id,name,sort_order) VALUES (?1,?2,?3,?4)",
+                params![
+                    import_id(
+                        &summary.batch_id,
+                        "category",
+                        &format!("{}:{}", category.group_name, category.name)
+                    ),
+                    import_id(&summary.batch_id, "group", &category.group_name),
+                    category.name,
+                    order as i64
+                ],
+            )?;
+        }
+        for payee in &summary.payee_names {
+            transaction.execute(
+                "INSERT INTO payees (id,name) VALUES (?1,?2)",
+                params![import_id(&summary.batch_id, "payee", payee), payee],
             )?;
         }
         transaction.commit()?;
@@ -392,6 +471,8 @@ fn summarize(
 
     let mut account_names = BTreeSet::new();
     let mut category_names = BTreeSet::new();
+    let mut categories = Vec::new();
+    let mut seen_categories = HashSet::new();
     let mut payee_names = BTreeSet::new();
     let mut flag_names = BTreeSet::new();
     let mut latest_transaction_date: Option<String> = None;
@@ -441,6 +522,17 @@ fn summarize(
             }
             if let Some(name) = value(row, field(&normalized_headers, "category")) {
                 add_name(&mut category_names, name);
+                if let Some(group) = value(row, field(&normalized_headers, "category group")) {
+                    if !group.trim().is_empty() && !name.trim().is_empty() {
+                        let imported = ImportedCategory {
+                            group_name: group.trim().into(),
+                            name: name.trim().into(),
+                        };
+                        if seen_categories.insert(imported.clone()) {
+                            categories.push(imported);
+                        }
+                    }
+                }
             } else if let Some(name) =
                 value(row, field(&normalized_headers, "category group/category"))
             {
@@ -500,6 +592,7 @@ fn summarize(
         register_row_count,
         account_names: account_names.into_iter().collect(),
         category_names: category_names.into_iter().collect(),
+        categories,
         payee_names: payee_names.into_iter().collect(),
         flag_names: flag_names.into_iter().collect(),
         latest_transaction_date,
@@ -570,4 +663,11 @@ fn parse_export_date(value: &str) -> Option<CalendarDate> {
 
 fn hex_sha256(source: &[u8]) -> String {
     format!("{:x}", Sha256::digest(source))
+}
+
+fn import_id(batch_id: &str, kind: &str, source: &str) -> String {
+    format!(
+        "import-{kind}-{}",
+        hex_sha256(format!("{batch_id}:{source}").as_bytes())
+    )
 }

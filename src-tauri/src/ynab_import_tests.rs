@@ -210,3 +210,42 @@ fn materializes_only_explicitly_mapped_accounts() {
     assert_eq!(accounts[0].kind, crate::ledger::AccountKind::Tracking);
     assert!(accounts[0].closed);
 }
+
+#[test]
+fn materializes_categories_payees_and_known_flags() {
+    let (_directory, mut database) = database();
+    let archive = fixture_zip(&[(
+        "Fixture/Register.tsv",
+        "Account\tFlag\tDate\tPayee\tCategory Group\tCategory\tOutflow\tInflow\nCash\tRed\t2026/09/10\tMarket\tLiving\tGroceries\t100\t0\nCash\tOrange\t2026/09/11\tLandlord\tFixed\tRent\t500\t0\n",
+    )]);
+    let summary = database
+        .stage_ynab_zip("fixture.zip", &archive, &date("2026-09-11"))
+        .unwrap();
+    database.materialize_import_references(&summary).unwrap();
+    for table in ["category_groups", "categories", "payees"] {
+        let count: i64 = database
+            .connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 2, "{table}");
+    }
+    let groups = database
+        .connection
+        .prepare("SELECT name FROM category_groups ORDER BY sort_order")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(groups, ["Living", "Fixed"]);
+    assert_eq!(
+        database
+            .connection
+            .query_row::<String, _, _>("SELECT id FROM flags WHERE color='red'", [], |row| row
+                .get(0))
+            .unwrap(),
+        "flag-red"
+    );
+}
