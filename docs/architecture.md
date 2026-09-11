@@ -80,6 +80,10 @@ every staged account must have exactly one explicit kind/closed-state mapping.
 Mapped category groups, categories and payees use deterministic source-derived
 IDs and are inserted atomically in source order; imported flag colors reuse the
 six stable Allocash flag identities, while unknown colors abort the operation.
+Ordinary register rows parse HUF text directly to checked integers and retain
+their source-row provenance, dates, metadata and clearing state. Rows that look
+like transfers or payments remain in staging until both legs can be paired and
+validated; no one-sided account movement is written as ordinary spending.
 
 ## Core API
 

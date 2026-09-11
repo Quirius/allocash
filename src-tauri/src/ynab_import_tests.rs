@@ -1,7 +1,9 @@
 use crate::{
     database::Database,
     ledger::CalendarDate,
-    ynab_import::{validate_account_mappings, AccountImportMapping, ImportError, SourceFileKind},
+    ynab_import::{
+        parse_huf, validate_account_mappings, AccountImportMapping, ImportError, SourceFileKind,
+    },
 };
 use std::io::{Cursor, Write};
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipWriter};
@@ -248,4 +250,53 @@ fn materializes_categories_payees_and_known_flags() {
             .unwrap(),
         "flag-red"
     );
+}
+
+#[test]
+fn huf_parsing_is_exact_and_rejects_fractional_or_overflow_values() {
+    assert_eq!(parse_huf("1 234 567 Ft").unwrap(), 1_234_567);
+    assert_eq!(parse_huf("0 Ft").unwrap(), 0);
+    assert_eq!(parse_huf("-42 Ft").unwrap(), -42);
+    for invalid in [
+        "1.00 Ft",
+        "1,000 Ft",
+        "1 2 Ft",
+        "+1 Ft",
+        "9223372036854775808 Ft",
+    ] {
+        assert!(parse_huf(invalid).is_err(), "{invalid}");
+    }
+}
+
+#[test]
+fn materializes_ordinary_transactions_and_holds_transfers() {
+    let (_directory, mut database) = database();
+    let archive = fixture_zip(&[(
+        "Fixture/Register.tsv",
+        "Account\tFlag\tDate\tPayee\tCategory Group/Category\tCategory Group\tCategory\tMemo\tOutflow\tInflow\tCleared\nCash\tRed\t2026/09/10\tMarket\tLiving/Groceries\tLiving\tGroceries\tFood\t1 234 Ft\t0 Ft\tReconciled\nCash\t\t2026/09/11\tTransfer : Card\tCategory Not Needed\t\t\t\t500 Ft\t0 Ft\tCleared\n",
+    )]);
+    let summary = database
+        .stage_ynab_zip("fixture.zip", &archive, &date("2026-09-11"))
+        .unwrap();
+    let mappings = [AccountImportMapping {
+        source_name: "Cash".into(),
+        kind: crate::ledger::AccountKind::Cash,
+        closed: false,
+        sort_order: 0,
+    }];
+    database
+        .materialize_import_accounts(&summary.batch_id, &summary.account_names, &mappings)
+        .unwrap();
+    database.materialize_import_references(&summary).unwrap();
+    let result = database
+        .materialize_ordinary_transactions(&summary)
+        .unwrap();
+    assert_eq!(result.ordinary_transaction_count, 1);
+    assert_eq!(result.held_transfer_row_count, 1);
+    let entry = &database
+        .entries(&database.accounts().unwrap()[0].id)
+        .unwrap()[0];
+    assert_eq!(entry.amount.0, -1234);
+    assert_eq!(entry.entry.memo, "Food");
+    assert_eq!(entry.entry.import_row_id.is_some(), true);
 }

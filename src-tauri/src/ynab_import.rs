@@ -13,7 +13,7 @@ use rusqlite::{params, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fmt,
     io::{Cursor, Read},
 };
@@ -116,6 +116,13 @@ pub struct ImportValidationSummary {
 pub struct ImportedCategory {
     pub group_name: String,
     pub name: String,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionMaterializationSummary {
+    pub ordinary_transaction_count: usize,
+    pub held_transfer_row_count: usize,
 }
 
 /// An explicit owner decision for an imported account. YNAB's current TSV
@@ -285,6 +292,115 @@ impl Database {
         }
         transaction.commit()?;
         Ok(())
+    }
+
+    /// Imports only ordinary register rows. Transfer-like rows remain staged so
+    /// a later pass can prove and create both linked legs together.
+    pub fn materialize_ordinary_transactions(
+        &mut self,
+        summary: &ImportValidationSummary,
+    ) -> ImportResult<TransactionMaterializationSummary> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let staged = {
+            let mut query = transaction.prepare("SELECT id,source_file,row_number,raw_data FROM import_rows WHERE batch_id=?1 ORDER BY source_file,row_number")?;
+            let rows = query
+                .query_map([&summary.batch_id], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, String>(3)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            rows
+        };
+        let mut headers: HashMap<String, Vec<String>> = HashMap::new();
+        let mut ordinary = 0usize;
+        let mut held = 0usize;
+        for (row_id, source_file, row_number, raw_data) in staged {
+            let raw: RawCsvRow = serde_json::from_str(&raw_data)?;
+            if row_number == 1 {
+                headers.insert(
+                    source_file,
+                    raw.cells
+                        .iter()
+                        .map(|value| normalize_header(value))
+                        .collect(),
+                );
+                continue;
+            }
+            let Some(header) = headers.get(&source_file) else {
+                return Err(ImportError::InvalidValue(
+                    "A staged source file has no header row.",
+                ));
+            };
+            if classify(header) != SourceFileKind::Register {
+                continue;
+            }
+            let get = |name| {
+                value(&raw.cells, field(header, name))
+                    .map(str::trim)
+                    .unwrap_or("")
+            };
+            let payee = get("payee");
+            let combined_category = get("category group/category");
+            if is_transfer_like(payee, combined_category) {
+                held += 1;
+                continue;
+            }
+            let account = get("account");
+            let date = parse_export_date(get("date")).ok_or(ImportError::InvalidValue(
+                "An imported transaction has an invalid date.",
+            ))?;
+            let outflow = parse_huf(get("outflow"))?;
+            let inflow = parse_huf(get("inflow"))?;
+            if outflow < 0 || inflow < 0 || (outflow != 0 && inflow != 0) {
+                return Err(ImportError::InvalidValue(
+                    "Imported inflow/outflow columns are inconsistent.",
+                ));
+            }
+            let amount = inflow
+                .checked_sub(outflow)
+                .ok_or(ImportError::InvalidValue(
+                    "An imported HUF amount is out of range.",
+                ))?;
+            let cleared = match get("cleared").to_ascii_lowercase().as_str() {
+                "uncleared" => "uncleared",
+                "cleared" => "cleared",
+                "reconciled" => "reconciled",
+                _ => {
+                    return Err(ImportError::InvalidValue(
+                        "An imported cleared state is unknown.",
+                    ))
+                }
+            };
+            let group = get("category group");
+            let category = get("category");
+            let category_id = (!group.is_empty() && !category.is_empty()).then(|| {
+                import_id(
+                    &summary.batch_id,
+                    "category",
+                    &format!("{group}:{category}"),
+                )
+            });
+            let payee_id =
+                (!payee.is_empty()).then(|| import_id(&summary.batch_id, "payee", payee));
+            let flag = get("flag").to_ascii_lowercase();
+            let flag_id = (!flag.is_empty()).then(|| format!("flag-{flag}"));
+            transaction.execute(
+                "INSERT INTO transactions (id,account_id,transaction_date,payee_id,category_id,memo,flag_id,amount_huf,cleared_state,posting_state,origin,import_row_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'posted','import',?10)",
+                params![import_id(&summary.batch_id, "transaction", &row_id), import_id(&summary.batch_id, "account", account), date.as_str(), payee_id, category_id, get("memo"), flag_id, amount, cleared, row_id],
+            )?;
+            ordinary += 1;
+        }
+        transaction.commit()?;
+        Ok(TransactionMaterializationSummary {
+            ordinary_transaction_count: ordinary,
+            held_transfer_row_count: held,
+        })
     }
 }
 
@@ -659,6 +775,43 @@ fn parse_export_date(value: &str) -> Option<CalendarDate> {
         return None;
     };
     CalendarDate::parse(&format!("{year:0>4}-{month:0>2}-{day:0>2}")).ok()
+}
+
+/// Parses integer HUF text without floating point or rounding. Spaces are
+/// accepted only as digit grouping and the optional currency suffix is exact.
+pub fn parse_huf(value: &str) -> ImportResult<i64> {
+    let trimmed = value.trim();
+    let number = trimmed.strip_suffix("Ft").unwrap_or(trimmed).trim();
+    if number.is_empty() {
+        return Ok(0);
+    }
+    let unsigned = number.strip_prefix('-').unwrap_or(number);
+    let groups = unsigned.split(' ').collect::<Vec<_>>();
+    let grouped_correctly = groups.len() == 1
+        || ((1..=3).contains(&groups[0].len())
+            && groups.iter().skip(1).all(|group| group.len() == 3));
+    if unsigned.is_empty()
+        || !grouped_correctly
+        || groups
+            .iter()
+            .any(|group| group.is_empty() || !group.bytes().all(|byte| byte.is_ascii_digit()))
+    {
+        return Err(ImportError::InvalidValue(
+            "An imported HUF amount has an unsupported format.",
+        ));
+    }
+    let compact = number.replace(' ', "");
+    compact
+        .parse()
+        .map_err(|_| ImportError::InvalidValue("An imported HUF amount is out of range."))
+}
+
+fn is_transfer_like(payee: &str, combined_category: &str) -> bool {
+    let payee = payee.trim().to_ascii_lowercase();
+    let category = combined_category.trim().to_ascii_lowercase();
+    payee.starts_with("transfer")
+        || payee.starts_with("payment")
+        || category == "category not needed"
 }
 
 fn hex_sha256(source: &[u8]) -> String {
