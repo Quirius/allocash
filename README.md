@@ -23,9 +23,12 @@ The v0.1 ledger foundation is implemented:
 - Native Rust tests for migrations, backups, ledger invariants and preserved history,
   plus frontend formatting and desktop-bridge tests.
 
-Account/register screens, transaction entry UI and YNAB import are **not implemented
-yet**. No accounts or financial transactions are seeded; the six specified flag
-definitions are initialized. The next user-facing milestone is the importer and
+Account/register screens, transaction entry UI and mapping YNAB data into the
+ledger are **not implemented yet**. An initial YNAB ZIP staging parser does
+preserve the original archive, hash it, retain every CSV row, and report
+source-level validation warnings without guessing ambiguous financial data. No
+accounts or financial transactions are seeded; the six specified flag definitions
+are initialized. The next user-facing milestone is the importer mapping and
 balance validation. See [the architecture](docs/architecture.md).
 The backend accounting behavior is documented in [accounting rules](docs/accounting-rules.md).
 

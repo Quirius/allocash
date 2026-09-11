@@ -68,11 +68,14 @@ history even when the dates or states differ. Pair operations must use SQL trans
 scheduled instances must be uncleared. `scheduled_origin_id` is opaque provenance
 until recurrence definitions arrive in a later migration. It is not a recurrence rule.
 
-`import_batches` stores the original archive bytes and their hash; `import_rows`
-preserves original rows and file/row coordinates. A transaction can link to its
-source row, with duplicate use of that row rejected. Parsing, actual hash computation,
-cross-export duplicate detection and historical Plan preservation belong to the
-next importer phase. No imported categories or account types are inferred here.
+`import_batches` stores the original archive bytes and their SHA-256 hash;
+`import_rows` preserves every CSV row as its parsed cells with file/row coordinates.
+A transaction can link to its source row, with duplicate use of that row rejected.
+The staging parser rejects malformed CSV atomically, detects exact duplicate
+archives, and reports source-level account/category/payee/flag/date counts and
+warnings. Cross-export transaction duplicate detection, historical Plan
+preservation, and ledger mapping belong to the next importer phase. No imported
+categories or account types are inferred here.
 
 ## Core API
 
