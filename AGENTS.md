@@ -52,6 +52,41 @@ No additional confirmation is needed for these routine commits and pushes.
 - The initial foundation has no release tag yet: basic reconciliation and desktop
   native build verification remain before the v0.1 milestone is complete.
 
+### Codex model-routing policy
+
+The repository-local `.codex/config.toml` sets **GPT-5.6 Terra with High reasoning**
+as the main/coordinator model and **GPT-5.6 Luna with Medium reasoning** as the
+default spawned subagent. Keep the main Allocash session on Terra High for normal
+work; do not require the owner to manually switch the main model for routine tasks.
+
+Model routing happens through spawned subagents. The main thread does **not**
+transparently change its own model mid-session. Choose the cheapest model that can
+reliably complete a subtask and escalate only when the work warrants it:
+
+- **Luna Medium**: repository exploration, searches, documentation, simple tests,
+  CSS/UI polish, repetitive/mechanical edits, straightforward configuration work,
+  and other low-risk tasks with a well-defined solution.
+- **Terra High**: normal feature implementation, refactoring, reconciliation work,
+  ordinary debugging, integration work, and moderately complex code changes.
+- **Sol High**: architecture decisions, accounting invariants, schema/database
+  design, Plan/budget-engine logic, difficult debugging after Terra struggles,
+  consequential financial-logic review, and final review of high-risk changes.
+
+For work that spans difficulty levels, keep Terra as coordinator and delegate the
+appropriate pieces to Luna or Sol. Prefer Luna for inexpensive parallel exploration
+and verification. Use explicit Sol subagents sparingly for tasks where the added
+reasoning quality materially reduces financial or architectural risk.
+
+For consequential accounting, schema, transfer, reconciliation, credit-card, or
+budget-engine changes, request a Sol High review when practical before considering
+the change complete. A Sol review is an additional check; the implementing agent
+must still add and run the relevant deterministic tests.
+
+If subagent model overrides are unavailable or fail in the installed Codex version,
+do not claim that a task ran on another model. Continue on Terra High for ordinary
+work and tell the owner when a critical task would benefit from manually selecting
+Sol instead.
+
 ---
 
 ## 1. Core goals
