@@ -653,7 +653,7 @@ impl Database {
             if let Some(date) = parse_export_date(&row.date) {
                 if latest_transaction_date
                     .as_ref()
-                    .is_none_or(|latest| date.as_str() > latest)
+                    .is_none_or(|latest| date.as_str() > latest.as_str())
                 {
                     latest_transaction_date = Some(date.as_str().to_owned());
                 }
@@ -1106,7 +1106,7 @@ fn summarize(
                         Some(parsed) => {
                             if latest_transaction_date
                                 .as_ref()
-                                .is_none_or(|latest| parsed.as_str() > latest)
+                                .is_none_or(|latest| parsed.as_str() > latest.as_str())
                             {
                                 latest_transaction_date = Some(parsed.as_str().into());
                             }
