@@ -9,6 +9,7 @@ pub enum LedgerError {
     InvalidValue(&'static str),
     NotFound,
     ReconciledConfirmationRequired,
+    ReconciliationOutOfDate,
     AmountOverflow,
     Storage(rusqlite::Error),
 }
@@ -20,6 +21,9 @@ impl fmt::Display for LedgerError {
             Self::NotFound => f.write_str("Ledger record not found."),
             Self::ReconciledConfirmationRequired => {
                 f.write_str("Confirm changes to reconciled history.")
+            }
+            Self::ReconciliationOutOfDate => {
+                f.write_str("The account changed since this reconciliation was reviewed.")
             }
             Self::AmountOverflow => f.write_str("Balance exceeds the signed 64-bit HUF range."),
             Self::Storage(_) => f.write_str("The ledger operation could not be saved or read."),
@@ -354,6 +358,34 @@ pub struct RegisterEntryEdit {
     pub amount: Huf,
     pub cleared_state: ClearedState,
     pub confirmed: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconciliationInput {
+    pub account_id: String,
+    pub as_of: CalendarDate,
+    pub bank_cleared_balance: Huf,
+    pub expected_cleared_balance: Option<Huf>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconciliationReview {
+    pub account_id: String,
+    pub as_of: CalendarDate,
+    pub app_cleared_balance: Huf,
+    pub bank_cleared_balance: Huf,
+    pub adjustment_amount: Huf,
+    pub cleared_entry_count: usize,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconciliationResult {
+    pub review: ReconciliationReview,
+    pub reconciled_entry_count: usize,
+    pub adjustment_transaction_id: Option<String>,
 }
 
 impl Database {
