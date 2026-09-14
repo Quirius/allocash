@@ -178,6 +178,56 @@ fn duplicate_entry_does_not_change_the_existing_transaction() {
 }
 
 #[test]
+fn account_overviews_and_register_rows_resolve_display_data() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("other", AccountKind::Credit, 0))
+        .unwrap();
+    database
+        .create_category_group("living", "Living", 0)
+        .unwrap();
+    database
+        .create_category("groceries", "living", "Groceries", 0)
+        .unwrap();
+    database.create_payee("market", "Market").unwrap();
+
+    let mut purchase = entry("purchase", "cash");
+    purchase.payee_id = Some("market".into());
+    purchase.category_id = Some("groceries".into());
+    purchase.memo = "Weekly shop".into();
+    purchase.flag_id = Some("flag-orange".into());
+    purchase.cleared_state = ClearedState::Reconciled;
+    database.create_transaction(&purchase, Huf(-2500)).unwrap();
+    database
+        .create_transfer(&transfer("payment", 1000, Direction::Outflow))
+        .unwrap();
+
+    let overviews = database.account_overviews(&date("2026-09-10")).unwrap();
+    assert_eq!(overviews.len(), 2);
+    assert_eq!(overviews[0].name, "cash");
+    assert_eq!(overviews[0].balance.working, Huf(-3500));
+    assert_eq!(overviews[1].name, "other");
+    assert_eq!(overviews[1].balance.working, Huf(1000));
+
+    let register = database.register_entries("cash").unwrap();
+    let purchase = register
+        .iter()
+        .find(|transaction| transaction.id == "purchase")
+        .unwrap();
+    assert_eq!(purchase.payee_name.as_deref(), Some("Market"));
+    assert_eq!(purchase.category_group_name.as_deref(), Some("Living"));
+    assert_eq!(purchase.category_name.as_deref(), Some("Groceries"));
+    assert_eq!(purchase.flag_color.as_deref(), Some("orange"));
+    assert_eq!(purchase.cleared_state, ClearedState::Reconciled);
+    assert_eq!(purchase.amount, Huf(-2500));
+    let payment = register
+        .iter()
+        .find(|transaction| transaction.id == "payment-out")
+        .unwrap();
+    assert_eq!(payment.transfer_account_name.as_deref(), Some("other"));
+}
+
+#[test]
 fn either_reconciled_leg_requires_confirmation_for_shared_changes() {
     let (_directory, mut database) = database();
     database

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDate, formatHuf } from "../src/lib/format";
+import { formatDate, formatHuf, localCalendarDate } from "../src/lib/format";
 
 describe("integer HUF formatting", () => {
   it.each([
@@ -27,4 +27,8 @@ describe("timezone-free calendar dates", () => {
       expect(() => formatDate(value)).toThrow();
     },
   );
+
+  it("builds the balance cutoff from local date components", () => {
+    expect(localCalendarDate(new Date(2026, 8, 4, 23, 30))).toBe("2026-09-04");
+  });
 });

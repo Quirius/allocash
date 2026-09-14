@@ -10,7 +10,7 @@ ignored `.tools/` folder for portable Node.js, npm cache, browser checks and pre
 
 ## Current step
 
-The v0.1 ledger foundation is implemented:
+The v0.1 import/register foundation is implemented:
 
 - Dark desktop shell with the Cash / Credit / Loans / Tracking / Closed groups.
 - Versioned SQLite migrations, persistent budget settings and verified backups before upgrades.
@@ -20,18 +20,20 @@ The v0.1 ledger foundation is implemented:
 - Exact as-of balances with separate cleared, uncleared and reconciled totals.
 - Import validation with source/ledger counts, per-account balance buckets, unresolved
   mappings and transfer rows, plus within-export and cross-export duplicate signals.
+- Persisted account sidebar groups and a read-only transaction register with resolved
+  payees, categories, flags, transfers and exact balance totals.
 - Visible database startup/error states and a browser-only layout preview.
 - Exact integer HUF formatting and timezone-free calendar date formatting.
 - Native Rust tests for migrations, backups, ledger invariants and preserved history,
   plus frontend formatting and desktop-bridge tests.
 
-Account/register screens and transaction entry UI are **not implemented yet**.
+Manual transaction entry and register editing are **not implemented yet**.
 The YNAB importer preserves the original archive and every CSV/TSV row, requires
 explicit account mappings, materializes ordinary transactions and only provable
 transfer pairs, and produces an exact as-of validation report without guessing
 ambiguous financial data. No financial data is seeded; the six specified flag
-definitions are initialized. The next milestone is the account sidebar and
-register UI. See [the architecture](docs/architecture.md).
+definitions are initialized. The next milestone is keyboard-friendly manual
+transaction entry. See [the architecture](docs/architecture.md).
 The backend accounting behavior is documented in [accounting rules](docs/accounting-rules.md).
 
 ## Windows development setup

@@ -41,9 +41,9 @@ audit metadata such as creation time.
 
 ## Next implementation slice
 
-Build the account sidebar and transaction register on the validated ledger API.
-The owner's local export still needs a final reference-balance comparison before
-the Plan engine begins.
+Build keyboard-friendly manual transaction entry and register editing on the
+validated ledger API. The owner's local export still needs a final reference-
+balance comparison before the Plan engine begins.
 
 Reconciliation and the Plan engine follow trustworthy imports and account balances.
 The complete scope and financial behavior are in the owner's project brief.
@@ -105,9 +105,12 @@ record, and deleting either leg deletes the complete pair. Memo-only edits need
 no confirmation. Other implemented changes to reconciled amounts/states or paired
 deletions require an explicit confirmation argument from a future UI.
 
-The core API is not exposed as Tauri commands yet; the existing desktop command
-still only opens the database and returns budget details. Import/register work
-will add the user-facing operations after imported balances are validated.
+Read-only Tauri commands expose a workspace snapshot with ordered account groups
+and as-of balances, then resolve one selected account's register rows. Payee,
+category, flag and transfer-counterparty names are joined in Rust so the frontend
+never executes SQL. Financial values remain decimal strings through IPC and become
+`bigint` only for formatting in React. Ledger mutation operations are not exposed
+as desktop commands yet.
 
 The default Cargo feature is `desktop`. Disabling it permits the actual SQLite
 and ledger tests to run without Tauri, using the same database implementation.

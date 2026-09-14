@@ -259,6 +259,35 @@ pub struct AccountBalance {
     pub reconciled: Huf,
 }
 
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountOverview {
+    pub id: String,
+    pub name: String,
+    pub kind: AccountKind,
+    pub sort_order: i64,
+    pub closed: bool,
+    pub balance: AccountBalance,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterEntry {
+    pub id: String,
+    pub date: CalendarDate,
+    pub payee_name: Option<String>,
+    pub category_group_name: Option<String>,
+    pub category_name: Option<String>,
+    pub memo: String,
+    pub flag_name: Option<String>,
+    pub flag_color: Option<String>,
+    pub cleared_state: ClearedState,
+    pub posting_state: PostingState,
+    pub origin: Origin,
+    pub amount: Huf,
+    pub transfer_account_name: Option<String>,
+}
+
 impl Database {
     pub fn create_account(&self, account: &Account) -> LedgerResult<()> {
         self.connection.execute(
@@ -434,6 +463,67 @@ impl Database {
             uncleared: narrow(uncleared)?,
             reconciled: narrow(reconciled)?,
         })
+    }
+
+    pub fn account_overviews(&self, as_of: &CalendarDate) -> LedgerResult<Vec<AccountOverview>> {
+        self.accounts()?
+            .into_iter()
+            .map(|account| {
+                Ok(AccountOverview {
+                    balance: self.account_balance(&account.id, as_of)?,
+                    id: account.id,
+                    name: account.name,
+                    kind: account.kind,
+                    sort_order: account.sort_order,
+                    closed: account.closed,
+                })
+            })
+            .collect()
+    }
+
+    /// Returns display-ready ledger rows while keeping all financial querying
+    /// and foreign-key resolution on the Rust side of the IPC boundary.
+    pub fn register_entries(&self, account_id: &str) -> LedgerResult<Vec<RegisterEntry>> {
+        ensure_account(&self.connection, account_id)?;
+        let mut query = self.connection.prepare(
+            "SELECT le.id,le.transaction_date,p.name,cg.name,c.name,le.memo,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,transfer_account.name
+             FROM ledger_entries le
+             LEFT JOIN payees p ON p.id=le.payee_id
+             LEFT JOIN categories c ON c.id=le.category_id
+             LEFT JOIN category_groups cg ON cg.id=c.group_id
+             LEFT JOIN flags f ON f.id=le.flag_id
+             LEFT JOIN transactions peer ON peer.transfer_id=le.transfer_id AND peer.id<>le.id
+             LEFT JOIN accounts transfer_account ON transfer_account.id=peer.account_id
+             WHERE le.account_id=?1
+             ORDER BY le.transaction_date DESC,le.created_at DESC,le.id DESC",
+        )?;
+        let entries = query
+            .query_map([account_id], |row| {
+                let date: String = row.get(1)?;
+                Ok(RegisterEntry {
+                    id: row.get(0)?,
+                    date: CalendarDate::parse(&date).map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            1,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })?,
+                    payee_name: row.get(2)?,
+                    category_group_name: row.get(3)?,
+                    category_name: row.get(4)?,
+                    memo: row.get(5)?,
+                    flag_name: row.get(6)?,
+                    flag_color: row.get(7)?,
+                    cleared_state: row.get(8)?,
+                    posting_state: row.get(9)?,
+                    origin: row.get(10)?,
+                    amount: Huf(row.get(11)?),
+                    transfer_account_name: row.get(12)?,
+                })
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(entries)
     }
 
     pub fn update_transaction_amount(

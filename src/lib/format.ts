@@ -20,3 +20,10 @@ export function formatDate(value: string): string {
   }
   return `${match[1]}.${match[2]}.${match[3]}.`;
 }
+
+export function localCalendarDate(value = new Date()): string {
+  const year = value.getFullYear().toString().padStart(4, "0");
+  const month = (value.getMonth() + 1).toString().padStart(2, "0");
+  const day = value.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
