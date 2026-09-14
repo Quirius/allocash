@@ -344,3 +344,106 @@ fn materializes_only_unique_reciprocal_transfer_pairs() {
     assert_eq!(database.entries(&cash.id).unwrap()[0].amount.0, -1000);
     assert_eq!(database.entries(&card.id).unwrap()[0].amount.0, 1000);
 }
+
+#[test]
+fn validates_materialized_counts_balances_and_review_items() {
+    let (_directory, mut database) = database();
+    let previous = fixture_zip(&[(
+        "Previous/Register.tsv",
+        "Account\tFlag\tDate\tPayee\tCategory Group/Category\tCategory Group\tCategory\tMemo\tOutflow\tInflow\tCleared\nCash\tRed\t2026/09/10\tMarket\tLiving/Groceries\tLiving\tGroceries\tFood\t1 000 Ft\t0 Ft\tReconciled\n",
+    )]);
+    database
+        .stage_ynab_zip("previous.zip", &previous, &date("2026-09-11"))
+        .unwrap();
+
+    let archive = fixture_zip(&[(
+        "Fixture/Register.tsv",
+        "Account\tFlag\tDate\tPayee\tCategory Group/Category\tCategory Group\tCategory\tMemo\tOutflow\tInflow\tCleared\nCash\tRed\t2026/09/10\tMarket\tLiving/Groceries\tLiving\tGroceries\tFood\t1 000 Ft\t0 Ft\tReconciled\nCash\tRed\t2026/09/10\tMarket\tLiving/Groceries\tLiving\tGroceries\tFood\t1 000 Ft\t0 Ft\tReconciled\nCash\t\t2026/10/10\tLegacy Shop\tLegacy/Unmapped\t\t\tFuture\t50 Ft\t0 Ft\tUncleared\nCash\t\t2026/09/10\tTransfer : Card\tCategory Not Needed\t\t\tSent\t500 Ft\t0 Ft\tCleared\nCard\t\t2026/09/10\tTransfer : Cash\tCategory Not Needed\t\t\tReceived\t0 Ft\t500 Ft\tUncleared\nCash\t\t2026/09/11\tTransfer : Missing\tCategory Not Needed\t\t\tHeld\t25 Ft\t0 Ft\tCleared\n",
+    )]);
+    let summary = database
+        .stage_ynab_zip("fixture.zip", &archive, &date("2026-09-11"))
+        .unwrap();
+    let mappings = [
+        AccountImportMapping {
+            source_name: "Cash".into(),
+            kind: crate::ledger::AccountKind::Cash,
+            closed: false,
+            sort_order: 0,
+        },
+        AccountImportMapping {
+            source_name: "Card".into(),
+            kind: crate::ledger::AccountKind::Credit,
+            closed: false,
+            sort_order: 1,
+        },
+    ];
+    database
+        .materialize_import_accounts(&summary.batch_id, &summary.account_names, &mappings)
+        .unwrap();
+    database.materialize_import_references(&summary).unwrap();
+    database
+        .materialize_ordinary_transactions(&summary)
+        .unwrap();
+    database.materialize_transfers(&summary).unwrap();
+
+    let validation = database
+        .validate_materialized_import(&summary, &date("2026-09-11"))
+        .unwrap();
+    assert_eq!(validation.as_of_date, "2026-09-11");
+    assert_eq!(validation.source_transaction_count, 6);
+    assert_eq!(validation.imported_transaction_count, 5);
+    assert_eq!(validation.unmaterialized_ordinary_row_count, 0);
+    assert_eq!(validation.account_count, 2);
+    assert_eq!(validation.category_count, 1);
+    assert_eq!(
+        validation.latest_transaction_date.as_deref(),
+        Some("2026-10-10")
+    );
+    assert_eq!(validation.future_transaction_count, 1);
+    assert_eq!(validation.unresolved_transfer_row_count, 1);
+    assert_eq!(validation.unknown_category_names, ["Legacy/Unmapped"]);
+    assert!(validation.unknown_flag_names.is_empty());
+    assert_eq!(validation.duplicate_transaction_count, 1);
+    assert_eq!(validation.cross_export_duplicate_transaction_count, 2);
+
+    let cash = validation
+        .account_balances
+        .iter()
+        .find(|balance| balance.account_name == "Cash")
+        .unwrap();
+    assert_eq!(cash.working.0, -2500);
+    assert_eq!(cash.cleared.0, -2500);
+    assert_eq!(cash.uncleared.0, 0);
+    assert_eq!(cash.reconciled.0, -2000);
+    let card = validation
+        .account_balances
+        .iter()
+        .find(|balance| balance.account_name == "Card")
+        .unwrap();
+    assert_eq!(card.working.0, 500);
+    assert_eq!(card.cleared.0, 0);
+    assert_eq!(card.uncleared.0, 500);
+    assert_eq!(card.reconciled.0, 0);
+}
+
+#[test]
+fn validation_reports_unknown_flags_before_mapping() {
+    let (_directory, mut database) = database();
+    let archive = fixture_zip(&[(
+        "Fixture/Register.tsv",
+        "Account\tFlag\tDate\tPayee\tOutflow\tInflow\tCleared\nCash\tTeal - Review\t2026/09/10\tMarket\t100 Ft\t0 Ft\tCleared\n",
+    )]);
+    let summary = database
+        .stage_ynab_zip("fixture.zip", &archive, &date("2026-09-11"))
+        .unwrap();
+
+    let validation = database
+        .validate_materialized_import(&summary, &date("2026-09-11"))
+        .unwrap();
+    assert_eq!(validation.unknown_flag_names, ["Teal - Review"]);
+    assert_eq!(validation.unmaterialized_ordinary_row_count, 1);
+    assert!(validation
+        .warnings
+        .iter()
+        .any(|warning| warning.contains("flag")));
+}

@@ -1209,11 +1209,12 @@ Do not commit the owner's real financial export to a public repository.
 
 Start with **v0.1**.
 
-Progress: the desktop scaffold, schema v2 and ledger foundation (steps 1–7) are
-implemented, including tested account balances and atomic transfer operations.
-The next phase is steps 8–9: the YNAB import parser and validation summary.
-The account/register UI, imported balance comparison and desktop MSVC build
-verification remain outstanding. Run `npm run test:core` for the native ledger tests.
+Progress: the desktop scaffold, schema v2, ledger foundation and importer
+(steps 1–9) are implemented, including explicit account mapping, conservative
+transfer pairing and an auditable as-of validation summary. The next phase is
+steps 10–11: the account sidebar and transaction register. Comparison against
+the owner's YNAB reference balances and desktop MSVC build verification remain
+outstanding. Run `npm run test:core` for the native ledger/import tests.
 
 Recommended implementation sequence:
 

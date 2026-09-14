@@ -14,10 +14,10 @@ Windows application data directory.
 Read [AGENTS (1).md](<AGENTS (1).md>) before making changes. It is the owner's
 authoritative product brief and implementation guidance.
 
-Current stage: v0.1 ledger foundation implemented. Schema version 2, verified
-pre-migration backups, typed ledger operations and as-of account balances have
-native Rust tests. The next phase is the YNAB importer and validation summary
-(section 40, steps 8–9), followed by the account/register UI. Keep the Plan engine
+Current stage: v0.1 importer foundation implemented. Schema version 2, verified
+pre-migration backups, typed ledger operations, YNAB staging/materialization and
+as-of import validation have native Rust tests. The next phase is the account
+sidebar and transaction register (section 40, steps 10–11). Keep the Plan engine
 out of scope until the import and register layers have been validated.
 
 ## Git workflow

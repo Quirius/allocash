@@ -41,10 +41,9 @@ audit metadata such as creation time.
 
 ## Next implementation slice
 
-1. Preserve raw YNAB export files and parse into staging data. Never silently drop a
-   row or guess an ambiguous account type, flag, transfer or scheduled entry.
-2. Validate imported counts and as-of account balances with anonymized fixtures,
-   then the owner's local export. Only then expose register/manual entry workflows.
+Build the account sidebar and transaction register on the validated ledger API.
+The owner's local export still needs a final reference-balance comparison before
+the Plan engine begins.
 
 Reconciliation and the Plan engine follow trustworthy imports and account balances.
 The complete scope and financial behavior are in the owner's project brief.
@@ -87,6 +86,14 @@ validated; no one-sided account movement is written as ordinary spending.
 Transfer materialization requires one unique reciprocal leg with the same date
 and exact opposite nonzero amount. Zero-value, missing and ambiguous pairs stay
 in raw staging and appear in the unresolved-row count.
+
+Post-materialization validation keeps source and imported transaction counts
+separate, reports any ordinary or transfer-like rows still unmaterialized, and
+calculates working, cleared, uncleared and reconciled balances per mapped account
+as of an explicit calendar date. It also reports future rows, unknown category or
+flag values, repeated rows within an export, and matching rows across staged
+exports. Future transactions remain in history but are excluded from earlier
+as-of balances.
 
 ## Core API
 

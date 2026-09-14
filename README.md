@@ -18,18 +18,20 @@ The v0.1 ledger foundation is implemented:
 - Transfers with one shared amount and two linked entries, plus raw import staging tables.
 - Typed account/transaction operations, paired transfer edits/deletion and reconciled-edit confirmation.
 - Exact as-of balances with separate cleared, uncleared and reconciled totals.
+- Import validation with source/ledger counts, per-account balance buckets, unresolved
+  mappings and transfer rows, plus within-export and cross-export duplicate signals.
 - Visible database startup/error states and a browser-only layout preview.
 - Exact integer HUF formatting and timezone-free calendar date formatting.
 - Native Rust tests for migrations, backups, ledger invariants and preserved history,
   plus frontend formatting and desktop-bridge tests.
 
-Account/register screens, transaction entry UI and mapping YNAB data into the
-ledger are **not implemented yet**. An initial YNAB ZIP staging parser does
-preserve the original archive, hash it, retain every CSV/TSV row, and report
-source-level validation warnings without guessing ambiguous financial data. No
-accounts or financial transactions are seeded; the six specified flag definitions
-are initialized. The next user-facing milestone is the importer mapping and
-balance validation. See [the architecture](docs/architecture.md).
+Account/register screens and transaction entry UI are **not implemented yet**.
+The YNAB importer preserves the original archive and every CSV/TSV row, requires
+explicit account mappings, materializes ordinary transactions and only provable
+transfer pairs, and produces an exact as-of validation report without guessing
+ambiguous financial data. No financial data is seeded; the six specified flag
+definitions are initialized. The next milestone is the account sidebar and
+register UI. See [the architecture](docs/architecture.md).
 The backend accounting behavior is documented in [accounting rules](docs/accounting-rules.md).
 
 ## Windows development setup

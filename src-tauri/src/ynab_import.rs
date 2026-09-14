@@ -6,10 +6,10 @@
 //! every CSV or TSV record are retained for a later, auditable import.
 use crate::{
     database::Database,
-    ledger::{AccountKind, CalendarDate},
+    ledger::{AccountKind, CalendarDate, Huf, LedgerError},
 };
 use csv::{ReaderBuilder, StringRecord};
-use rusqlite::{params, OptionalExtension, Transaction, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -30,6 +30,7 @@ pub enum ImportError {
         message: String,
     },
     DuplicateArchive,
+    Ledger(LedgerError),
     Storage(rusqlite::Error),
     Serialization(serde_json::Error),
 }
@@ -47,6 +48,7 @@ impl fmt::Display for ImportError {
             Self::DuplicateArchive => {
                 formatter.write_str("This exact YNAB export has already been staged.")
             }
+            Self::Ledger(_) => formatter.write_str("The imported ledger could not be validated."),
             Self::Storage(_) => formatter.write_str("The import could not be saved."),
             Self::Serialization(_) => {
                 formatter.write_str("The import rows could not be preserved.")
@@ -59,6 +61,11 @@ impl std::error::Error for ImportError {}
 impl From<rusqlite::Error> for ImportError {
     fn from(error: rusqlite::Error) -> Self {
         Self::Storage(error)
+    }
+}
+impl From<LedgerError> for ImportError {
+    fn from(error: LedgerError) -> Self {
+        Self::Ledger(error)
     }
 }
 impl From<serde_json::Error> for ImportError {
@@ -132,6 +139,40 @@ pub struct TransferMaterializationSummary {
     pub unresolved_row_count: usize,
 }
 
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportedAccountBalance {
+    pub account_name: String,
+    pub working: Huf,
+    pub cleared: Huf,
+    pub uncleared: Huf,
+    pub reconciled: Huf,
+}
+
+/// Auditable source-to-ledger checks after the explicit mapping passes run.
+/// Counts remain separate so an incomplete import cannot look successful.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MaterializedImportValidationSummary {
+    pub batch_id: String,
+    pub as_of_date: String,
+    pub source_transaction_count: usize,
+    pub imported_transaction_count: usize,
+    pub unmaterialized_ordinary_row_count: usize,
+    pub account_count: usize,
+    pub category_count: usize,
+    pub account_balances: Vec<ImportedAccountBalance>,
+    pub latest_transaction_date: Option<String>,
+    pub future_transaction_count: usize,
+    pub unresolved_transfer_row_count: usize,
+    pub unknown_category_names: Vec<String>,
+    pub unknown_flag_names: Vec<String>,
+    pub duplicate_transaction_count: usize,
+    pub cross_export_duplicate_transaction_count: usize,
+    pub source_warnings: Vec<String>,
+    pub warnings: Vec<String>,
+}
+
 struct TransferCandidate {
     row_id: String,
     account: String,
@@ -142,6 +183,35 @@ struct TransferCandidate {
     memo: String,
     flag: String,
     cleared: &'static str,
+}
+
+#[derive(Clone)]
+struct RegisterRow {
+    row_id: String,
+    account: String,
+    date: String,
+    payee: String,
+    category_group: String,
+    category: String,
+    combined_category: String,
+    memo: String,
+    outflow: String,
+    inflow: String,
+    flag: String,
+    cleared: String,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct RegisterSignature {
+    account: String,
+    date: String,
+    payee: String,
+    category: String,
+    memo: String,
+    outflow: String,
+    inflow: String,
+    flag: String,
+    cleared: String,
 }
 
 /// An explicit owner decision for an imported account. YNAB's current TSV
@@ -554,6 +624,223 @@ impl Database {
             paired_transfer_count: pairs.len(),
             unresolved_row_count: used.iter().filter(|used| !**used).count(),
         })
+    }
+
+    /// Compares one staged export with the ledger records created from it.
+    /// Balances are calculated as of the supplied calendar date, so future
+    /// imported entries remain preserved without affecting today's totals.
+    pub fn validate_materialized_import(
+        &self,
+        summary: &ImportValidationSummary,
+        as_of: &CalendarDate,
+    ) -> ImportResult<MaterializedImportValidationSummary> {
+        let exists: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM import_batches WHERE id=?1)",
+            [&summary.batch_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(ImportError::InvalidValue(
+                "The staged import batch was not found.",
+            ));
+        }
+
+        let register_rows =
+            parse_register_rows(load_staged_rows(&self.connection, &summary.batch_id)?)?;
+        let mut latest_transaction_date: Option<String> = None;
+        let mut future_transaction_count = 0usize;
+        for row in &register_rows {
+            if let Some(date) = parse_export_date(&row.date) {
+                if latest_transaction_date
+                    .as_ref()
+                    .is_none_or(|latest| date.as_str() > latest)
+                {
+                    latest_transaction_date = Some(date.as_str().to_owned());
+                }
+                if date.as_str() > as_of.as_str() {
+                    future_transaction_count += 1;
+                }
+            }
+        }
+        let materialized_row_ids = {
+            let mut query = self.connection.prepare(
+                "SELECT t.import_row_id FROM transactions t JOIN import_rows r ON r.id=t.import_row_id WHERE r.batch_id=?1 ORDER BY t.import_row_id",
+            )?;
+            let rows = query
+                .query_map([&summary.batch_id], |row| row.get::<_, String>(0))?
+                .collect::<Result<HashSet<_>, _>>()?;
+            rows
+        };
+
+        let mut account_balances = Vec::new();
+        for account_name in &summary.account_names {
+            let account_id = import_id(&summary.batch_id, "account", account_name);
+            let present: bool = self.connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1)",
+                [&account_id],
+                |row| row.get(0),
+            )?;
+            if present {
+                let balance = self.account_balance(&account_id, as_of)?;
+                account_balances.push(ImportedAccountBalance {
+                    account_name: account_name.clone(),
+                    working: balance.working,
+                    cleared: balance.cleared,
+                    uncleared: balance.uncleared,
+                    reconciled: balance.reconciled,
+                });
+            }
+        }
+
+        let mut category_count = 0usize;
+        let mut known_category_ids = HashSet::new();
+        for category in &summary.categories {
+            let category_id = import_id(
+                &summary.batch_id,
+                "category",
+                &format!("{}:{}", category.group_name, category.name),
+            );
+            let present: bool = self.connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
+                [&category_id],
+                |row| row.get(0),
+            )?;
+            if present {
+                category_count += 1;
+                known_category_ids.insert(category_id);
+            }
+        }
+
+        let mut unknown_categories = BTreeSet::new();
+        let mut unresolved_transfer_row_count = 0usize;
+        let mut unmaterialized_ordinary_row_count = 0usize;
+        for row in &register_rows {
+            let materialized = materialized_row_ids.contains(&row.row_id);
+            if is_transfer_like(&row.payee, &row.combined_category) {
+                if !materialized {
+                    unresolved_transfer_row_count += 1;
+                }
+                continue;
+            }
+            if !materialized {
+                unmaterialized_ordinary_row_count += 1;
+            }
+            if !row.category_group.is_empty() && !row.category.is_empty() {
+                let category_id = import_id(
+                    &summary.batch_id,
+                    "category",
+                    &format!("{}:{}", row.category_group, row.category),
+                );
+                if !known_category_ids.contains(&category_id) {
+                    unknown_categories.insert(format!("{} / {}", row.category_group, row.category));
+                }
+            } else if !row.combined_category.is_empty()
+                && !row
+                    .combined_category
+                    .eq_ignore_ascii_case("category not needed")
+            {
+                unknown_categories.insert(row.combined_category.clone());
+            } else if !row.category_group.is_empty() || !row.category.is_empty() {
+                unknown_categories.insert(format!("{} / {}", row.category_group, row.category));
+            }
+        }
+
+        let signatures = register_rows
+            .iter()
+            .map(RegisterRow::signature)
+            .collect::<Vec<_>>();
+        let mut unique_signatures = HashSet::new();
+        let duplicate_transaction_count = signatures
+            .iter()
+            .filter(|signature| !unique_signatures.insert((*signature).clone()))
+            .count();
+        let other_signatures = self.other_register_signatures(&summary.batch_id)?;
+        let cross_export_duplicate_transaction_count = signatures
+            .iter()
+            .filter(|signature| other_signatures.contains(*signature))
+            .count();
+        let unknown_flag_names = summary
+            .flag_names
+            .iter()
+            .filter(|flag| source_flag_color(flag).is_none())
+            .cloned()
+            .collect::<Vec<_>>();
+
+        let mut warnings = Vec::new();
+        if account_balances.len() != summary.account_names.len() {
+            warnings.push("Not every staged account has been materialized.".into());
+        }
+        if category_count != summary.categories.len() {
+            warnings.push("Not every structured category has been materialized.".into());
+        }
+        if unmaterialized_ordinary_row_count > 0 {
+            warnings.push(format!(
+                "{unmaterialized_ordinary_row_count} ordinary register row(s) have not been materialized."
+            ));
+        }
+        if unresolved_transfer_row_count > 0 {
+            warnings.push(format!(
+                "{unresolved_transfer_row_count} transfer-like row(s) remain unresolved."
+            ));
+        }
+        if !unknown_categories.is_empty() {
+            warnings
+                .push("Some imported category values are not mapped to ledger categories.".into());
+        }
+        if !unknown_flag_names.is_empty() {
+            warnings.push("Some imported flag values are not recognized.".into());
+        }
+        if duplicate_transaction_count > 0 {
+            warnings.push(format!(
+                "{duplicate_transaction_count} repeated transaction row(s) were found inside this export."
+            ));
+        }
+        if cross_export_duplicate_transaction_count > 0 {
+            warnings.push(format!(
+                "{cross_export_duplicate_transaction_count} transaction row(s) also appear in another staged export."
+            ));
+        }
+
+        Ok(MaterializedImportValidationSummary {
+            batch_id: summary.batch_id.clone(),
+            as_of_date: as_of.as_str().to_owned(),
+            source_transaction_count: register_rows.len(),
+            imported_transaction_count: materialized_row_ids.len(),
+            unmaterialized_ordinary_row_count,
+            account_count: account_balances.len(),
+            category_count,
+            account_balances,
+            latest_transaction_date,
+            future_transaction_count,
+            unresolved_transfer_row_count,
+            unknown_category_names: unknown_categories.into_iter().collect(),
+            unknown_flag_names,
+            duplicate_transaction_count,
+            cross_export_duplicate_transaction_count,
+            source_warnings: summary.warnings.clone(),
+            warnings,
+        })
+    }
+
+    fn other_register_signatures(
+        &self,
+        current_batch_id: &str,
+    ) -> ImportResult<HashSet<RegisterSignature>> {
+        let mut query = self
+            .connection
+            .prepare("SELECT id FROM import_batches WHERE id<>?1 ORDER BY created_at,id")?;
+        let batch_ids = query
+            .query_map([current_batch_id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut signatures = HashSet::new();
+        for batch_id in batch_ids {
+            signatures.extend(
+                parse_register_rows(load_staged_rows(&self.connection, &batch_id)?)?
+                    .iter()
+                    .map(RegisterRow::signature),
+            );
+        }
+        Ok(signatures)
     }
 }
 
@@ -1007,15 +1294,94 @@ fn reciprocal(left: &TransferCandidate, right: &TransferCandidate) -> bool {
         && left.amount.checked_neg() == Some(right.amount)
 }
 
+impl RegisterRow {
+    fn signature(&self) -> RegisterSignature {
+        let date = parse_export_date(&self.date)
+            .map(|date| date.as_str().to_owned())
+            .unwrap_or_else(|| self.date.trim().to_owned());
+        let category = if !self.category_group.is_empty() || !self.category.is_empty() {
+            format!("{}:{}", self.category_group, self.category)
+        } else {
+            self.combined_category.clone()
+        };
+        RegisterSignature {
+            account: self.account.clone(),
+            date,
+            payee: self.payee.clone(),
+            category,
+            memo: self.memo.clone(),
+            outflow: canonical_amount(&self.outflow),
+            inflow: canonical_amount(&self.inflow),
+            flag: source_flag_color(&self.flag)
+                .unwrap_or(self.flag.trim())
+                .to_ascii_lowercase(),
+            cleared: self.cleared.to_ascii_lowercase(),
+        }
+    }
+}
+
+fn canonical_amount(value: &str) -> String {
+    parse_huf(value)
+        .map(|amount| amount.to_string())
+        .unwrap_or_else(|_| value.trim().to_owned())
+}
+
 type StagedRow = (String, String, i64, String);
 
-fn load_staged_rows(transaction: &Transaction<'_>, batch_id: &str) -> ImportResult<Vec<StagedRow>> {
-    let mut query = transaction.prepare("SELECT id,source_file,row_number,raw_data FROM import_rows WHERE batch_id=?1 ORDER BY source_file,row_number")?;
+fn load_staged_rows(connection: &Connection, batch_id: &str) -> ImportResult<Vec<StagedRow>> {
+    let mut query = connection.prepare("SELECT id,source_file,row_number,raw_data FROM import_rows WHERE batch_id=?1 ORDER BY source_file,row_number")?;
     let rows = query
         .query_map([batch_id], |row| {
             Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+fn parse_register_rows(staged: Vec<StagedRow>) -> ImportResult<Vec<RegisterRow>> {
+    let mut headers: HashMap<String, Vec<String>> = HashMap::new();
+    let mut rows = Vec::new();
+    for (row_id, source_file, row_number, raw_data) in staged {
+        let raw: RawCsvRow = serde_json::from_str(&raw_data)?;
+        if row_number == 1 {
+            headers.insert(
+                source_file,
+                raw.cells
+                    .iter()
+                    .map(|value| normalize_header(value))
+                    .collect(),
+            );
+            continue;
+        }
+        let Some(header) = headers.get(&source_file) else {
+            return Err(ImportError::InvalidValue(
+                "A staged source file has no header row.",
+            ));
+        };
+        if classify(header) != SourceFileKind::Register {
+            continue;
+        }
+        let get = |name| {
+            value(&raw.cells, field(header, name))
+                .map(str::trim)
+                .unwrap_or("")
+                .to_owned()
+        };
+        rows.push(RegisterRow {
+            row_id,
+            account: get("account"),
+            date: get("date"),
+            payee: get("payee"),
+            category_group: get("category group"),
+            category: get("category"),
+            combined_category: get("category group/category"),
+            memo: get("memo"),
+            outflow: get("outflow"),
+            inflow: get("inflow"),
+            flag: get("flag"),
+            cleared: get("cleared"),
+        });
+    }
     Ok(rows)
 }
 
