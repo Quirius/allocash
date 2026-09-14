@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDate, formatHuf, localCalendarDate } from "../src/lib/format";
+import { formatDate, formatHuf, localCalendarDate, parseHufInput } from "../src/lib/format";
 
 describe("integer HUF formatting", () => {
   it.each([
@@ -11,6 +11,19 @@ describe("integer HUF formatting", () => {
   ])("formats %s without losing precision", (value, expected) => {
     expect(formatHuf(value)).toBe(expected);
   });
+
+  it.each([
+    ["1", 1n],
+    ["12 500", 12500n],
+    ["9 223 372 036 854 775 807 Ft", 9223372036854775807n],
+  ])("parses manual input %s exactly", (value, expected) => {
+    expect(parseHufInput(value)).toBe(expected);
+  });
+
+  it.each(["", "0", "-1", "1.5", "1,000", "12 34", "9223372036854775808"])(
+    "rejects invalid manual amount %s",
+    (value) => expect(() => parseHufInput(value)).toThrow(),
+  );
 });
 
 describe("timezone-free calendar dates", () => {

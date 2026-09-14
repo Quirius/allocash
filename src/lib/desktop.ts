@@ -41,13 +41,70 @@ export interface RegisterEntry {
   postingState: PostingState;
   origin: TransactionOrigin;
   amount: string;
+  transferId: string | null;
   transferAccountName: string | null;
+}
+
+export interface PayeeOption {
+  id: string;
+  name: string;
+  lastCategoryId: string | null;
+  lastDirection: "outflow" | "inflow" | null;
+}
+
+export interface CategoryOption {
+  id: string;
+  groupName: string;
+  name: string;
+}
+
+export interface FlagOption {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface TransactionFormOptions {
+  payees: PayeeOption[];
+  categories: CategoryOption[];
+  flags: FlagOption[];
 }
 
 export interface WorkspaceSnapshot {
   budget: BudgetInfo;
   accounts: AccountOverview[];
+  transactionOptions: TransactionFormOptions;
 }
+
+export interface ManualTransactionInput {
+  accountId: string;
+  date: string;
+  payeeName: string | null;
+  categoryId: string | null;
+  memo: string;
+  flagId: string | null;
+  amount: string;
+}
+
+export interface ManualTransferInput {
+  accountId: string;
+  counterpartAccountId: string;
+  date: string;
+  memo: string;
+  flagId: string | null;
+  amount: string;
+  direction: "outflow" | "inflow";
+}
+
+export interface RegisterEntryEdit {
+  id: string;
+  memo: string;
+  amount: string;
+  clearedState: ClearedState;
+  confirmed: boolean;
+}
+
+export const RECONCILED_CONFIRMATION_REQUIRED = "reconciled_confirmation_required";
 
 export async function loadBudgetInfo(): Promise<BudgetInfo | null> {
   // Browser preview must never pretend that a budget was opened or saved.
@@ -63,4 +120,20 @@ export async function loadWorkspace(asOf: string): Promise<WorkspaceSnapshot | n
 export async function loadAccountRegister(accountId: string): Promise<RegisterEntry[] | null> {
   if (!isTauri()) return null;
   return invoke<RegisterEntry[]>("get_account_register", { accountId });
+}
+
+export async function createManualTransaction(input: ManualTransactionInput): Promise<string> {
+  return invoke<string>("create_manual_transaction", { input });
+}
+
+export async function createManualTransfer(input: ManualTransferInput): Promise<string> {
+  return invoke<string>("create_manual_transfer", { input });
+}
+
+export async function updateRegisterEntry(edit: RegisterEntryEdit): Promise<void> {
+  return invoke("update_register_entry", { edit });
+}
+
+export async function deleteRegisterEntry(id: string, confirmed: boolean): Promise<void> {
+  return invoke("delete_register_entry", { id, confirmed });
 }

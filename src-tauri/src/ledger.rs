@@ -285,7 +285,75 @@ pub struct RegisterEntry {
     pub posting_state: PostingState,
     pub origin: Origin,
     pub amount: Huf,
+    pub transfer_id: Option<String>,
     pub transfer_account_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PayeeOption {
+    pub id: String,
+    pub name: String,
+    pub last_category_id: Option<String>,
+    pub last_direction: Option<Direction>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryOption {
+    pub id: String,
+    pub group_name: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlagOption {
+    pub id: String,
+    pub name: String,
+    pub color: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionFormOptions {
+    pub payees: Vec<PayeeOption>,
+    pub categories: Vec<CategoryOption>,
+    pub flags: Vec<FlagOption>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualTransactionDraft {
+    pub account_id: String,
+    pub date: CalendarDate,
+    pub payee_name: Option<String>,
+    pub category_id: Option<String>,
+    pub memo: String,
+    pub flag_id: Option<String>,
+    pub amount: Huf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManualTransferInput {
+    pub account_id: String,
+    pub counterpart_account_id: String,
+    pub date: CalendarDate,
+    pub memo: String,
+    pub flag_id: Option<String>,
+    pub amount: Huf,
+    pub direction: Direction,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterEntryEdit {
+    pub id: String,
+    pub memo: String,
+    pub amount: Huf,
+    pub cleared_state: ClearedState,
+    pub confirmed: bool,
 }
 
 impl Database {
@@ -486,7 +554,7 @@ impl Database {
     pub fn register_entries(&self, account_id: &str) -> LedgerResult<Vec<RegisterEntry>> {
         ensure_account(&self.connection, account_id)?;
         let mut query = self.connection.prepare(
-            "SELECT le.id,le.transaction_date,p.name,cg.name,c.name,le.memo,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,transfer_account.name
+            "SELECT le.id,le.transaction_date,p.name,cg.name,c.name,le.memo,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,le.transfer_id,transfer_account.name
              FROM ledger_entries le
              LEFT JOIN payees p ON p.id=le.payee_id
              LEFT JOIN categories c ON c.id=le.category_id
@@ -519,11 +587,223 @@ impl Database {
                     posting_state: row.get(9)?,
                     origin: row.get(10)?,
                     amount: Huf(row.get(11)?),
-                    transfer_account_name: row.get(12)?,
+                    transfer_id: row.get(12)?,
+                    transfer_account_name: row.get(13)?,
                 })
             })?
             .collect::<Result<_, _>>()?;
         Ok(entries)
+    }
+
+    pub fn transaction_form_options(&self) -> LedgerResult<TransactionFormOptions> {
+        let payees = {
+            let mut query = self.connection.prepare(
+                "SELECT id,name,last_category_id,last_direction FROM payees WHERE archived=0 ORDER BY name COLLATE NOCASE,id",
+            )?;
+            let rows = query
+                .query_map([], |row| {
+                    Ok(PayeeOption {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        last_category_id: row.get(2)?,
+                        last_direction: row.get(3)?,
+                    })
+                })?
+                .collect::<Result<_, _>>()?;
+            rows
+        };
+        let categories = {
+            let mut query = self.connection.prepare(
+                "SELECT c.id,g.name,c.name FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE c.hidden=0 AND g.hidden=0 ORDER BY g.sort_order,c.sort_order,c.id",
+            )?;
+            let rows = query
+                .query_map([], |row| {
+                    Ok(CategoryOption {
+                        id: row.get(0)?,
+                        group_name: row.get(1)?,
+                        name: row.get(2)?,
+                    })
+                })?
+                .collect::<Result<_, _>>()?;
+            rows
+        };
+        let flags = {
+            let mut query = self
+                .connection
+                .prepare("SELECT id,name,color FROM flags ORDER BY sort_order")?;
+            let rows = query
+                .query_map([], |row| {
+                    Ok(FlagOption {
+                        id: row.get(0)?,
+                        name: row.get(1)?,
+                        color: row.get(2)?,
+                    })
+                })?
+                .collect::<Result<_, _>>()?;
+            rows
+        };
+        Ok(TransactionFormOptions {
+            payees,
+            categories,
+            flags,
+        })
+    }
+
+    pub fn create_manual_transaction(
+        &mut self,
+        draft: &ManualTransactionDraft,
+    ) -> LedgerResult<String> {
+        if draft.amount.0 == 0 {
+            return Err(LedgerError::InvalidValue(
+                "A manual transaction amount cannot be zero.",
+            ));
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_open_account(&transaction, &draft.account_id)?;
+        let id = random_id(&transaction, "manual-transaction")?;
+        let payee_id = resolve_payee(&transaction, draft.payee_name.as_deref())?;
+        let mut entry = Entry::manual(&id, &draft.account_id, draft.date.clone());
+        entry.payee_id = payee_id.clone();
+        entry.category_id = draft.category_id.clone();
+        entry.memo = draft.memo.trim().to_owned();
+        entry.flag_id = draft.flag_id.clone();
+        insert_entry(&transaction, &entry, Some(draft.amount), None)?;
+        if let Some(payee_id) = payee_id {
+            let direction = if draft.amount.0 < 0 {
+                Direction::Outflow
+            } else {
+                Direction::Inflow
+            };
+            transaction.execute(
+                "UPDATE payees SET last_category_id=?2,last_direction=?3 WHERE id=?1",
+                params![payee_id, draft.category_id, direction],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(id)
+    }
+
+    pub fn create_manual_transfer(&mut self, input: &ManualTransferInput) -> LedgerResult<String> {
+        if input.account_id == input.counterpart_account_id {
+            return Err(LedgerError::InvalidValue(
+                "A transfer needs two different accounts.",
+            ));
+        }
+        if input.amount.0 <= 0 {
+            return Err(LedgerError::InvalidValue(
+                "Transfer amount must be positive.",
+            ));
+        }
+        ensure_open_account(&self.connection, &input.account_id)?;
+        ensure_open_account(&self.connection, &input.counterpart_account_id)?;
+        let transfer_id = random_id(&self.connection, "manual-transfer")?;
+        let entered_id = random_id(&self.connection, "manual-transaction")?;
+        let counterpart_id = random_id(&self.connection, "manual-transaction")?;
+        let mut entered = Entry::manual(&entered_id, &input.account_id, input.date.clone());
+        let mut counterpart = Entry::manual(
+            &counterpart_id,
+            &input.counterpart_account_id,
+            input.date.clone(),
+        );
+        for entry in [&mut entered, &mut counterpart] {
+            entry.memo = input.memo.trim().to_owned();
+            entry.flag_id = input.flag_id.clone();
+        }
+        self.create_transfer(&TransferDraft::manual(
+            &transfer_id,
+            input.amount,
+            entered,
+            counterpart,
+            input.direction,
+        ))?;
+        Ok(entered_id)
+    }
+
+    /// Applies the editable register fields atomically. Transfer amounts stay
+    /// on the shared pair record, while memo and clearing state belong to the
+    /// selected leg. Any financial change touching reconciled history requires
+    /// an explicit retry with confirmation; memo-only edits never do.
+    pub fn update_register_entry(&mut self, edit: &RegisterEntryEdit) -> LedgerResult<()> {
+        if edit.amount.0 == 0 {
+            return Err(LedgerError::InvalidValue(
+                "A transaction amount cannot be zero.",
+            ));
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let current = transaction
+            .query_row(
+                "SELECT transfer_id,transfer_direction,cleared_state,memo,amount_huf FROM ledger_entries WHERE id=?1",
+                [&edit.id],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, Option<Direction>>(1)?,
+                        row.get::<_, ClearedState>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, i64>(4)?,
+                    ))
+                },
+            )
+            .optional()?
+            .ok_or(LedgerError::NotFound)?;
+        let amount_changed = current.4 != edit.amount.0;
+        let state_changed = current.2 != edit.cleared_state;
+        let reconciled_pair = if let Some(transfer_id) = current.0.as_deref() {
+            transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM transactions WHERE transfer_id=?1 AND cleared_state='reconciled')",
+                [transfer_id],
+                |row| row.get(0),
+            )?
+        } else {
+            false
+        };
+        let confirmation_required = (state_changed && current.2 == ClearedState::Reconciled)
+            || (amount_changed && (current.2 == ClearedState::Reconciled || reconciled_pair));
+        confirm_reconciled(confirmation_required, edit.confirmed)?;
+
+        if let Some(transfer_id) = current.0 {
+            let direction = current.1.ok_or(LedgerError::InvalidValue(
+                "A transfer direction is missing.",
+            ))?;
+            let valid_sign = match direction {
+                Direction::Outflow => edit.amount.0 < 0,
+                Direction::Inflow => edit.amount.0 > 0,
+            };
+            if !valid_sign {
+                return Err(LedgerError::InvalidValue(
+                    "A transfer cannot reverse direction during amount editing.",
+                ));
+            }
+            if amount_changed {
+                transaction.execute(
+                    "UPDATE transfers SET amount_huf=?2 WHERE id=?1",
+                    params![
+                        transfer_id,
+                        edit.amount
+                            .0
+                            .checked_abs()
+                            .ok_or(LedgerError::AmountOverflow)?
+                    ],
+                )?;
+            }
+        } else if amount_changed {
+            transaction.execute(
+                "UPDATE transactions SET amount_huf=?2 WHERE id=?1",
+                params![edit.id, edit.amount.0],
+            )?;
+        }
+        if current.3 != edit.memo || state_changed {
+            transaction.execute(
+                "UPDATE transactions SET memo=?2,cleared_state=?3 WHERE id=?1",
+                params![edit.id, edit.memo.trim(), edit.cleared_state],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
     }
 
     pub fn update_transaction_amount(
@@ -652,6 +932,47 @@ fn ensure_account(connection: &Connection, id: &str) -> LedgerResult<()> {
         return Err(LedgerError::NotFound);
     }
     Ok(())
+}
+fn ensure_open_account(connection: &Connection, id: &str) -> LedgerResult<()> {
+    let closed = connection
+        .query_row("SELECT closed FROM accounts WHERE id=?1", [id], |row| {
+            row.get::<_, bool>(0)
+        })
+        .optional()?
+        .ok_or(LedgerError::NotFound)?;
+    if closed {
+        Err(LedgerError::InvalidValue(
+            "Transactions cannot be added to a closed account.",
+        ))
+    } else {
+        Ok(())
+    }
+}
+fn random_id(connection: &Connection, prefix: &str) -> LedgerResult<String> {
+    let suffix: String =
+        connection.query_row("SELECT lower(hex(randomblob(16)))", [], |row| row.get(0))?;
+    Ok(format!("{prefix}-{suffix}"))
+}
+fn resolve_payee(connection: &Connection, name: Option<&str>) -> LedgerResult<Option<String>> {
+    let Some(name) = name.map(str::trim).filter(|name| !name.is_empty()) else {
+        return Ok(None);
+    };
+    if let Some(id) = connection
+        .query_row(
+            "SELECT id FROM payees WHERE name=?1 COLLATE NOCASE ORDER BY id LIMIT 1",
+            [name],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?
+    {
+        return Ok(Some(id));
+    }
+    let id = random_id(connection, "manual-payee")?;
+    connection.execute(
+        "INSERT INTO payees (id,name) VALUES (?1,?2)",
+        params![id, name],
+    )?;
+    Ok(Some(id))
 }
 fn entry_identity(
     connection: &Connection,

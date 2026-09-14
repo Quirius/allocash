@@ -228,6 +228,119 @@ fn account_overviews_and_register_rows_resolve_display_data() {
 }
 
 #[test]
+fn manual_entry_creates_payees_and_remembers_their_defaults_atomically() {
+    let (_directory, mut database) = database();
+    database
+        .create_category_group("living", "Living", 0)
+        .unwrap();
+    database
+        .create_category("groceries", "living", "Groceries", 0)
+        .unwrap();
+    let id = database
+        .create_manual_transaction(&ManualTransactionDraft {
+            account_id: "cash".into(),
+            date: date("2026-09-10"),
+            payee_name: Some("  Market  ".into()),
+            category_id: Some("groceries".into()),
+            memo: "  Weekly shop  ".into(),
+            flag_id: Some("flag-yellow".into()),
+            amount: Huf(-2500),
+        })
+        .unwrap();
+    assert!(id.starts_with("manual-transaction-"));
+    let register = database.register_entries("cash").unwrap();
+    assert_eq!(register[0].payee_name.as_deref(), Some("Market"));
+    assert_eq!(register[0].memo, "Weekly shop");
+    assert_eq!(register[0].cleared_state, ClearedState::Cleared);
+    assert_eq!(register[0].amount, Huf(-2500));
+    let options = database.transaction_form_options().unwrap();
+    let market = options
+        .payees
+        .iter()
+        .find(|payee| payee.name == "Market")
+        .unwrap();
+    assert_eq!(market.last_category_id.as_deref(), Some("groceries"));
+    assert_eq!(market.last_direction, Some(Direction::Outflow));
+    assert_eq!(options.categories[0].name, "Groceries");
+    assert_eq!(options.flags.len(), 6);
+
+    database.set_account_closed("cash", true).unwrap();
+    assert!(database
+        .create_manual_transaction(&ManualTransactionDraft {
+            account_id: "cash".into(),
+            date: date("2026-09-10"),
+            payee_name: Some("Must roll back".into()),
+            category_id: None,
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(1),
+        })
+        .is_err());
+    assert!(!database
+        .transaction_form_options()
+        .unwrap()
+        .payees
+        .iter()
+        .any(|payee| payee.name == "Must roll back"));
+}
+
+#[test]
+fn manual_transfer_and_register_edit_preserve_pair_and_confirmation_rules() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("other", AccountKind::Credit, 0))
+        .unwrap();
+    let entered_id = database
+        .create_manual_transfer(&ManualTransferInput {
+            account_id: "cash".into(),
+            counterpart_account_id: "other".into(),
+            date: date("2026-09-10"),
+            memo: "Payment".into(),
+            flag_id: Some("flag-blue".into()),
+            amount: Huf(1000),
+            direction: Direction::Outflow,
+        })
+        .unwrap();
+    let cash = database.entries("cash").unwrap();
+    let other = database.entries("other").unwrap();
+    assert_eq!(cash[0].entry.id, entered_id);
+    assert_eq!(cash[0].amount, Huf(-1000));
+    assert_eq!(cash[0].entry.cleared_state, ClearedState::Cleared);
+    assert_eq!(other[0].amount, Huf(1000));
+    assert_eq!(other[0].entry.cleared_state, ClearedState::Uncleared);
+    database
+        .set_cleared_state(&other[0].entry.id, ClearedState::Reconciled, false)
+        .unwrap();
+
+    let edit = RegisterEntryEdit {
+        id: entered_id.clone(),
+        memo: "Changed".into(),
+        amount: Huf(-2000),
+        cleared_state: ClearedState::Uncleared,
+        confirmed: false,
+    };
+    assert!(matches!(
+        database.update_register_entry(&edit),
+        Err(LedgerError::ReconciledConfirmationRequired)
+    ));
+    assert_eq!(database.entries("cash").unwrap()[0].amount, Huf(-1000));
+    assert_eq!(database.entries("cash").unwrap()[0].entry.memo, "Payment");
+    database
+        .update_register_entry(&RegisterEntryEdit {
+            confirmed: true,
+            ..edit
+        })
+        .unwrap();
+    assert_eq!(database.entries("cash").unwrap()[0].amount, Huf(-2000));
+    assert_eq!(database.entries("other").unwrap()[0].amount, Huf(2000));
+    assert_eq!(database.entries("cash").unwrap()[0].entry.memo, "Changed");
+    assert_eq!(
+        database.entries("cash").unwrap()[0].entry.cleared_state,
+        ClearedState::Uncleared
+    );
+}
+
+#[test]
 fn either_reconciled_leg_requires_confirmation_for_shared_changes() {
     let (_directory, mut database) = database();
     database

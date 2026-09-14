@@ -41,12 +41,14 @@ audit metadata such as creation time.
 
 ## Next implementation slice
 
-Build keyboard-friendly manual transaction entry and register editing on the
-validated ledger API. The owner's local export still needs a final reference-
-balance comparison before the Plan engine begins.
+Compare an owner-provided import against its YNAB reference balances and resolve
+any validation differences before the Plan engine begins. Keyboard-friendly manual
+entry, paired transfers and safe register editing now exercise the validated ledger
+API through the desktop UI.
 
-Reconciliation and the Plan engine follow trustworthy imports and account balances.
-The complete scope and financial behavior are in the owner's project brief.
+The full reconciliation workflow and Plan engine follow trustworthy imports and
+account balances. The complete scope and financial behavior are in the owner's
+project brief.
 
 ## Ledger schema decisions
 
@@ -103,14 +105,16 @@ Writes that touch multiple rows or inspect reconciled state reserve a write
 transaction. Failed writes roll back; edits to a transfer amount use its canonical
 record, and deleting either leg deletes the complete pair. Memo-only edits need
 no confirmation. Other implemented changes to reconciled amounts/states or paired
-deletions require an explicit confirmation argument from a future UI.
+deletions require an explicit confirmation argument from the UI.
 
-Read-only Tauri commands expose a workspace snapshot with ordered account groups
-and as-of balances, then resolve one selected account's register rows. Payee,
-category, flag and transfer-counterparty names are joined in Rust so the frontend
-never executes SQL. Financial values remain decimal strings through IPC and become
-`bigint` only for formatting in React. Ledger mutation operations are not exposed
-as desktop commands yet.
+Tauri commands expose a workspace snapshot with ordered account groups, as-of
+balances and form options, then resolve one selected account's register rows.
+Payee, category, flag and transfer-counterparty names are joined in Rust so the
+frontend never executes SQL. Financial values remain decimal strings through IPC
+and become `bigint` only for parsing and formatting in React. Typed desktop mutation
+commands create normal transactions and paired transfers, update an entry, or delete
+an ordinary/paired entry; Rust keeps the writes atomic and enforces reconciled-history
+confirmation.
 
 The default Cargo feature is `desktop`. Disabling it permits the actual SQLite
 and ledger tests to run without Tauri, using the same database implementation.

@@ -14,11 +14,11 @@ Windows application data directory.
 Read [AGENTS (1).md](<AGENTS (1).md>) before making changes. It is the owner's
 authoritative product brief and implementation guidance.
 
-Current stage: v0.1 read-only register implemented. Schema version 2, verified
-pre-migration backups, typed ledger/import operations, grouped account balances
-and the transaction register have native/frontend tests. The next phase is manual
-transaction entry and register editing (section 40, steps 12–14). Keep the Plan
-engine out of scope until the import and register layers have been validated.
+Current stage: v0.1 manual-entry register implemented. Schema version 2, verified
+pre-migration backups, typed ledger/import operations, grouped account balances,
+manual transactions, paired transfers and safe register editing have native/frontend
+tests. The next phase is reference-balance comparison (section 40, step 15). Keep
+the Plan engine out of scope until the import and register layers have been validated.
 
 ## Git workflow
 

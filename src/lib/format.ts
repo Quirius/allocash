@@ -27,3 +27,20 @@ export function localCalendarDate(value = new Date()): string {
   const day = value.getDate().toString().padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+export function parseHufInput(value: string): bigint {
+  const trimmed = value.trim();
+  const number = trimmed.endsWith("Ft") ? trimmed.slice(0, -2).trim() : trimmed;
+  const groups = number.split(" ");
+  const groupedCorrectly = groups.length === 1
+    ? /^\d+$/.test(groups[0] ?? "")
+    : /^\d{1,3}$/.test(groups[0] ?? "") && groups.slice(1).every((group) => /^\d{3}$/.test(group));
+  if (!groupedCorrectly) {
+    throw new Error("Enter a whole HUF amount, for example 12 500.");
+  }
+  const amount = BigInt(number.replaceAll(" ", ""));
+  if (amount <= 0n || amount > 9223372036854775807n) {
+    throw new Error("The amount must be between 1 Ft and the supported HUF maximum.");
+  }
+  return amount;
+}

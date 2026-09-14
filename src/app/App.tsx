@@ -8,6 +8,7 @@ import {
   type WorkspaceSnapshot,
 } from "../lib/desktop";
 import { formatDate, formatHuf, localCalendarDate } from "../lib/format";
+import { RegisterEntryEditor, TransactionComposer } from "./TransactionEditor";
 
 type Startup =
   | { status: "loading" }
@@ -130,6 +131,13 @@ export function App() {
     [accounts, selectedAccountId],
   );
 
+  async function refreshLedger() {
+    const workspace = await loadWorkspace(localCalendarDate());
+    if (!workspace) throw new Error("The desktop ledger is unavailable.");
+    setStartup({ status: "ready", workspace });
+    setRegisterAttempt((value) => value + 1);
+  }
+
   return (
     <div className="app-shell">
       <a className="skip-link" href="#workspace">Skip to workspace</a>
@@ -194,9 +202,13 @@ export function App() {
 
           {startup.status === "ready" && selectedAccount && (
             <AccountRegister
+              key={selectedAccount.id}
               account={selectedAccount}
+              accounts={accounts}
+              options={startup.workspace.transactionOptions}
               register={register}
               onRetry={() => setRegisterAttempt((value) => value + 1)}
+              onChanged={refreshLedger}
             />
           )}
 
@@ -238,13 +250,21 @@ function EmptyLedger({ preview = false }: { preview?: boolean }) {
 
 function AccountRegister({
   account,
+  accounts,
+  options,
   register,
   onRetry,
+  onChanged,
 }: {
   account: AccountOverview;
+  accounts: AccountOverview[];
+  options: WorkspaceSnapshot["transactionOptions"];
   register: RegisterState;
   onRetry: () => void;
+  onChanged: () => Promise<void>;
 }) {
+  const [editor, setEditor] = useState<"new" | RegisterEntry | null>(null);
+
   return (
     <section className="register" aria-labelledby="register-title">
       <h2 className="sr-only" id="register-title">{account.name} transaction register</h2>
@@ -265,8 +285,29 @@ function AccountRegister({
           <strong>All transactions</strong>
           <span>{register.status === "ready" ? `${register.entries.length} entries` : "Local history"}</span>
         </div>
-        <button disabled title="Manual entry is the next implementation step">+ Add transaction</button>
+        <button
+          disabled={account.closed}
+          title={account.closed ? "Reopen this account before adding transactions" : undefined}
+          onClick={() => setEditor("new")}
+        >+ Add transaction</button>
       </div>
+
+      {editor === "new" && (
+        <TransactionComposer
+          account={account}
+          accounts={accounts}
+          options={options}
+          onSaved={onChanged}
+          onCancel={() => setEditor(null)}
+        />
+      )}
+      {editor && editor !== "new" && (
+        <RegisterEntryEditor
+          entry={editor}
+          onSaved={onChanged}
+          onCancel={() => setEditor(null)}
+        />
+      )}
 
       {register.status === "loading" && <div className="register-message" role="status">Loading transactions…</div>}
       {register.status === "error" && (
@@ -290,6 +331,7 @@ function AccountRegister({
                 <th className="status-column">Status</th>
                 <th className="money-column">Outflow</th>
                 <th className="money-column">Inflow</th>
+                <th className="action-column"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -316,6 +358,7 @@ function AccountRegister({
                     </td>
                     <td className="money-column outflow">{amount < 0n ? huf((-amount).toString()) : ""}</td>
                     <td className="money-column inflow">{amount >= 0n ? huf(amount.toString()) : ""}</td>
+                    <td className="action-column"><button onClick={() => setEditor(entry)}>Edit</button></td>
                   </tr>
                 );
               })}

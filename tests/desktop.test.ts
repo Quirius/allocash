@@ -1,6 +1,14 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { loadAccountRegister, loadBudgetInfo, loadWorkspace } from "../src/lib/desktop";
+import {
+  createManualTransaction,
+  createManualTransfer,
+  deleteRegisterEntry,
+  loadAccountRegister,
+  loadBudgetInfo,
+  loadWorkspace,
+  updateRegisterEntry,
+} from "../src/lib/desktop";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn() }));
 
@@ -50,4 +58,48 @@ it("keeps workspace and register reads out of the browser preview", async () => 
   expect(await loadWorkspace("2026-09-14")).toBeNull();
   expect(await loadAccountRegister("cash")).toBeNull();
   expect(invoke).not.toHaveBeenCalled();
+});
+
+it("sends typed manual transaction and transfer inputs", async () => {
+  vi.mocked(invoke).mockResolvedValue("created-id");
+  const transaction = {
+    accountId: "cash",
+    date: "2026-09-14",
+    payeeName: "Market",
+    categoryId: "groceries",
+    memo: "Food",
+    flagId: null,
+    amount: "-2500",
+  };
+  const transfer = {
+    accountId: "cash",
+    counterpartAccountId: "card",
+    date: "2026-09-14",
+    memo: "Payment",
+    flagId: null,
+    amount: "1000",
+    direction: "outflow" as const,
+  };
+  await expect(createManualTransaction(transaction)).resolves.toBe("created-id");
+  expect(invoke).toHaveBeenCalledWith("create_manual_transaction", { input: transaction });
+  await expect(createManualTransfer(transfer)).resolves.toBe("created-id");
+  expect(invoke).toHaveBeenCalledWith("create_manual_transfer", { input: transfer });
+});
+
+it("sends atomic register edits and confirmed deletions", async () => {
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  const edit = {
+    id: "transaction",
+    memo: "Updated",
+    amount: "-5000",
+    clearedState: "reconciled" as const,
+    confirmed: true,
+  };
+  await updateRegisterEntry(edit);
+  expect(invoke).toHaveBeenCalledWith("update_register_entry", { edit });
+  await deleteRegisterEntry("transaction", true);
+  expect(invoke).toHaveBeenCalledWith("delete_register_entry", {
+    id: "transaction",
+    confirmed: true,
+  });
 });
