@@ -20,6 +20,7 @@ The v0.1 import/register foundation is implemented:
 - Exact as-of balances with separate cleared, uncleared and reconciled totals.
 - Import validation with source/ledger counts, per-account balance buckets, unresolved
   mappings and transfer rows, plus within-export and cross-export duplicate signals.
+- UTF-8-safe YNAB Net Worth comparison against materialized working balances.
 - Persisted account sidebar groups and an editable transaction register with resolved
   payees, categories, flags, transfers and exact balance totals.
 - Keyboard-friendly manual entry with payee/category memory, paired account transfers,
@@ -35,9 +36,10 @@ The YNAB importer preserves the original archive and every CSV/TSV row, requires
 explicit account mappings, materializes ordinary transactions and only provable
 transfer pairs, and produces an exact as-of validation report without guessing
 ambiguous financial data. No financial data is seeded; the six specified flag
-definitions are initialized. The next milestone is comparing an owner-provided
-import against its YNAB reference balances before starting the Plan engine. See
-[the architecture](docs/architecture.md).
+definitions are initialized. A fresh owner export has completed the v0.1 validation
+gate with all 34 working balances matching YNAB exactly. Four zero-value transfer
+rows remain preserved for review and do not affect balances. The next milestone is
+the basic reconciliation workflow before the Plan engine. See [the architecture](docs/architecture.md).
 The backend accounting behavior is documented in [accounting rules](docs/accounting-rules.md).
 
 ## Windows development setup
@@ -88,6 +90,13 @@ npm run test:rust
 npm run test:core
 cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 npm run tauri build -- --no-bundle
+```
+
+To validate a private YNAB export against a matching Net Worth TSV without
+retaining a test database or printing account names and balances:
+
+```powershell
+cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --example verify_ynab_export -- "path/to/export.zip" "path/to/net-worth.tsv" yyyy-mm-dd
 ```
 
 Rust checks require a Rust toolchain; the desktop build also requires the Windows

@@ -1210,10 +1210,12 @@ Do not commit the owner's real financial export to a public repository.
 Start with **v0.1**.
 
 Progress: the desktop scaffold, schema v2, ledger/import foundation and editable
-account/register UI (steps 1–14) are implemented, including explicit account
+account/register UI (steps 1–15) are implemented, including explicit account
 mapping, conservative transfer pairing, keyboard-friendly manual entry, reconciled
-edit safeguards and an auditable as-of validation summary. The next phase is step 15:
-compare against the owner's YNAB reference balances. Desktop MSVC build verification
+edit safeguards and an auditable as-of validation summary. A fresh owner export
+matched all 34 YNAB Net Worth reference working balances exactly; four zero-value transfer
+rows remain preserved for review without affecting balances. The next phase is the
+basic reconciliation workflow before the Plan engine. Desktop MSVC build verification
 also remains outstanding. Run `npm run test:core` for native ledger/import tests.
 
 Recommended implementation sequence:

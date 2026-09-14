@@ -1,8 +1,9 @@
 use crate::{
     database::Database,
-    ledger::CalendarDate,
+    ledger::{CalendarDate, Huf},
     ynab_import::{
-        parse_huf, validate_account_mappings, AccountImportMapping, ImportError, SourceFileKind,
+        compare_ynab_net_worth, parse_huf, validate_account_mappings, AccountImportMapping,
+        ImportError, ImportedAccountBalance, SourceFileKind,
     },
 };
 use std::io::{Cursor, Write};
@@ -302,7 +303,7 @@ fn materializes_ordinary_transactions_and_holds_transfers() {
 }
 
 #[test]
-fn materializes_only_unique_reciprocal_transfer_pairs() {
+fn materializes_reciprocal_transfer_pairs_and_leaves_one_sided_or_zero_rows() {
     let (_directory, mut database) = database();
     let archive = fixture_zip(&[(
         "Fixture/Register.tsv",
@@ -343,6 +344,64 @@ fn materializes_only_unique_reciprocal_transfer_pairs() {
         .unwrap();
     assert_eq!(database.entries(&cash.id).unwrap()[0].amount.0, -1000);
     assert_eq!(database.entries(&card.id).unwrap()[0].amount.0, 1000);
+}
+
+#[test]
+fn materializes_balanced_duplicate_transfers_without_guessing_metadata() {
+    let (_directory, mut database) = database();
+    let archive = fixture_zip(&[(
+        "Fixture/Register.tsv",
+        "Account\tFlag\tDate\tPayee\tMemo\tOutflow\tInflow\tCleared\nCash\tRed\t2026/09/10\tTransfer : Card\tSame\t1 000 Ft\t0 Ft\tCleared\nCash\tRed\t2026/09/10\tTransfer : Card\tSame\t1 000 Ft\t0 Ft\tCleared\nCard\tRed\t2026/09/10\tTransfer : Cash\tSame\t0 Ft\t1 000 Ft\tUncleared\nCard\tRed\t2026/09/10\tTransfer : Cash\tSame\t0 Ft\t1 000 Ft\tUncleared\nCash\t\t2026/09/11\tTransfer : Card\tLeft A\t2 000 Ft\t0 Ft\tCleared\nCash\t\t2026/09/11\tTransfer : Card\tLeft B\t2 000 Ft\t0 Ft\tCleared\nCard\t\t2026/09/11\tTransfer : Cash\tLeft A\t0 Ft\t2 000 Ft\tUncleared\nCard\t\t2026/09/11\tTransfer : Cash\tDifferent\t0 Ft\t2 000 Ft\tUncleared\n",
+    )]);
+    let summary = database
+        .stage_ynab_zip("fixture.zip", &archive, &date("2026-09-11"))
+        .unwrap();
+    let mappings = [
+        AccountImportMapping {
+            source_name: "Card".into(),
+            kind: crate::ledger::AccountKind::Credit,
+            closed: false,
+            sort_order: 0,
+        },
+        AccountImportMapping {
+            source_name: "Cash".into(),
+            kind: crate::ledger::AccountKind::Cash,
+            closed: false,
+            sort_order: 1,
+        },
+    ];
+    database
+        .materialize_import_accounts(&summary.batch_id, &summary.account_names, &mappings)
+        .unwrap();
+    database.materialize_import_references(&summary).unwrap();
+
+    let result = database.materialize_transfers(&summary).unwrap();
+
+    assert_eq!(result.paired_transfer_count, 2);
+    assert_eq!(result.unresolved_row_count, 4);
+    let accounts = database.accounts().unwrap();
+    let cash = accounts
+        .iter()
+        .find(|account| account.name == "Cash")
+        .unwrap();
+    let card = accounts
+        .iter()
+        .find(|account| account.name == "Card")
+        .unwrap();
+    assert_eq!(
+        database
+            .account_balance(cash.id.as_str(), &date("2026-09-11"))
+            .unwrap()
+            .working,
+        Huf(-2_000)
+    );
+    assert_eq!(
+        database
+            .account_balance(card.id.as_str(), &date("2026-09-11"))
+            .unwrap()
+            .working,
+        Huf(2_000)
+    );
 }
 
 #[test]
@@ -446,4 +505,84 @@ fn validation_reports_unknown_flags_before_mapping() {
         .warnings
         .iter()
         .any(|warning| warning.contains("flag")));
+}
+
+#[test]
+fn net_worth_reference_matches_utf8_account_names_and_ignores_its_total() {
+    let imported = [
+        ImportedAccountBalance {
+            account_name: "Cash".into(),
+            working: Huf(12_500),
+            cleared: Huf(10_000),
+            uncleared: Huf(2_500),
+            reconciled: Huf(8_000),
+        },
+        ImportedAccountBalance {
+            account_name: "Pokémon".into(),
+            working: Huf(-2_000),
+            cleared: Huf(-2_000),
+            uncleared: Huf(0),
+            reconciled: Huf(-2_000),
+        },
+    ];
+    let reference = "\u{feff}Account\tAug 2026\tSep 2026\nCash\t0 Ft\t12 500 Ft\nPokémon\t0 Ft\t-2 000 Ft\nNet Worth\t0 Ft\t10 500 Ft\n";
+
+    let comparison =
+        compare_ynab_net_worth(&imported, reference.as_bytes(), &date("2026-09-14")).unwrap();
+
+    assert_eq!(comparison.reference_month, "Sep 2026");
+    assert_eq!(comparison.imported_account_count, 2);
+    assert_eq!(comparison.reference_account_count, 2);
+    assert_eq!(comparison.exact_match_count, 2);
+    assert!(comparison.is_exact_match());
+}
+
+#[test]
+fn net_worth_reference_reports_differences_and_account_set_changes() {
+    let imported = [
+        ImportedAccountBalance {
+            account_name: "Cash".into(),
+            working: Huf(10),
+            cleared: Huf(10),
+            uncleared: Huf(0),
+            reconciled: Huf(10),
+        },
+        ImportedAccountBalance {
+            account_name: "Missing".into(),
+            working: Huf(20),
+            cleared: Huf(20),
+            uncleared: Huf(0),
+            reconciled: Huf(20),
+        },
+    ];
+    let reference = "Account\tSep 2026\nCash\t11 Ft\nUnexpected\t20 Ft\n";
+
+    let comparison =
+        compare_ynab_net_worth(&imported, reference.as_bytes(), &date("2026-09-14")).unwrap();
+
+    assert_eq!(comparison.exact_match_count, 0);
+    assert_eq!(comparison.differences.len(), 1);
+    assert_eq!(comparison.differences[0].account_name, "Cash");
+    assert_eq!(comparison.differences[0].imported, Huf(10));
+    assert_eq!(comparison.differences[0].reference, Huf(11));
+    assert_eq!(comparison.missing_reference_accounts, ["Missing"]);
+    assert_eq!(comparison.unexpected_reference_accounts, ["Unexpected"]);
+    assert!(!comparison.is_exact_match());
+}
+
+#[test]
+fn net_worth_reference_rejects_a_blank_as_of_balance() {
+    let imported = [ImportedAccountBalance {
+        account_name: "Cash".into(),
+        working: Huf(0),
+        cleared: Huf(0),
+        uncleared: Huf(0),
+        reconciled: Huf(0),
+    }];
+    let reference = "Account\tSep 2026\nCash\t\n";
+
+    assert!(matches!(
+        compare_ynab_net_worth(&imported, reference.as_bytes(), &date("2026-09-14")),
+        Err(ImportError::InvalidValue(message)) if message.contains("blank")
+    ));
 }

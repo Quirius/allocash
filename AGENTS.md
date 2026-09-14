@@ -14,11 +14,11 @@ Windows application data directory.
 Read [AGENTS (1).md](<AGENTS (1).md>) before making changes. It is the owner's
 authoritative product brief and implementation guidance.
 
-Current stage: v0.1 manual-entry register implemented. Schema version 2, verified
+Current stage: v0.1 import/register validation complete. Schema version 2, verified
 pre-migration backups, typed ledger/import operations, grouped account balances,
 manual transactions, paired transfers and safe register editing have native/frontend
-tests. The next phase is reference-balance comparison (section 40, step 15). Keep
-the Plan engine out of scope until the import and register layers have been validated.
+tests. A fresh owner export matched all 34 YNAB reference working balances (section 40,
+step 15). The next phase is the basic reconciliation workflow before the Plan engine.
 
 ## Git workflow
 

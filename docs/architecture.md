@@ -41,14 +41,13 @@ audit metadata such as creation time.
 
 ## Next implementation slice
 
-Compare an owner-provided import against its YNAB reference balances and resolve
-any validation differences before the Plan engine begins. Keyboard-friendly manual
-entry, paired transfers and safe register editing now exercise the validated ledger
-API through the desktop UI.
+Build the basic reconciliation workflow on the now-validated register. A fresh
+owner export passed the reference gate with exact working balances for all 34
+accounts. Keyboard-friendly manual entry, paired transfers and safe register editing
+exercise the same ledger API through the desktop UI. The Plan engine follows the
+reconciliation slice.
 
-The full reconciliation workflow and Plan engine follow trustworthy imports and
-account balances. The complete scope and financial behavior are in the owner's
-project brief.
+The complete scope and financial behavior are in the owner's project brief.
 
 ## Ledger schema decisions
 
@@ -74,10 +73,10 @@ until recurrence definitions arrive in a later migration. It is not a recurrence
 A transaction can link to its source row, with duplicate use of that row rejected.
 The staging parser rejects malformed CSV atomically, detects exact duplicate
 archives, and reports source-level account/category/payee/flag/date counts and
-warnings. Cross-export transaction duplicate detection, historical Plan
-preservation, and ledger mapping belong to the next importer phase. No imported
-categories or account types are inferred here. Before ledger mapping begins,
-every staged account must have exactly one explicit kind/closed-state mapping.
+warnings. Ledger mapping and cross-export transaction duplicate detection are
+implemented; historical Plan materialization belongs to the next importer phase.
+No account types are inferred. Before ledger mapping begins, every staged account
+must have exactly one explicit kind/closed-state mapping.
 Mapped category groups, categories and payees use deterministic source-derived
 IDs and are inserted atomically in source order; imported flag colors reuse the
 six stable Allocash flag identities, while unknown colors abort the operation.
@@ -85,8 +84,10 @@ Ordinary register rows parse HUF text directly to checked integers and retain
 their source-row provenance, dates, metadata and clearing state. Rows that look
 like transfers or payments remain in staging until both legs can be paired and
 validated; no one-sided account movement is written as ordinary spending.
-Transfer materialization requires one unique reciprocal leg with the same date
-and exact opposite nonzero amount. Zero-value, missing and ambiguous pairs stay
+Transfer materialization requires reciprocal legs with the same accounts, date and
+exact opposite nonzero amount. Repeated equal transfers are paired as a balanced
+group only when the memo/flag multisets also match; each source leg keeps its own
+metadata and provenance. Zero-value, one-sided and otherwise ambiguous pairs stay
 in raw staging and appear in the unresolved-row count.
 
 Post-materialization validation keeps source and imported transaction counts
@@ -96,6 +97,13 @@ as of an explicit calendar date. It also reports future rows, unknown category o
 flag values, repeated rows within an export, and matching rows across staged
 exports. Future transactions remain in history but are excluded from earlier
 as-of balances.
+
+`compare_ynab_net_worth` parses the matching Net Worth TSV as UTF-8, selects the
+month containing the explicit as-of date, excludes the summary row, and compares
+the exact account-name/value sets. The `verify_ynab_export` example runs staging,
+all materialization passes and this comparison in a disposable database while
+reporting counts only. The 2026-09-14 owner reference matched 34 of 34 accounts;
+four zero-value transfer rows remain staged without affecting balances.
 
 ## Core API
 

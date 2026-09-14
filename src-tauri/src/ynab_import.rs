@@ -13,7 +13,7 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBe
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     fmt,
     io::{Cursor, Read},
 };
@@ -171,6 +171,132 @@ pub struct MaterializedImportValidationSummary {
     pub cross_export_duplicate_transaction_count: usize,
     pub source_warnings: Vec<String>,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceBalanceDifference {
+    pub account_name: String,
+    pub imported: Huf,
+    pub reference: Huf,
+}
+
+/// Compares materialized working balances with a YNAB Net Worth export for
+/// the month containing the explicit as-of date. Account names and integer HUF
+/// values must match exactly; summary rows such as `Net Worth` are excluded.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReferenceBalanceComparison {
+    pub reference_month: String,
+    pub imported_account_count: usize,
+    pub reference_account_count: usize,
+    pub exact_match_count: usize,
+    pub differences: Vec<ReferenceBalanceDifference>,
+    pub missing_reference_accounts: Vec<String>,
+    pub unexpected_reference_accounts: Vec<String>,
+}
+
+impl ReferenceBalanceComparison {
+    pub fn is_exact_match(&self) -> bool {
+        self.imported_account_count == self.reference_account_count
+            && self.exact_match_count == self.imported_account_count
+            && self.differences.is_empty()
+            && self.missing_reference_accounts.is_empty()
+            && self.unexpected_reference_accounts.is_empty()
+    }
+}
+
+pub fn compare_ynab_net_worth(
+    imported_balances: &[ImportedAccountBalance],
+    reference_bytes: &[u8],
+    as_of: &CalendarDate,
+) -> ImportResult<ReferenceBalanceComparison> {
+    let reference_month = net_worth_month_header(as_of)?;
+    let mut reader = ReaderBuilder::new()
+        .delimiter(b'\t')
+        .trim(csv::Trim::All)
+        .from_reader(reference_bytes);
+    let headers = reader
+        .headers()
+        .map_err(|error| reference_delimited_error(error.to_string()))?
+        .clone();
+    let account_index = headers
+        .iter()
+        .position(|header| header.trim_start_matches('\u{feff}') == "Account")
+        .ok_or(ImportError::InvalidValue(
+            "The YNAB Net Worth reference has no Account column.",
+        ))?;
+    let month_index = headers
+        .iter()
+        .position(|header| header == reference_month)
+        .ok_or(ImportError::InvalidValue(
+            "The YNAB Net Worth reference does not contain the as-of month.",
+        ))?;
+
+    let mut reference_balances = BTreeMap::new();
+    for record in reader.records() {
+        let record = record.map_err(|error| reference_delimited_error(error.to_string()))?;
+        let account_name = record.get(account_index).unwrap_or_default().trim();
+        if account_name.eq_ignore_ascii_case("Net Worth") {
+            continue;
+        }
+        if account_name.is_empty() {
+            return Err(ImportError::InvalidValue(
+                "The YNAB Net Worth reference contains an unnamed account.",
+            ));
+        }
+        let balance_text = record.get(month_index).unwrap_or_default();
+        if balance_text.trim().is_empty() {
+            return Err(ImportError::InvalidValue(
+                "The YNAB Net Worth reference contains a blank account balance.",
+            ));
+        }
+        let balance = parse_huf(balance_text)?;
+        if reference_balances
+            .insert(account_name.to_owned(), balance)
+            .is_some()
+        {
+            return Err(ImportError::InvalidValue(
+                "The YNAB Net Worth reference contains a duplicate account.",
+            ));
+        }
+    }
+
+    let mut imported_names = BTreeSet::new();
+    let mut exact_match_count = 0;
+    let mut differences = Vec::new();
+    let mut missing_reference_accounts = Vec::new();
+    for imported in imported_balances {
+        if !imported_names.insert(imported.account_name.as_str()) {
+            return Err(ImportError::InvalidValue(
+                "The materialized import contains a duplicate account balance.",
+            ));
+        }
+        match reference_balances.get(&imported.account_name) {
+            Some(reference) if *reference == imported.working.0 => exact_match_count += 1,
+            Some(reference) => differences.push(ReferenceBalanceDifference {
+                account_name: imported.account_name.clone(),
+                imported: imported.working,
+                reference: Huf(*reference),
+            }),
+            None => missing_reference_accounts.push(imported.account_name.clone()),
+        }
+    }
+    let unexpected_reference_accounts = reference_balances
+        .keys()
+        .filter(|account_name| !imported_names.contains(account_name.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+
+    Ok(ReferenceBalanceComparison {
+        reference_month,
+        imported_account_count: imported_balances.len(),
+        reference_account_count: reference_balances.len(),
+        exact_match_count,
+        differences,
+        missing_reference_accounts,
+        unexpected_reference_accounts,
+    })
 }
 
 struct TransferCandidate {
@@ -491,8 +617,9 @@ impl Database {
         })
     }
 
-    /// Pairs only unique reciprocal legs with the same date and opposite exact
-    /// amount. Ambiguous or one-sided rows remain staged and are reported.
+    /// Pairs reciprocal legs with the same accounts, date and exact opposite
+    /// amount. Repeated identical transfers are paired only when each side has
+    /// the same memo/flag multiset; other ambiguous or one-sided rows remain staged.
     pub fn materialize_transfers(
         &mut self,
         summary: &ImportValidationSummary,
@@ -554,31 +681,75 @@ impl Database {
                 cleared,
             });
         }
-        let mut used = vec![false; candidates.len()];
-        let mut pairs = Vec::new();
-        for index in 0..candidates.len() {
-            if used[index] {
+        let mut groups: BTreeMap<(String, String, String, i64), Vec<usize>> = BTreeMap::new();
+        for (index, candidate) in candidates.iter().enumerate() {
+            if candidate.amount == 0 || candidate.account == candidate.target {
                 continue;
             }
-            let left = &candidates[index];
-            let matches = (0..candidates.len())
-                .filter(|other| {
-                    !used[*other] && *other != index && reciprocal(left, &candidates[*other])
-                })
+            let magnitude = candidate
+                .amount
+                .checked_abs()
+                .ok_or(ImportError::InvalidValue(
+                    "An imported HUF amount is out of range.",
+                ))?;
+            let (source_account, destination_account) = if candidate.amount < 0 {
+                (candidate.account.clone(), candidate.target.clone())
+            } else {
+                (candidate.target.clone(), candidate.account.clone())
+            };
+            groups
+                .entry((
+                    source_account,
+                    destination_account,
+                    candidate.date.as_str().to_owned(),
+                    magnitude,
+                ))
+                .or_default()
+                .push(index);
+        }
+        let mut pairs = Vec::new();
+        for group in groups.values() {
+            let outflow = group
+                .iter()
+                .copied()
+                .filter(|index| candidates[*index].amount < 0)
                 .collect::<Vec<_>>();
-            if matches.len() == 1 {
-                let other = matches[0];
-                let reverse_matches = (0..candidates.len())
-                    .filter(|candidate| {
-                        !used[*candidate]
-                            && *candidate != other
-                            && reciprocal(&candidates[other], &candidates[*candidate])
-                    })
-                    .count();
-                if reverse_matches == 1 {
-                    used[index] = true;
-                    used[other] = true;
-                    pairs.push((index, other));
+            let inflow = group
+                .iter()
+                .copied()
+                .filter(|index| candidates[*index].amount > 0)
+                .collect::<Vec<_>>();
+            if outflow.len() != inflow.len() || outflow.is_empty() {
+                continue;
+            }
+            if outflow.len() == 1 {
+                pairs.push((outflow[0], inflow[0]));
+                continue;
+            }
+
+            let partition = |indices: Vec<usize>| {
+                let mut partitions: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
+                for index in indices {
+                    let candidate = &candidates[index];
+                    partitions
+                        .entry((candidate.memo.clone(), candidate.flag.clone()))
+                        .or_default()
+                        .push(index);
+                }
+                partitions
+            };
+            let outgoing_partitions = partition(outflow);
+            let incoming_partitions = partition(inflow);
+            let equivalent = outgoing_partitions.len() == incoming_partitions.len()
+                && outgoing_partitions.iter().all(|(metadata, outgoing)| {
+                    incoming_partitions
+                        .get(metadata)
+                        .is_some_and(|incoming| incoming.len() == outgoing.len())
+                });
+            if equivalent {
+                for (metadata, outgoing) in outgoing_partitions {
+                    let incoming = &incoming_partitions[&metadata];
+                    pairs.extend(outgoing.into_iter().zip(incoming.iter().copied()));
                 }
             }
         }
@@ -622,7 +793,7 @@ impl Database {
         transaction.commit()?;
         Ok(TransferMaterializationSummary {
             paired_transfer_count: pairs.len(),
-            unresolved_row_count: used.iter().filter(|used| !**used).count(),
+            unresolved_row_count: candidates.len() - pairs.len() * 2,
         })
     }
 
@@ -1217,6 +1388,29 @@ fn parse_export_date(value: &str) -> Option<CalendarDate> {
     CalendarDate::parse(&format!("{year:0>4}-{month:0>2}-{day:0>2}")).ok()
 }
 
+fn net_worth_month_header(as_of: &CalendarDate) -> ImportResult<String> {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let mut parts = as_of.as_str().split('-');
+    let year = parts
+        .next()
+        .ok_or(ImportError::InvalidValue("The comparison date is invalid."))?;
+    let month = parts
+        .next()
+        .and_then(|month| month.parse::<usize>().ok())
+        .filter(|month| (1..=12).contains(month))
+        .ok_or(ImportError::InvalidValue("The comparison date is invalid."))?;
+    Ok(format!("{} {year}", MONTHS[month - 1]))
+}
+
+fn reference_delimited_error(message: String) -> ImportError {
+    ImportError::InvalidDelimited {
+        source_file: "YNAB Net Worth reference".into(),
+        message,
+    }
+}
+
 /// Parses integer HUF text without floating point or rounding. Spaces are
 /// accepted only as digit grouping and the optional currency suffix is exact.
 pub fn parse_huf(value: &str) -> ImportResult<i64> {
@@ -1284,14 +1478,6 @@ fn parse_cleared(value: &str) -> ImportResult<&'static str> {
             "An imported cleared state is unknown.",
         )),
     }
-}
-
-fn reciprocal(left: &TransferCandidate, right: &TransferCandidate) -> bool {
-    left.amount != 0
-        && left.account == right.target
-        && left.target == right.account
-        && left.date.as_str() == right.date.as_str()
-        && left.amount.checked_neg() == Some(right.amount)
 }
 
 impl RegisterRow {
