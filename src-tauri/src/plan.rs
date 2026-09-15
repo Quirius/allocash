@@ -147,18 +147,20 @@ impl Database {
         let mut available_activity = BTreeMap::<String, i128>::new();
         let mut activity = BTreeMap::<String, i128>::new();
         let mut ready_income = 0i128;
-        let mut entry_query = self.connection.prepare("SELECT t.category_id,t.amount_huf,t.transaction_date FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.posting_state='posted' AND t.transaction_date<?1 AND a.kind IN ('cash','credit')")?;
+        let mut entry_query = self.connection.prepare("SELECT t.category_id,t.amount_huf,t.transaction_date,a.kind,t.transfer_id FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.posting_state='posted' AND t.transaction_date<?1 AND a.kind IN ('cash','credit')")?;
         let mut entries = entry_query.query([&next])?;
         while let Some(row) = entries.next()? {
             let category: Option<String> = row.get(0)?;
             let amount = i128::from(row.get::<_, i64>(1)?);
             let date: String = row.get(2)?;
+            let kind: String = row.get(3)?;
+            let transfer_id: Option<String> = row.get(4)?;
             if let Some(id) = category {
                 *available_activity.entry(id.clone()).or_default() += amount;
                 if date >= start {
                     *activity.entry(id).or_default() += amount;
                 }
-            } else {
+            } else if kind == "cash" && transfer_id.is_none() {
                 ready_income += amount;
             }
         }
@@ -293,5 +295,48 @@ mod tests {
         assert!(database
             .move_monthly_money("a", "a", &month, Huf(1))
             .is_err());
+    }
+
+    #[test]
+    fn credit_and_transfer_rows_do_not_inflate_ready_to_assign() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "cash".into(),
+                name: "Cash".into(),
+                kind: AccountKind::Cash,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database
+            .create_account(&Account {
+                id: "card".into(),
+                name: "Card".into(),
+                kind: AccountKind::Credit,
+                sort_order: 1,
+                closed: false,
+            })
+            .unwrap();
+        database
+            .create_transaction(
+                &Entry::manual("cash", "cash", CalendarDate::parse("2026-09-01").unwrap()),
+                Huf(1000),
+            )
+            .unwrap();
+        database
+            .create_transaction(
+                &Entry::manual("card", "card", CalendarDate::parse("2026-09-01").unwrap()),
+                Huf(500),
+            )
+            .unwrap();
+        assert_eq!(
+            database
+                .plan_month(&PlanMonth::parse("2026-09").unwrap())
+                .unwrap()
+                .ready_to_assign,
+            Huf(1000)
+        );
     }
 }
