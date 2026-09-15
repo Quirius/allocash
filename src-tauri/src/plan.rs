@@ -121,6 +121,11 @@ impl Database {
         if count != 2 {
             return Err(LedgerError::NotFound);
         }
+        if category_available_for(&transaction, from_category_id, month)?.0 < amount.0 {
+            return Err(LedgerError::InvalidValue(
+                "Cannot move more than this category has available.",
+            ));
+        }
         let id: String = transaction.query_row(
             "SELECT 'category-move-' || lower(hex(randomblob(16)))",
             [],
@@ -128,7 +133,12 @@ impl Database {
         )?;
         transaction.execute("INSERT INTO category_month_moves (id,month,from_category_id,to_category_id,amount_huf) VALUES (?1,?2,?3,?4,?5)", params![id, month.as_str(), from_category_id, to_category_id, amount.0])?;
         for (category_id, delta) in [(from_category_id, -amount.0), (to_category_id, amount.0)] {
-            transaction.execute("INSERT INTO category_month_assignments (category_id,month,amount_huf) VALUES (?1,?2,?3) ON CONFLICT(category_id,month) DO UPDATE SET amount_huf=amount_huf + excluded.amount_huf,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')", params![category_id, month.as_str(), delta])?;
+            let current: Option<i64> = transaction.query_row("SELECT amount_huf FROM category_month_assignments WHERE category_id=?1 AND month=?2", params![category_id, month.as_str()], |row| row.get(0)).optional()?;
+            let updated = current
+                .unwrap_or(0)
+                .checked_add(delta)
+                .ok_or(LedgerError::AmountOverflow)?;
+            transaction.execute("INSERT INTO category_month_assignments (category_id,month,amount_huf) VALUES (?1,?2,?3) ON CONFLICT(category_id,month) DO UPDATE SET amount_huf=excluded.amount_huf,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')", params![category_id, month.as_str(), updated])?;
         }
         transaction.commit()?;
         Ok(())
@@ -238,6 +248,26 @@ fn assigned_before(
     )?;
     Ok(i128::from(value.unwrap_or(0)))
 }
+fn category_available_for(
+    connection: &rusqlite::Connection,
+    category_id: &str,
+    month: &PlanMonth,
+) -> LedgerResult<Huf> {
+    let assignments: Option<i64> = connection.query_row(
+        "SELECT SUM(amount_huf) FROM category_month_assignments WHERE category_id=?1 AND month<=?2",
+        params![category_id, month.as_str()],
+        |row| row.get(0),
+    )?;
+    let mut activity = 0i128;
+    let mut query = connection.prepare("SELECT t.amount_huf FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.category_id=?1 AND t.posting_state='posted' AND t.transaction_date<?2 AND a.kind IN ('cash','credit')")?;
+    let mut rows = query.query(params![category_id, month.next_start()])?;
+    while let Some(row) = rows.next()? {
+        activity = activity
+            .checked_add(i128::from(row.get::<_, i64>(0)?))
+            .ok_or(LedgerError::AmountOverflow)?;
+    }
+    narrow(i128::from(assignments.unwrap_or(0)) + activity)
+}
 fn narrow(value: i128) -> LedgerResult<Huf> {
     i64::try_from(value)
         .map(Huf)
@@ -326,6 +356,13 @@ mod tests {
         assert_eq!(plan.ready_to_assign, Huf(-1000));
         assert_eq!(plan.categories[0].available, Huf(750));
         assert_eq!(plan.categories[1].available, Huf(250));
+        assert!(database
+            .move_monthly_money("a", "b", &month, Huf(751))
+            .is_err());
+        assert_eq!(
+            database.plan_month(&month).unwrap().categories[0].available,
+            Huf(750)
+        );
         assert!(database
             .move_monthly_money("a", "a", &month, Huf(1))
             .is_err());
