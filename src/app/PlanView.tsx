@@ -6,7 +6,7 @@ export function PlanView() {
   const [month, setMonth] = useState(localCalendarMonth());
   const [plan, setPlan] = useState<PlanSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { let active = true; setPlan(null); setError(null); loadPlanMonth(month).then((value) => { if (active) setPlan(value); }, () => { if (active) setError("Could not load this Plan month."); }); return () => { active = false; }; }, [month]);
+  useEffect(() => { let active = true; setPlan(null); setError(null); loadPlanMonth(month).then((value) => { if (active) { setPlan(value); if (!value) setError("The Plan is available in the desktop app."); } }, () => { if (active) setError("Could not load this Plan month."); }); return () => { active = false; }; }, [month]);
   async function save(categoryId: string, value: string) {
     try { await setPlanAssignment(categoryId, month, BigInt(value.trim() || "0").toString()); setPlan(await loadPlanMonth(month)); }
     catch { setError("Enter a whole HUF assignment amount."); }

@@ -6,7 +6,9 @@ import {
   deleteRegisterEntry,
   loadAccountRegister,
   loadBudgetInfo,
+  loadPlanMonth,
   loadWorkspace,
+  setPlanAssignment,
   updateRegisterEntry,
 } from "../src/lib/desktop";
 
@@ -57,7 +59,14 @@ it("keeps workspace and register reads out of the browser preview", async () => 
   vi.mocked(isTauri).mockReturnValue(false);
   expect(await loadWorkspace("2026-09-14")).toBeNull();
   expect(await loadAccountRegister("cash")).toBeNull();
+  expect(await loadPlanMonth("2026-09")).toBeNull();
   expect(invoke).not.toHaveBeenCalled();
+});
+
+it("loads and updates a plan month with canonical HUF text", async () => {
+  vi.mocked(isTauri).mockReturnValue(true); vi.mocked(invoke).mockResolvedValue({ month: "2026-09", readyToAssign: "0", categories: [] });
+  await loadPlanMonth("2026-09"); expect(invoke).toHaveBeenCalledWith("get_plan_month", { month: "2026-09" });
+  await setPlanAssignment("groceries", "2026-09", "12500"); expect(invoke).toHaveBeenCalledWith("set_plan_assignment", { input: { categoryId: "groceries", month: "2026-09", amount: "12500" } });
 });
 
 it("sends typed manual transaction and transfer inputs", async () => {
