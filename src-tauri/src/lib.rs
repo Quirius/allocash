@@ -1,6 +1,7 @@
 pub mod database;
 pub mod ledger;
 mod migrations;
+pub mod plan;
 pub mod ynab_import;
 
 #[cfg(test)]
