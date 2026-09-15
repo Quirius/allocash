@@ -2,7 +2,7 @@ use crate::{
     database::Database,
     ledger::{Huf, LedgerError, LedgerResult},
 };
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -64,6 +64,40 @@ pub struct PlanSnapshot {
 }
 
 impl Database {
+    pub fn set_credit_payment_category(
+        &self,
+        account_id: &str,
+        category_id: &str,
+    ) -> LedgerResult<()> {
+        let kind: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT kind FROM accounts WHERE id=?1",
+                [account_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match kind.as_deref() {
+            Some("credit") => {}
+            Some(_) => {
+                return Err(LedgerError::InvalidValue(
+                    "A payment category requires a credit account.",
+                ))
+            }
+            None => return Err(LedgerError::NotFound),
+        }
+        let category_exists: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
+            [category_id],
+            |row| row.get(0),
+        )?;
+        if !category_exists {
+            return Err(LedgerError::NotFound);
+        }
+        self.connection.execute("INSERT INTO credit_payment_categories (account_id,category_id) VALUES (?1,?2) ON CONFLICT(account_id) DO UPDATE SET category_id=excluded.category_id", params![account_id, category_id])?;
+        Ok(())
+    }
+
     pub fn move_monthly_money(
         &mut self,
         from_category_id: &str,
@@ -338,5 +372,50 @@ mod tests {
                 .ready_to_assign,
             Huf(1000)
         );
+    }
+
+    #[test]
+    fn payment_categories_require_credit_accounts_and_stay_one_to_one() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "cash".into(),
+                name: "Cash".into(),
+                kind: AccountKind::Cash,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database
+            .create_account(&Account {
+                id: "card".into(),
+                name: "Card".into(),
+                kind: AccountKind::Credit,
+                sort_order: 1,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Payments", 0).unwrap();
+        database
+            .create_category("payment", "g", "Card payment", 0)
+            .unwrap();
+        database
+            .set_credit_payment_category("card", "payment")
+            .unwrap();
+        assert_eq!(
+            database
+                .connection
+                .query_row::<String, _, _>(
+                    "SELECT category_id FROM credit_payment_categories WHERE account_id='card'",
+                    [],
+                    |row| row.get(0)
+                )
+                .unwrap(),
+            "payment"
+        );
+        assert!(database
+            .set_credit_payment_category("cash", "payment")
+            .is_err());
     }
 }
