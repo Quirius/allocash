@@ -64,6 +64,24 @@ pub struct PlanSnapshot {
 }
 
 impl Database {
+    pub fn set_monthly_assignment(
+        &self,
+        category_id: &str,
+        month: &PlanMonth,
+        amount: Huf,
+    ) -> LedgerResult<()> {
+        let exists: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
+            [category_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(LedgerError::NotFound);
+        }
+        self.connection.execute("INSERT INTO category_month_assignments (category_id,month,amount_huf) VALUES (?1,?2,?3) ON CONFLICT(category_id,month) DO UPDATE SET amount_huf=excluded.amount_huf,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')", params![category_id, month.as_str(), amount.0])?;
+        Ok(())
+    }
+
     pub fn plan_month(&self, month: &PlanMonth) -> LedgerResult<PlanSnapshot> {
         let next = month.next_start();
         let start = month.start();
@@ -186,5 +204,35 @@ mod tests {
         assert_eq!(plan.categories[0].assigned, Huf(2000));
         assert_eq!(plan.categories[0].activity, Huf(-500));
         assert_eq!(plan.categories[0].available, Huf(2250));
+    }
+
+    #[test]
+    fn assignment_updates_one_category_month_and_rejects_unknown_categories() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("c", "g", "Food", 0).unwrap();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("c", &month, Huf(100))
+            .unwrap();
+        database
+            .set_monthly_assignment("c", &month, Huf(250))
+            .unwrap();
+        assert_eq!(
+            database
+                .connection
+                .query_row::<i64, _, _>(
+                    "SELECT amount_huf FROM category_month_assignments",
+                    [],
+                    |row| row.get(0)
+                )
+                .unwrap(),
+            250
+        );
+        assert!(matches!(
+            database.set_monthly_assignment("missing", &month, Huf(1)),
+            Err(LedgerError::NotFound)
+        ));
     }
 }
