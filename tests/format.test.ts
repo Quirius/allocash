@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDate, formatHuf, localCalendarDate, parseHufInput } from "../src/lib/format";
+import { formatDate, formatHuf, localCalendarDate, localCalendarMonth, parseHufInput, shiftCalendarMonth } from "../src/lib/format";
 
 describe("integer HUF formatting", () => {
   it.each([
@@ -43,5 +43,14 @@ describe("timezone-free calendar dates", () => {
 
   it("builds the balance cutoff from local date components", () => {
     expect(localCalendarDate(new Date(2026, 8, 4, 23, 30))).toBe("2026-09-04");
+  });
+});
+
+describe("plan months", () => {
+  it("formats and shifts months without timezone conversion", () => {
+    expect(localCalendarMonth(new Date(2026, 8, 15))).toBe("2026-09");
+    expect(shiftCalendarMonth("2026-01", -1)).toBe("2025-12");
+    expect(shiftCalendarMonth("2026-12", 1)).toBe("2027-01");
+    expect(() => shiftCalendarMonth("2026-13", 1)).toThrow("Invalid plan month.");
   });
 });

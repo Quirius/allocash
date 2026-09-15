@@ -28,6 +28,21 @@ export function localCalendarDate(value = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+export function localCalendarMonth(value = new Date()): string {
+  return `${value.getFullYear().toString().padStart(4, "0")}-${(value.getMonth() + 1).toString().padStart(2, "0")}`;
+}
+
+export function shiftCalendarMonth(value: string, offset: number): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(value);
+  if (!match || !Number.isInteger(offset)) throw new Error("Expected an ISO plan month (yyyy-mm).");
+  const year = Number(match[1]); const month = Number(match[2]);
+  if (year < 1 || month < 1 || month > 12) throw new Error("Invalid plan month.");
+  const serial = year * 12 + month - 1 + offset;
+  const nextYear = Math.floor(serial / 12); const nextMonth = (serial % 12) + 1;
+  if (nextYear < 1 || nextYear > 9999) throw new Error("Plan month is outside the supported range.");
+  return `${nextYear.toString().padStart(4, "0")}-${nextMonth.toString().padStart(2, "0")}`;
+}
+
 export function parseHufInput(value: string): bigint {
   const trimmed = value.trim();
   const number = trimmed.endsWith("Ft") ? trimmed.slice(0, -2).trim() : trimmed;
