@@ -75,7 +75,7 @@ impl Database {
     pub fn set_credit_payment_category(
         &self,
         account_id: &str,
-        category_id: &str,
+        category_id: Option<&str>,
     ) -> LedgerResult<()> {
         let kind: Option<String> = self
             .connection
@@ -94,6 +94,10 @@ impl Database {
             }
             None => return Err(LedgerError::NotFound),
         }
+        let Some(category_id) = category_id else {
+            self.connection.execute("DELETE FROM credit_payment_categories WHERE account_id=?1", [account_id])?;
+            return Ok(());
+        };
         let category_exists: bool = self.connection.query_row(
             "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
             [category_id],
@@ -457,7 +461,7 @@ mod tests {
             .create_category("payment", "g", "Card payment", 0)
             .unwrap();
         database
-            .set_credit_payment_category("card", "payment")
+            .set_credit_payment_category("card", Some("payment"))
             .unwrap();
         assert_eq!(
             database
@@ -471,7 +475,11 @@ mod tests {
             "payment"
         );
         assert!(database
-            .set_credit_payment_category("cash", "payment")
+            .set_credit_payment_category("card", None)
+            .unwrap();
+        assert!(database.connection.query_row::<String, _, _>("SELECT category_id FROM credit_payment_categories WHERE account_id='card'", [], |row| row.get(0)).optional().unwrap().is_none());
+        assert!(database
+            .set_credit_payment_category("cash", Some("payment"))
             .is_err());
     }
 }

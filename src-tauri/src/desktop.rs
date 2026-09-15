@@ -196,7 +196,7 @@ struct PlanMoveInput {
 #[serde(rename_all = "camelCase")]
 struct CreditPaymentCategoryInput {
     account_id: String,
-    category_id: String,
+    category_id: Option<String>,
 }
 
 #[tauri::command]
@@ -266,7 +266,7 @@ fn set_credit_payment_category(
 ) -> Result<(), String> {
     with_database(&app, &state, |database| {
         database
-            .set_credit_payment_category(&input.account_id, &input.category_id)
+            .set_credit_payment_category(&input.account_id, input.category_id.as_deref())
             .map_err(ledger_error)
     })
 }
