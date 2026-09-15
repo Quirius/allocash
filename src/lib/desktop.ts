@@ -163,3 +163,4 @@ export async function reconcileAccount(input: ReconciliationInput): Promise<Reco
 }
 export async function loadPlanMonth(month: string): Promise<PlanSnapshot | null> { if (!isTauri()) return null; return invoke<PlanSnapshot>("get_plan_month", { month }); }
 export async function setPlanAssignment(categoryId: string, month: string, amount: string): Promise<void> { return invoke("set_plan_assignment", { input: { categoryId, month, amount } }); }
+export async function movePlanMoney(fromCategoryId: string, toCategoryId: string, month: string, amount: string): Promise<void> { return invoke("move_plan_money", { input: { fromCategoryId, toCategoryId, month, amount } }); }

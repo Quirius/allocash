@@ -184,6 +184,14 @@ struct PlanAssignmentInput {
     month: String,
     amount: String,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PlanMoveInput {
+    from_category_id: String,
+    to_category_id: String,
+    month: String,
+    amount: String,
+}
 
 #[tauri::command]
 fn get_plan_month(
@@ -218,6 +226,32 @@ fn set_plan_assignment(
     })
 }
 
+#[tauri::command]
+fn move_plan_money(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: PlanMoveInput,
+) -> Result<(), String> {
+    let month = PlanMonth::parse(&input.month).map_err(ledger_error)?;
+    let amount = input
+        .amount
+        .parse::<i64>()
+        .map_err(|_| "Expected canonical integer HUF text.".to_owned())?;
+    if amount.to_string() != input.amount {
+        return Err("Expected canonical integer HUF text.".into());
+    }
+    with_database(&app, &state, |database| {
+        database
+            .move_monthly_money(
+                &input.from_category_id,
+                &input.to_category_id,
+                &month,
+                crate::ledger::Huf(amount),
+            )
+            .map_err(ledger_error)
+    })
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(BudgetState(Mutex::new(None)))
@@ -232,7 +266,8 @@ pub fn run() {
             preview_account_reconciliation,
             reconcile_account,
             get_plan_month,
-            set_plan_assignment
+            set_plan_assignment,
+            move_plan_money
         ])
         .run(tauri::generate_context!())
         .expect("Could not start the desktop application");
