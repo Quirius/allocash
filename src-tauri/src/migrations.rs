@@ -6,6 +6,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_budget.sql"),
     include_str!("../migrations/0002_ledger.sql"),
     include_str!("../migrations/0003_monthly_plan.sql"),
+    include_str!("../migrations/0004_category_moves.sql"),
 ];
 pub(crate) const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
 
@@ -117,7 +118,7 @@ mod tests {
         drop(version_one(&path));
         let database = Database::open(&path).unwrap();
         assert_eq!(database.info().unwrap().name, "Preserve me");
-        assert_eq!(database.info().unwrap().schema_version, 3);
+        assert_eq!(database.info().unwrap().schema_version, 4);
         let backups: Vec<_> = std::fs::read_dir(directory.path().join("backups"))
             .unwrap()
             .collect();

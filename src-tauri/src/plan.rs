@@ -64,6 +64,39 @@ pub struct PlanSnapshot {
 }
 
 impl Database {
+    pub fn move_monthly_money(
+        &mut self,
+        from_category_id: &str,
+        to_category_id: &str,
+        month: &PlanMonth,
+        amount: Huf,
+    ) -> LedgerResult<()> {
+        if from_category_id == to_category_id || amount.0 <= 0 {
+            return Err(LedgerError::InvalidValue(
+                "A category move needs two categories and a positive amount.",
+            ));
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let count: i64 = transaction.query_row(
+            "SELECT COUNT(*) FROM categories WHERE id IN (?1,?2)",
+            params![from_category_id, to_category_id],
+            |row| row.get(0),
+        )?;
+        if count != 2 {
+            return Err(LedgerError::NotFound);
+        }
+        let id: String = transaction.query_row(
+            "SELECT 'category-move-' || lower(hex(randomblob(16)))",
+            [],
+            |row| row.get(0),
+        )?;
+        transaction.execute("INSERT INTO category_month_moves (id,month,from_category_id,to_category_id,amount_huf) VALUES (?1,?2,?3,?4,?5)", params![id, month.as_str(), from_category_id, to_category_id, amount.0])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn set_monthly_assignment(
         &self,
         category_id: &str,
@@ -108,6 +141,25 @@ impl Database {
             *assigned.entry(id).or_default() += i128::from(amount);
             assignment_total += i128::from(amount);
         }
+        let mut moves = BTreeMap::<String, i128>::new();
+        let mut current_moves = BTreeMap::<String, i128>::new();
+        let mut move_query = self.connection.prepare("SELECT from_category_id,to_category_id,amount_huf,month FROM category_month_moves WHERE month<=?1")?;
+        for row in move_query.query_map([month.as_str()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })? {
+            let (from, to, amount, move_month) = row?;
+            *moves.entry(from.clone()).or_default() -= i128::from(amount);
+            *moves.entry(to.clone()).or_default() += i128::from(amount);
+            if move_month == month.0 {
+                *current_moves.entry(from).or_default() -= i128::from(amount);
+                *current_moves.entry(to).or_default() += i128::from(amount);
+            }
+        }
         let mut available_activity = BTreeMap::<String, i128>::new();
         let mut activity = BTreeMap::<String, i128>::new();
         let mut ready_income = 0i128;
@@ -138,10 +190,13 @@ impl Database {
                         category_id: category_id.clone(),
                         category_name,
                         assigned: narrow(
-                            a - assigned_before(&self.connection, &month.0, &category_id)?,
+                            a - assigned_before(&self.connection, &month.0, &category_id)?
+                                + current_moves.get(&category_id).copied().unwrap_or(0),
                         )?,
                         activity: narrow(*activity.get(&category_id).unwrap_or(&0))?,
-                        available: narrow(a + activity_total)?,
+                        available: narrow(
+                            a + activity_total + moves.get(&category_id).copied().unwrap_or(0),
+                        )?,
                     })
                 },
             )
@@ -234,5 +289,28 @@ mod tests {
             database.set_monthly_assignment("missing", &month, Huf(1)),
             Err(LedgerError::NotFound)
         ));
+    }
+
+    #[test]
+    fn moving_money_keeps_ready_to_assign_constant_and_rolls_category_available() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("a", "g", "Food", 0).unwrap();
+        database.create_category("b", "g", "Fun", 1).unwrap();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("a", &month, Huf(1000))
+            .unwrap();
+        database
+            .move_monthly_money("a", "b", &month, Huf(250))
+            .unwrap();
+        let plan = database.plan_month(&month).unwrap();
+        assert_eq!(plan.ready_to_assign, Huf(-1000));
+        assert_eq!(plan.categories[0].available, Huf(750));
+        assert_eq!(plan.categories[1].available, Huf(250));
+        assert!(database
+            .move_monthly_money("a", "a", &month, Huf(1))
+            .is_err());
     }
 }
