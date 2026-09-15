@@ -136,6 +136,51 @@ work and tell the owner when a critical task would benefit from manually selecti
 
 Sol instead.
 
+Subagent use is expected whenever it materially improves speed, specialization,
+
+parallelism, verification quality, or risk reduction. The Terra High coordinator should
+
+actively consider delegation rather than attempting every part of a non-trivial task itself.
+
+Use subagents especially when:
+
+- multiple independent repository areas can be explored or changed in parallel,
+- a task benefits from a cheap exploration/test/documentation pass before implementation,
+- a consequential accounting, schema, migration, reconciliation, credit-card, transfer,
+  or Plan-engine change needs an independent review,
+- debugging benefits from a second hypothesis or independent reproduction attempt,
+- implementation and verification can be separated cleanly.
+
+Do not spawn subagents mechanically for tiny, obvious edits where coordination overhead
+
+would exceed the benefit. When subagents are used, give each one a narrow, explicit task
+
+and prefer parallel work only when their file scopes or responsibilities do not conflict.
+
+The owner currently runs the main session on **Terra High**. At the start of each task,
+
+evaluate whether that remains the best main-session setting. If the task would materially
+
+benefit from changing the main model or reasoning level, explicitly tell the owner which
+
+setting to change to and why. In particular:
+
+- recommend **Sol High** for sustained high-risk architecture, accounting invariants,
+  database/schema design, budget-engine logic, or difficult debugging where the coordinator
+  itself needs stronger reasoning throughout rather than only a targeted Sol review,
+- recommend **Luna Medium** only when the whole task is sufficiently simple/mechanical that
+  using Terra High as coordinator would be unnecessary and the owner would benefit from
+  conserving higher-tier usage,
+- otherwise keep **Terra High** as the default coordinator and do not ask the owner to switch.
+
+If the task can stay on Terra High while a Sol or Luna subagent handles the specialized
+
+piece, prefer that over asking the owner to switch the main session. Never claim that a
+
+manual model change is unnecessary if model overrides failed and the remaining work is
+
+materially better suited to Sol.
+
 **---**
 
 **## 1. Core goals**
@@ -1898,12 +1943,20 @@ Required completion behavior:
 - Do not create a tag merely because a commit was made; ordinary edits should remain untagged when no release milestone or meaningful prerelease boundary has been reached.
 - Never move or overwrite an existing published tag unless the owner explicitly requests it.
 
-At the end of each task, explicitly tell the owner what Git actions were performed. The completion message should state:
+At the end of each task, explicitly tell the owner what Git actions were performed and how the agent work was routed. The completion message should state:
 
 - the commit message (and commit hash when available),
 - the branch that was pushed,
 - whether the push succeeded,
 - whether a tag was created and pushed, including its name, or that no tag was warranted for this change,
-- any validation/checks that could not be run or did not pass.
+- any validation/checks that could not be run or did not pass,
+- the main/coordinator model used,
+- every subagent used, including its model/reasoning level and the specific responsibility it handled,
+- if no subagents were needed, explicitly say so,
+- whether the owner should change the current main-session setting for the next task or continuation; if so, state the recommended model/reasoning level and the reason.
+
+Do not claim a subagent/model was used unless it actually ran with that model override. If the runtime does not expose the exact model or reasoning level, report only what can be verified and say that the exact override could not be confirmed.
 
 Do not silently omit the Git completion step. A task that changes repository files is not considered finished until the required commit and push have been attempted and their result has been articulated to the owner. Tagging remains an agent judgment under the existing release-tagging rules.
+
+Likewise, do not silently hide delegation decisions. For non-trivial work, the agent must consider whether subagents would improve the result. The final task report must make the resulting agent/model allocation visible to the owner so they can understand how the task was executed and whether continuing on Terra High remains appropriate.
