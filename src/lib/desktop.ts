@@ -117,6 +117,8 @@ export interface ReconciliationReview {
 export interface ReconciliationResult {
   review: ReconciliationReview; reconciledEntryCount: number; adjustmentTransactionId: string | null;
 }
+export interface PlanCategory { groupId: string; groupName: string; categoryId: string; categoryName: string; assigned: string; activity: string; available: string; }
+export interface PlanSnapshot { month: string; readyToAssign: string; categories: PlanCategory[]; }
 
 export const RECONCILED_CONFIRMATION_REQUIRED = "reconciled_confirmation_required";
 export const RECONCILIATION_OUT_OF_DATE = "reconciliation_out_of_date";
@@ -159,3 +161,5 @@ export async function previewAccountReconciliation(input: ReconciliationInput): 
 export async function reconcileAccount(input: ReconciliationInput): Promise<ReconciliationResult> {
   return invoke<ReconciliationResult>("reconcile_account", { input });
 }
+export async function loadPlanMonth(month: string): Promise<PlanSnapshot> { return invoke<PlanSnapshot>("get_plan_month", { month }); }
+export async function setPlanAssignment(categoryId: string, month: string, amount: string): Promise<void> { return invoke("set_plan_assignment", { input: { categoryId, month, amount } }); }
