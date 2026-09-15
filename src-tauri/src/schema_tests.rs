@@ -221,3 +221,23 @@ fn raw_import_sources_are_preserved_and_source_rows_are_unique() {
         bytes
     );
 }
+
+#[test]
+fn monthly_category_assignments_are_unique_and_validate_calendar_months() {
+    let connection = database();
+    connection
+        .execute(
+            "INSERT INTO category_groups (id,name) VALUES ('g','Living')",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO categories (id,group_id,name) VALUES ('c','g','Groceries')",
+            [],
+        )
+        .unwrap();
+    connection.execute("INSERT INTO category_month_assignments (category_id,month,amount_huf) VALUES ('c','2026-09',12500)", []).unwrap();
+    assert!(connection.execute("INSERT INTO category_month_assignments (category_id,month,amount_huf) VALUES ('c','2026-09',1)", []).is_err());
+    assert!(connection.execute("INSERT INTO category_month_assignments (category_id,month,amount_huf) VALUES ('c','2026-13',1)", []).is_err());
+}

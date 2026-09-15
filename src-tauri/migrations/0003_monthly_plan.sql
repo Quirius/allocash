@@ -1,0 +1,16 @@
+-- Monthly assignments are an append-free editable state: one signed amount per
+-- category/month. Activity remains derived from posted ledger entries, keeping
+-- the Plan reproducible and avoiding a mutable category balance.
+CREATE TABLE category_month_assignments (
+    category_id TEXT NOT NULL REFERENCES categories(id),
+    month TEXT NOT NULL CHECK (
+        month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'
+        AND substr(month, 1, 4) >= '0001'
+        AND CAST(substr(month, 6, 2) AS INTEGER) BETWEEN 1 AND 12
+    ),
+    amount_huf INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (category_id, month)
+) STRICT;
+
+CREATE INDEX category_month_assignments_month ON category_month_assignments(month, category_id);
