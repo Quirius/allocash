@@ -95,7 +95,10 @@ impl Database {
             None => return Err(LedgerError::NotFound),
         }
         let Some(category_id) = category_id else {
-            self.connection.execute("DELETE FROM credit_payment_categories WHERE account_id=?1", [account_id])?;
+            self.connection.execute(
+                "DELETE FROM credit_payment_categories WHERE account_id=?1",
+                [account_id],
+            )?;
             return Ok(());
         };
         let category_exists: bool = self.connection.query_row(
@@ -474,10 +477,17 @@ mod tests {
                 .unwrap(),
             "payment"
         );
+        database.set_credit_payment_category("card", None).unwrap();
         assert!(database
-            .set_credit_payment_category("card", None)
-            .unwrap();
-        assert!(database.connection.query_row::<String, _, _>("SELECT category_id FROM credit_payment_categories WHERE account_id='card'", [], |row| row.get(0)).optional().unwrap().is_none());
+            .connection
+            .query_row::<String, _, _>(
+                "SELECT category_id FROM credit_payment_categories WHERE account_id='card'",
+                [],
+                |row| row.get(0)
+            )
+            .optional()
+            .unwrap()
+            .is_none());
         assert!(database
             .set_credit_payment_category("cash", Some("payment"))
             .is_err());
