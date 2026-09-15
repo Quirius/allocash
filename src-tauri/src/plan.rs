@@ -93,6 +93,9 @@ impl Database {
             |row| row.get(0),
         )?;
         transaction.execute("INSERT INTO category_month_moves (id,month,from_category_id,to_category_id,amount_huf) VALUES (?1,?2,?3,?4,?5)", params![id, month.as_str(), from_category_id, to_category_id, amount.0])?;
+        for (category_id, delta) in [(from_category_id, -amount.0), (to_category_id, amount.0)] {
+            transaction.execute("INSERT INTO category_month_assignments (category_id,month,amount_huf) VALUES (?1,?2,?3) ON CONFLICT(category_id,month) DO UPDATE SET amount_huf=amount_huf + excluded.amount_huf,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')", params![category_id, month.as_str(), delta])?;
+        }
         transaction.commit()?;
         Ok(())
     }
@@ -141,25 +144,6 @@ impl Database {
             *assigned.entry(id).or_default() += i128::from(amount);
             assignment_total += i128::from(amount);
         }
-        let mut moves = BTreeMap::<String, i128>::new();
-        let mut current_moves = BTreeMap::<String, i128>::new();
-        let mut move_query = self.connection.prepare("SELECT from_category_id,to_category_id,amount_huf,month FROM category_month_moves WHERE month<=?1")?;
-        for row in move_query.query_map([month.as_str()], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        })? {
-            let (from, to, amount, move_month) = row?;
-            *moves.entry(from.clone()).or_default() -= i128::from(amount);
-            *moves.entry(to.clone()).or_default() += i128::from(amount);
-            if move_month == month.0 {
-                *current_moves.entry(from).or_default() -= i128::from(amount);
-                *current_moves.entry(to).or_default() += i128::from(amount);
-            }
-        }
         let mut available_activity = BTreeMap::<String, i128>::new();
         let mut activity = BTreeMap::<String, i128>::new();
         let mut ready_income = 0i128;
@@ -190,13 +174,10 @@ impl Database {
                         category_id: category_id.clone(),
                         category_name,
                         assigned: narrow(
-                            a - assigned_before(&self.connection, &month.0, &category_id)?
-                                + current_moves.get(&category_id).copied().unwrap_or(0),
+                            a - assigned_before(&self.connection, &month.0, &category_id)?,
                         )?,
                         activity: narrow(*activity.get(&category_id).unwrap_or(&0))?,
-                        available: narrow(
-                            a + activity_total + moves.get(&category_id).copied().unwrap_or(0),
-                        )?,
+                        available: narrow(a + activity_total)?,
                     })
                 },
             )
