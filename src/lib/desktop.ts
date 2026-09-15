@@ -118,7 +118,8 @@ export interface ReconciliationResult {
   review: ReconciliationReview; reconciledEntryCount: number; adjustmentTransactionId: string | null;
 }
 export interface PlanCategory { groupId: string; groupName: string; categoryId: string; categoryName: string; assigned: string; activity: string; available: string; }
-export interface PlanSnapshot { month: string; readyToAssign: string; categories: PlanCategory[]; }
+export interface CreditPaymentCategory { accountId: string; accountName: string; categoryId: string | null; }
+export interface PlanSnapshot { month: string; readyToAssign: string; categories: PlanCategory[]; creditPaymentCategories: CreditPaymentCategory[]; }
 
 export const RECONCILED_CONFIRMATION_REQUIRED = "reconciled_confirmation_required";
 export const RECONCILIATION_OUT_OF_DATE = "reconciliation_out_of_date";
@@ -164,3 +165,4 @@ export async function reconcileAccount(input: ReconciliationInput): Promise<Reco
 export async function loadPlanMonth(month: string): Promise<PlanSnapshot | null> { if (!isTauri()) return null; return invoke<PlanSnapshot>("get_plan_month", { month }); }
 export async function setPlanAssignment(categoryId: string, month: string, amount: string): Promise<void> { return invoke("set_plan_assignment", { input: { categoryId, month, amount } }); }
 export async function movePlanMoney(fromCategoryId: string, toCategoryId: string, month: string, amount: string): Promise<void> { return invoke("move_plan_money", { input: { fromCategoryId, toCategoryId, month, amount } }); }
+export async function setCreditPaymentCategory(accountId: string, categoryId: string): Promise<void> { return invoke("set_credit_payment_category", { input: { accountId, categoryId } }); }

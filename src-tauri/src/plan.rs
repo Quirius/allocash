@@ -61,6 +61,14 @@ pub struct PlanSnapshot {
     pub month: String,
     pub ready_to_assign: Huf,
     pub categories: Vec<PlanCategory>,
+    pub credit_payment_categories: Vec<CreditPaymentCategory>,
+}
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreditPaymentCategory {
+    pub account_id: String,
+    pub account_name: String,
+    pub category_id: Option<String>,
 }
 
 impl Database {
@@ -228,10 +236,21 @@ impl Database {
                 },
             )
             .collect::<LedgerResult<Vec<_>>>()?;
+        let mut mapping_query = self.connection.prepare("SELECT a.id,a.name,p.category_id FROM accounts a LEFT JOIN credit_payment_categories p ON p.account_id=a.id WHERE a.kind='credit' ORDER BY a.sort_order,a.id")?;
+        let credit_payment_categories = mapping_query
+            .query_map([], |row| {
+                Ok(CreditPaymentCategory {
+                    account_id: row.get(0)?,
+                    account_name: row.get(1)?,
+                    category_id: row.get(2)?,
+                })
+            })?
+            .collect::<Result<_, _>>()?;
         Ok(PlanSnapshot {
             month: month.0.clone(),
             ready_to_assign: narrow(ready_income - assignment_total)?,
             categories,
+            credit_payment_categories,
         })
     }
 }

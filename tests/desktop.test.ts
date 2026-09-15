@@ -10,6 +10,7 @@ import {
   movePlanMoney,
   loadWorkspace,
   setPlanAssignment,
+  setCreditPaymentCategory,
   updateRegisterEntry,
 } from "../src/lib/desktop";
 
@@ -69,6 +70,7 @@ it("loads and updates a plan month with canonical HUF text", async () => {
   await loadPlanMonth("2026-09"); expect(invoke).toHaveBeenCalledWith("get_plan_month", { month: "2026-09" });
   await setPlanAssignment("groceries", "2026-09", "12500"); expect(invoke).toHaveBeenCalledWith("set_plan_assignment", { input: { categoryId: "groceries", month: "2026-09", amount: "12500" } });
   await movePlanMoney("groceries", "fun", "2026-09", "500"); expect(invoke).toHaveBeenCalledWith("move_plan_money", { input: { fromCategoryId: "groceries", toCategoryId: "fun", month: "2026-09", amount: "500" } });
+  await setCreditPaymentCategory("card", "card-payment"); expect(invoke).toHaveBeenCalledWith("set_credit_payment_category", { input: { accountId: "card", categoryId: "card-payment" } });
 });
 
 it("sends typed manual transaction and transfer inputs", async () => {

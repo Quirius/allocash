@@ -192,6 +192,12 @@ struct PlanMoveInput {
     month: String,
     amount: String,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreditPaymentCategoryInput {
+    account_id: String,
+    category_id: String,
+}
 
 #[tauri::command]
 fn get_plan_month(
@@ -252,6 +258,19 @@ fn move_plan_money(
     })
 }
 
+#[tauri::command]
+fn set_credit_payment_category(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: CreditPaymentCategoryInput,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database
+            .set_credit_payment_category(&input.account_id, &input.category_id)
+            .map_err(ledger_error)
+    })
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(BudgetState(Mutex::new(None)))
@@ -267,7 +286,8 @@ pub fn run() {
             reconcile_account,
             get_plan_month,
             set_plan_assignment,
-            move_plan_money
+            move_plan_money,
+            set_credit_payment_category
         ])
         .run(tauri::generate_context!())
         .expect("Could not start the desktop application");
