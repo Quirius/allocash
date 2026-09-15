@@ -537,31 +537,55 @@ impl Database {
         account_id: &str,
         as_of: &CalendarDate,
     ) -> LedgerResult<AccountBalance> {
-        ensure_account(&self.connection, account_id)?;
-        let mut query = self.connection.prepare("SELECT amount_huf,cleared_state FROM ledger_entries WHERE account_id=?1 AND posting_state='posted' AND transaction_date<=?2")?;
-        let mut rows = query.query(params![account_id, as_of.as_str()])?;
-        // Wider checked integer accumulation avoids intermediate i64 overflow and
-        // keeps the result independent of row ordering. Never use SQLite total().
-        let (mut working, mut cleared, mut uncleared, mut reconciled) =
-            (0i128, 0i128, 0i128, 0i128);
-        while let Some(row) = rows.next()? {
-            let amount = i128::from(row.get::<_, i64>(0)?);
-            let state: ClearedState = row.get(1)?;
-            add(&mut working, amount)?;
-            match state {
-                ClearedState::Uncleared => add(&mut uncleared, amount)?,
-                ClearedState::Cleared => add(&mut cleared, amount)?,
-                ClearedState::Reconciled => {
-                    add(&mut cleared, amount)?;
-                    add(&mut reconciled, amount)?;
-                }
-            }
+        account_balance_for(&self.connection, account_id, as_of)
+    }
+
+    pub fn preview_account_reconciliation(
+        &self,
+        input: &ReconciliationInput,
+    ) -> LedgerResult<ReconciliationReview> {
+        ensure_open_account(&self.connection, &input.account_id)?;
+        reconciliation_review_for(&self.connection, input)
+    }
+
+    pub fn reconcile_account(
+        &mut self,
+        input: &ReconciliationInput,
+    ) -> LedgerResult<ReconciliationResult> {
+        let expected = input
+            .expected_cleared_balance
+            .ok_or(LedgerError::InvalidValue(
+                "Review the account before reconciling it.",
+            ))?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_open_account(&transaction, &input.account_id)?;
+        let review = reconciliation_review_for(&transaction, input)?;
+        if review.app_cleared_balance != expected {
+            return Err(LedgerError::ReconciliationOutOfDate);
         }
-        Ok(AccountBalance {
-            working: narrow(working)?,
-            cleared: narrow(cleared)?,
-            uncleared: narrow(uncleared)?,
-            reconciled: narrow(reconciled)?,
+        let reconciled_entry_count = transaction.execute(
+            "UPDATE transactions SET cleared_state='reconciled' WHERE account_id=?1 AND posting_state='posted' AND transaction_date<=?2 AND cleared_state='cleared'",
+            params![input.account_id, input.as_of.as_str()],
+        )?;
+        let adjustment_transaction_id = if review.adjustment_amount.0 == 0 {
+            None
+        } else {
+            let id = random_id(&transaction, "reconciliation-adjustment")?;
+            let mut entry = Entry::manual(&id, &input.account_id, input.as_of.clone());
+            entry.cleared_state = ClearedState::Reconciled;
+            entry.payee_id =
+                resolve_payee(&transaction, Some("Reconciliation Balance Adjustment"))?;
+            entry.memo = format!("Reconciliation adjustment for {}", input.as_of.as_str());
+            insert_entry(&transaction, &entry, Some(review.adjustment_amount), None)?;
+            Some(id)
+        };
+        transaction.commit()?;
+        Ok(ReconciliationResult {
+            review,
+            reconciled_entry_count,
+            adjustment_transaction_id,
         })
     }
 
@@ -934,6 +958,57 @@ impl Database {
         transaction.commit()?;
         Ok(())
     }
+}
+
+fn account_balance_for(
+    connection: &Connection,
+    account_id: &str,
+    as_of: &CalendarDate,
+) -> LedgerResult<AccountBalance> {
+    ensure_account(connection, account_id)?;
+    let mut query = connection.prepare("SELECT amount_huf,cleared_state FROM ledger_entries WHERE account_id=?1 AND posting_state='posted' AND transaction_date<=?2")?;
+    let mut rows = query.query(params![account_id, as_of.as_str()])?;
+    let (mut working, mut cleared, mut uncleared, mut reconciled) = (0i128, 0i128, 0i128, 0i128);
+    while let Some(row) = rows.next()? {
+        let amount = i128::from(row.get::<_, i64>(0)?);
+        let state: ClearedState = row.get(1)?;
+        add(&mut working, amount)?;
+        match state {
+            ClearedState::Uncleared => add(&mut uncleared, amount)?,
+            ClearedState::Cleared => add(&mut cleared, amount)?,
+            ClearedState::Reconciled => {
+                add(&mut cleared, amount)?;
+                add(&mut reconciled, amount)?;
+            }
+        }
+    }
+    Ok(AccountBalance {
+        working: narrow(working)?,
+        cleared: narrow(cleared)?,
+        uncleared: narrow(uncleared)?,
+        reconciled: narrow(reconciled)?,
+    })
+}
+
+fn reconciliation_review_for(
+    connection: &Connection,
+    input: &ReconciliationInput,
+) -> LedgerResult<ReconciliationReview> {
+    let balance = account_balance_for(connection, &input.account_id, &input.as_of)?;
+    let adjustment_amount =
+        narrow(i128::from(input.bank_cleared_balance.0) - i128::from(balance.cleared.0))?;
+    let count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM transactions WHERE account_id=?1 AND posting_state='posted' AND transaction_date<=?2 AND cleared_state='cleared'",
+        params![input.account_id, input.as_of.as_str()], |row| row.get(0),
+    )?;
+    Ok(ReconciliationReview {
+        account_id: input.account_id.clone(),
+        as_of: input.as_of.clone(),
+        app_cleared_balance: balance.cleared,
+        bank_cleared_balance: input.bank_cleared_balance,
+        adjustment_amount,
+        cleared_entry_count: usize::try_from(count).map_err(|_| LedgerError::AmountOverflow)?,
+    })
 }
 
 fn insert_entry(

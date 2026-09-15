@@ -80,6 +80,63 @@ fn balances_separate_cleared_uncleared_reconciled_and_future_entries() {
 }
 
 #[test]
+fn reconciliation_promotes_eligible_entries_and_adds_only_the_reviewed_adjustment() {
+    let (_directory, mut database) = database();
+    database
+        .create_transaction(&entry("income", "cash"), Huf(1_000))
+        .unwrap();
+    database
+        .create_transaction(&entry("expense", "cash"), Huf(-200))
+        .unwrap();
+    let mut pending = entry("pending", "cash");
+    pending.cleared_state = ClearedState::Uncleared;
+    database.create_transaction(&pending, Huf(-50)).unwrap();
+    let mut future = entry("future", "cash");
+    future.date = date("2026-09-11");
+    database.create_transaction(&future, Huf(100)).unwrap();
+    let input = ReconciliationInput {
+        account_id: "cash".into(),
+        as_of: date("2026-09-10"),
+        bank_cleared_balance: Huf(900),
+        expected_cleared_balance: None,
+    };
+    let review = database.preview_account_reconciliation(&input).unwrap();
+    assert_eq!(review.app_cleared_balance, Huf(800));
+    assert_eq!(review.adjustment_amount, Huf(100));
+    assert_eq!(review.cleared_entry_count, 2);
+    let result = database
+        .reconcile_account(&ReconciliationInput {
+            expected_cleared_balance: Some(review.app_cleared_balance),
+            ..input
+        })
+        .unwrap();
+    assert_eq!(result.reconciled_entry_count, 2);
+    assert!(result.adjustment_transaction_id.is_some());
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-09-10"))
+            .unwrap(),
+        AccountBalance {
+            working: Huf(850),
+            cleared: Huf(900),
+            uncleared: Huf(-50),
+            reconciled: Huf(900)
+        }
+    );
+    assert_eq!(
+        database
+            .entries("cash")
+            .unwrap()
+            .iter()
+            .find(|row| row.entry.id == "pending")
+            .unwrap()
+            .entry
+            .cleared_state,
+        ClearedState::Uncleared
+    );
+}
+
+#[test]
 fn cash_credit_loan_and_tracking_pairs_remain_balanced_after_edits_and_deletes() {
     for kind in [
         AccountKind::Cash,

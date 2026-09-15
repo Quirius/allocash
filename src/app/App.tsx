@@ -9,6 +9,7 @@ import {
 } from "../lib/desktop";
 import { formatDate, formatHuf, localCalendarDate } from "../lib/format";
 import { RegisterEntryEditor, TransactionComposer } from "./TransactionEditor";
+import { ReconciliationEditor } from "./ReconciliationEditor";
 
 type Startup =
   | { status: "loading" }
@@ -263,7 +264,7 @@ function AccountRegister({
   onRetry: () => void;
   onChanged: () => Promise<void>;
 }) {
-  const [editor, setEditor] = useState<"new" | RegisterEntry | null>(null);
+  const [editor, setEditor] = useState<"new" | "reconcile" | RegisterEntry | null>(null);
 
   return (
     <section className="register" aria-labelledby="register-title">
@@ -287,6 +288,11 @@ function AccountRegister({
         </div>
         <button
           disabled={account.closed}
+          title={account.closed ? "Reopen this account before reconciling" : undefined}
+          onClick={() => setEditor("reconcile")}
+        >Reconcile</button>
+        <button
+          disabled={account.closed}
           title={account.closed ? "Reopen this account before adding transactions" : undefined}
           onClick={() => setEditor("new")}
         >+ Add transaction</button>
@@ -301,7 +307,10 @@ function AccountRegister({
           onCancel={() => setEditor(null)}
         />
       )}
-      {editor && editor !== "new" && (
+      {editor === "reconcile" && (
+        <ReconciliationEditor account={account} onSaved={onChanged} onCancel={() => setEditor(null)} />
+      )}
+      {editor && editor !== "new" && editor !== "reconcile" && (
         <RegisterEntryEditor
           entry={editor}
           onSaved={onChanged}

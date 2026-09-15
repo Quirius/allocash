@@ -1,7 +1,8 @@
 use crate::database::{BudgetInfo, Database};
 use crate::ledger::{
     AccountOverview, CalendarDate, LedgerError, ManualTransactionDraft, ManualTransferInput,
-    RegisterEntry, RegisterEntryEdit, TransactionFormOptions,
+    ReconciliationInput, ReconciliationResult, ReconciliationReview, RegisterEntry,
+    RegisterEntryEdit, TransactionFormOptions,
 };
 use serde::Serialize;
 use std::sync::Mutex;
@@ -49,6 +50,7 @@ fn ledger_error(error: LedgerError) -> String {
         LedgerError::ReconciledConfirmationRequired => {
             "reconciled_confirmation_required".to_owned()
         }
+        LedgerError::ReconciliationOutOfDate => "reconciliation_out_of_date".to_owned(),
         other => other.to_string(),
     }
 }
@@ -138,6 +140,30 @@ fn delete_register_entry(
 }
 
 #[tauri::command]
+fn preview_account_reconciliation(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: ReconciliationInput,
+) -> Result<ReconciliationReview, String> {
+    with_database(&app, &state, |database| {
+        database
+            .preview_account_reconciliation(&input)
+            .map_err(ledger_error)
+    })
+}
+
+#[tauri::command]
+fn reconcile_account(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: ReconciliationInput,
+) -> Result<ReconciliationResult, String> {
+    with_database(&app, &state, |database| {
+        database.reconcile_account(&input).map_err(ledger_error)
+    })
+}
+
+#[tauri::command]
 fn get_account_register(
     app: tauri::AppHandle,
     state: tauri::State<'_, BudgetState>,
@@ -160,7 +186,9 @@ pub fn run() {
             create_manual_transaction,
             create_manual_transfer,
             update_register_entry,
-            delete_register_entry
+            delete_register_entry,
+            preview_account_reconciliation,
+            reconcile_account
         ])
         .run(tauri::generate_context!())
         .expect("Could not start the desktop application");

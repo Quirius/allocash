@@ -104,7 +104,22 @@ export interface RegisterEntryEdit {
   confirmed: boolean;
 }
 
+export interface ReconciliationInput {
+  accountId: string;
+  asOf: string;
+  bankClearedBalance: string;
+  expectedClearedBalance: string | null;
+}
+export interface ReconciliationReview {
+  accountId: string; asOf: string; appClearedBalance: string; bankClearedBalance: string;
+  adjustmentAmount: string; clearedEntryCount: number;
+}
+export interface ReconciliationResult {
+  review: ReconciliationReview; reconciledEntryCount: number; adjustmentTransactionId: string | null;
+}
+
 export const RECONCILED_CONFIRMATION_REQUIRED = "reconciled_confirmation_required";
+export const RECONCILIATION_OUT_OF_DATE = "reconciliation_out_of_date";
 
 export async function loadBudgetInfo(): Promise<BudgetInfo | null> {
   // Browser preview must never pretend that a budget was opened or saved.
@@ -136,4 +151,11 @@ export async function updateRegisterEntry(edit: RegisterEntryEdit): Promise<void
 
 export async function deleteRegisterEntry(id: string, confirmed: boolean): Promise<void> {
   return invoke("delete_register_entry", { id, confirmed });
+}
+
+export async function previewAccountReconciliation(input: ReconciliationInput): Promise<ReconciliationReview> {
+  return invoke<ReconciliationReview>("preview_account_reconciliation", { input });
+}
+export async function reconcileAccount(input: ReconciliationInput): Promise<ReconciliationResult> {
+  return invoke<ReconciliationResult>("reconcile_account", { input });
 }
