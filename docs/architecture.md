@@ -21,14 +21,20 @@ Initialization errors leave the UI open with retry; database contents are not lo
 
 ## Storage, money and dates
 
-Schema version 1 contains the single budget's settings. Version 2 adds the ledger,
-categories, payees, flags and raw import staging. SQLite `user_version` tracks the
-migration version. Published migrations are immutable. Upgrades reserve the write
-lock, save and verify a standalone SQLite backup, and apply migrations atomically.
-The backup uses a separate read connection while the write reservation prevents
-concurrent writers; WAL data is included. A failed backup prevents the upgrade,
-and a failed migration rolls back while retaining the verified backup. Initialization
-refuses populated unversioned databases and unsupported versions.
+Schema version 1 contains the single budget's settings; later immutable migrations
+add the ledger, Plan, targets and monthly schedules through version 8. SQLite
+`user_version` tracks the migration version. Upgrades reserve the write lock, save
+and verify a standalone SQLite backup, and apply migrations atomically. The desktop
+app also exposes an on-demand native backup. Both paths use SQLite's online backup
+API through a separate read connection, include committed WAL data, convert the copy
+to a self-contained journal mode, verify `quick_check`, schema version and foreign
+keys, sync it, then atomically persist a unique `.sqlite3` file in `backups/` beside
+the database. A failed backup prevents an upgrade; a failed migration rolls back
+while retaining the verified backup. Backups are intentionally never deleted or
+overwritten. They protect against local mistakes or corruption, not disk loss, so
+the owner should copy an important backup elsewhere. Initialization refuses populated
+unversioned databases and unsupported versions. Restore is deliberately separate:
+it needs connection handoff, a pre-restore snapshot, validation and recovery UX.
 
 The ledger uses signed 64-bit integer forints. Rust must use checked
 integer arithmetic. Money crosses JSON IPC as decimal strings and becomes `bigint`

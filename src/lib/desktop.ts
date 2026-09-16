@@ -7,6 +7,11 @@ export interface BudgetInfo {
   databasePath: string;
 }
 
+export interface NativeBackupReceipt {
+  path: string;
+  schemaVersion: number;
+}
+
 export type AccountKind = "cash" | "credit" | "loan" | "tracking";
 export type ClearedState = "uncleared" | "cleared" | "reconciled";
 export type PostingState = "posted" | "scheduled";
@@ -156,6 +161,10 @@ export async function loadBudgetInfo(): Promise<BudgetInfo | null> {
   // Browser preview must never pretend that a budget was opened or saved.
   if (!isTauri()) return null;
   return invoke<BudgetInfo>("get_budget_info");
+}
+
+export async function createNativeBackup(): Promise<NativeBackupReceipt> {
+  return invoke<NativeBackupReceipt>("create_native_backup");
 }
 
 export async function loadWorkspace(asOf: string): Promise<WorkspaceSnapshot | null> {

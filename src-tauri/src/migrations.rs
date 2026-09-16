@@ -1,6 +1,6 @@
-use crate::database::DatabaseResult;
-use rusqlite::{Connection, OpenFlags, TransactionBehavior};
-use std::{path::Path, time::Duration};
+use crate::{backup::create_verified_backup, database::DatabaseResult};
+use rusqlite::{Connection, TransactionBehavior};
+use std::path::Path;
 
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_budget.sql"),
@@ -62,41 +62,7 @@ fn apply(connection: &mut Connection, path: Option<&Path>, scripts: &[&str]) -> 
 }
 
 fn verified_backup(path: &Path, version: i64, target: i64) -> DatabaseResult<()> {
-    let directory = path
-        .parent()
-        .ok_or("Database has no parent directory.")?
-        .join("backups");
-    std::fs::create_dir_all(&directory)?;
-    let pending = tempfile::Builder::new()
-        .prefix(&format!("before-v{version}-to-v{target}-"))
-        .suffix(".partial")
-        .tempfile_in(directory)?;
-    // SQLite backup cannot read from the connection holding a write transaction.
-    // A separate read-only connection sees the committed state protected by it.
-    let source = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    source.busy_timeout(Duration::from_secs(5))?;
-    source.backup("main", pending.path(), None)?;
-    let backup = Connection::open(pending.path())?;
-    // A source in WAL mode can produce a WAL-mode destination. Checkpoint it and
-    // switch to DELETE so the saved backup is one self-contained database file.
-    backup.pragma_update(None, "journal_mode", "DELETE")?;
-    let integrity: String = backup.query_row("PRAGMA quick_check", [], |row| row.get(0))?;
-    let saved_version: i64 = backup.pragma_query_value(None, "user_version", |row| row.get(0))?;
-    if integrity != "ok" || saved_version != version {
-        return Err("Pre-migration backup could not be verified.".into());
-    }
-    if backup
-        .prepare("PRAGMA foreign_key_check")?
-        .query([])?
-        .next()?
-        .is_some()
-    {
-        return Err("Existing database failed foreign key validation.".into());
-    }
-    drop(backup);
-    pending.as_file().sync_all()?;
-    let destination = pending.path().with_extension("sqlite3");
-    pending.persist_noclobber(destination)?;
+    create_verified_backup(path, &format!("before-v{version}-to-v{target}-"), version)?;
     Ok(())
 }
 

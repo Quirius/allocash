@@ -3,6 +3,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   createManualTransaction,
   createManualTransfer,
+  createNativeBackup,
   deleteRegisterEntry,
   loadAccountRegister,
   loadBalanceOverTime,
@@ -47,6 +48,12 @@ it("propagates storage failure instead of falling back to a fake budget", async 
   vi.mocked(isTauri).mockReturnValue(true);
   vi.mocked(invoke).mockRejectedValue(new Error("Database unavailable"));
   await expect(loadBudgetInfo()).rejects.toThrow("Database unavailable");
+});
+
+it("creates a verified native backup through the desktop command", async () => {
+  vi.mocked(invoke).mockResolvedValue({ path: "backups/allocash-manual.sqlite3", schemaVersion: 8 });
+  await expect(createNativeBackup()).resolves.toEqual({ path: "backups/allocash-manual.sqlite3", schemaVersion: 8 });
+  expect(invoke).toHaveBeenCalledWith("create_native_backup");
 });
 
 it("loads account balances for an explicit local calendar date", async () => {

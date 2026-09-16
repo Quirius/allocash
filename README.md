@@ -125,14 +125,17 @@ Keep real exports and backups outside the repository, or under the ignored
 `private-data/` directory. Database files and ZIP/native backups are ignored too.
 Only anonymized fixtures should ever be committed.
 
-Fresh databases initialize at schema version 2. Existing version 1 databases are
-backed up with SQLite's online backup API, checked for integrity, and then upgraded
-atomically. Backups live in a `backups/` folder beside the database. Each backup is
-a standalone SQLite file, including committed WAL data, and never overwrites an
-existing backup. A backup failure aborts the upgrade; a migration failure rolls
-back all schema changes. Unknown versions and populated unversioned databases are
-rejected. Reopening an up-to-date database does not repeat the migration or backup.
-Periodic backups and native export/restore UI are still future work.
+Fresh databases initialize at schema version 8. Existing databases are backed up
+with SQLite's online backup API, checked for integrity, and then upgraded atomically.
+The desktop app can also create a verified native backup on demand. Backups live in
+a `backups/` folder beside the database. Each is a standalone, lossless SQLite file,
+including committed WAL data, and never overwrites an existing backup. A backup
+failure aborts an upgrade; a migration failure rolls back all schema changes while
+retaining its verified backup. Unknown versions and populated unversioned databases
+are rejected. Reopening an up-to-date database does not repeat the migration or
+backup. A local backup helps recover from mistakes or corruption, but it remains on
+the same disk: copy it to another private drive or storage location for disk-loss
+protection. Restore and automatic retention are still future work.
 
 ## Git convention
 

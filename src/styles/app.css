@@ -62,6 +62,12 @@ dt { color: #9dabb9; font-size: 11px; margin-bottom: 8px; }
 dd { margin: 0; font-size: 12px; line-height: 1.6; }
 details { border-top: 1px solid #323d49; padding-top: 16px; margin-top: 20px; font-size: 12px; color: #acb9c7; }
 .database-path { overflow-wrap: anywhere; font-family: Consolas, monospace; }
+.backup-controls { border-top: 1px solid #323d49; padding-top: 16px; margin-top: 20px; }
+.backup-controls button { background: #315b49; border-color: #4e7d68; color: #d8eee1; font-size: 12px; }
+.backup-controls > p { margin: 9px 0 0; color: #9baab4; font-size: 11px; line-height: 1.55; }
+.backup-controls .backup-success { color: #a9e4bf; }
+.backup-success span { display: block; overflow-wrap: anywhere; margin-top: 3px; color: #b9c7d2; font-family: Consolas, monospace; }
+.backup-controls .backup-error { color: #f0b8b0; }
 .register { min-width: 0; }
 .workspace-tabs { display: flex; gap: 5px; margin-bottom: 16px; }
 .workspace-tabs button { background: transparent; color: #9ba8b4; border-color: #3a4652; }

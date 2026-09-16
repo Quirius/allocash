@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  createNativeBackup,
   loadAccountRegister,
   loadWorkspace,
   type AccountKind,
@@ -82,6 +83,9 @@ export function App() {
   const [startupAttempt, setStartupAttempt] = useState(0);
   const [registerAttempt, setRegisterAttempt] = useState(0);
   const [view, setView] = useState<"register" | "plan" | "schedules" | "reports">("register");
+  const [backup, setBackup] = useState<
+    { status: "idle" } | { status: "saving" } | { status: "ready"; path: string } | { status: "error" }
+  >({ status: "idle" });
 
   useEffect(() => {
     let active = true;
@@ -141,6 +145,16 @@ export function App() {
     if (!workspace) throw new Error("The desktop ledger is unavailable.");
     setStartup({ status: "ready", workspace });
     setRegisterAttempt((value) => value + 1);
+  }
+
+  async function saveNativeBackup() {
+    setBackup({ status: "saving" });
+    try {
+      const receipt = await createNativeBackup();
+      setBackup({ status: "ready", path: receipt.path });
+    } catch {
+      setBackup({ status: "error" });
+    }
   }
 
   return (
@@ -235,6 +249,14 @@ export function App() {
               <summary>Local data location</summary>
               <p className="database-path">{startup.workspace.budget.databasePath}</p>
             </details>}
+            {startup.status === "ready" && <div className="backup-controls">
+              <button onClick={saveNativeBackup} disabled={backup.status === "saving"}>
+                {backup.status === "saving" ? "Creating verified backup…" : "Create verified backup"}
+              </button>
+              <p>A full local SQLite copy is saved beside your budget. Copy it to another drive or private storage to protect against disk loss.</p>
+              {backup.status === "ready" && <p className="backup-success" role="status">Verified backup created: <span>{backup.path}</span></p>}
+              {backup.status === "error" && <p className="backup-error" role="alert">The backup could not be created. Your live budget was not changed.</p>}
+            </div>}
           </section>
         </div>
       </main>

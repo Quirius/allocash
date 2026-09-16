@@ -1,4 +1,7 @@
-use crate::migrations::{self, SCHEMA_VERSION};
+use crate::{
+    backup::create_verified_backup,
+    migrations::{self, SCHEMA_VERSION},
+};
 use rusqlite::Connection;
 use serde::Serialize;
 use std::{
@@ -21,6 +24,13 @@ pub struct BudgetInfo {
     pub currency: String,
     pub schema_version: i64,
     pub database_path: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeBackupReceipt {
+    pub path: String,
+    pub schema_version: i64,
 }
 
 impl Database {
@@ -51,6 +61,18 @@ impl Database {
                 })
             },
         )?)
+    }
+
+    pub fn create_native_backup(&self) -> DatabaseResult<NativeBackupReceipt> {
+        let path = create_verified_backup(
+            &self.path,
+            &format!("allocash-manual-v{SCHEMA_VERSION}-"),
+            SCHEMA_VERSION,
+        )?;
+        Ok(NativeBackupReceipt {
+            path: path.to_string_lossy().into_owned(),
+            schema_version: SCHEMA_VERSION,
+        })
     }
 }
 
@@ -133,5 +155,68 @@ mod tests {
         std::fs::write(&path, b"not a database").unwrap();
         assert!(Database::open(&path).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), b"not a database");
+    }
+
+    #[test]
+    fn creates_independent_verified_backups_without_overwriting_an_existing_copy() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("budget.sqlite3");
+        let database = Database::open(&path).unwrap();
+        database
+            .connection
+            .pragma_update(None, "journal_mode", "WAL")
+            .unwrap();
+        database
+            .connection
+            .execute("UPDATE budget_settings SET name = 'Snapshot value'", [])
+            .unwrap();
+
+        let first = database.create_native_backup().unwrap();
+        let second = database.create_native_backup().unwrap();
+        assert_ne!(first.path, second.path);
+        assert_eq!(first.schema_version, SCHEMA_VERSION);
+        assert!(std::path::Path::new(&first.path).is_file());
+        assert!(std::path::Path::new(&second.path).is_file());
+
+        let backup = Connection::open(&first.path).unwrap();
+        assert_eq!(
+            backup
+                .query_row::<String, _, _>("SELECT name FROM budget_settings", [], |row| row.get(0))
+                .unwrap(),
+            "Snapshot value"
+        );
+        assert_eq!(
+            backup
+                .query_row::<String, _, _>("PRAGMA quick_check", [], |row| row.get(0))
+                .unwrap(),
+            "ok"
+        );
+        assert!(backup
+            .prepare("PRAGMA foreign_key_check")
+            .unwrap()
+            .query([])
+            .unwrap()
+            .next()
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn backup_destination_failure_preserves_the_live_database() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("budget.sqlite3");
+        let database = Database::open(&path).unwrap();
+        database
+            .connection
+            .execute("UPDATE budget_settings SET name = 'Still live'", [])
+            .unwrap();
+        std::fs::write(directory.path().join("backups"), "not a directory").unwrap();
+
+        assert!(database.create_native_backup().is_err());
+        assert_eq!(database.info().unwrap().name, "Still live");
+        assert_eq!(
+            std::fs::read(directory.path().join("backups")).unwrap(),
+            b"not a directory"
+        );
     }
 }

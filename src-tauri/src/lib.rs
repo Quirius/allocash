@@ -1,3 +1,4 @@
+mod backup;
 pub mod database;
 pub mod ledger;
 mod migrations;
