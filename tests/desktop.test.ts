@@ -7,6 +7,7 @@ import {
   loadAccountRegister,
   loadBudgetInfo,
   loadPlanMonth,
+  loadSpendingByPayee,
   movePlanMoney,
   loadWorkspace,
   setPlanAssignment,
@@ -75,6 +76,15 @@ it("loads and updates a plan month with canonical HUF text", async () => {
   await setCreditPaymentCategory("card", "card-payment"); expect(invoke).toHaveBeenCalledWith("set_credit_payment_category", { input: { accountId: "card", categoryId: "card-payment" } });
   await setCategoryTarget("groceries", "2026-09", { behavior: "refill", amount: "20000", dueKind: "last_day", dueDay: null }); expect(invoke).toHaveBeenCalledWith("set_category_target", { input: { categoryId: "groceries", effectiveMonth: "2026-09", target: { behavior: "refill", amount: "20000", dueKind: "last_day", dueDay: null } } });
   await setCategoryTargetSnoozed("groceries", "2026-09", true); expect(invoke).toHaveBeenCalledWith("set_category_target_snoozed", { input: { categoryId: "groceries", month: "2026-09", snoozed: true } });
+});
+
+it("loads spending by payee with the selected report scope", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  const input = { from: "2026-09-01", to: "2026-09-14", accountIds: ["cash"] };
+  const report = [{ payeeName: "Market", total: "1200", transactionCount: 2 }];
+  vi.mocked(invoke).mockResolvedValue(report);
+  await expect(loadSpendingByPayee(input)).resolves.toEqual(report);
+  expect(invoke).toHaveBeenCalledWith("get_spending_by_payee", { input });
 });
 
 it("sends typed manual transaction and transfer inputs", async () => {

@@ -3,7 +3,7 @@ use crate::ledger::{
     AccountOverview, CalendarDate, LedgerError, ManualTransactionDraft, ManualTransferInput,
     MonthlyScheduleDraft, NetWorthReport, ReconciliationInput, ReconciliationResult,
     ReconciliationReview, RegisterEntry, RegisterEntryEdit, ScheduledOccurrence,
-    SpendingCategoryTotal, SpendingReportInput, TransactionFormOptions,
+    SpendingCategoryTotal, SpendingPayeeTotal, SpendingReportInput, TransactionFormOptions,
 };
 use crate::plan::{CategoryTargetDefinition, PlanMonth, PlanSnapshot};
 use serde::{Deserialize, Serialize};
@@ -195,6 +195,16 @@ fn get_spending_by_category(
 ) -> Result<Vec<SpendingCategoryTotal>, String> {
     with_database(&app, &state, |database| {
         database.spending_by_category(&input).map_err(ledger_error)
+    })
+}
+#[tauri::command]
+fn get_spending_by_payee(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: SpendingReportInput,
+) -> Result<Vec<SpendingPayeeTotal>, String> {
+    with_database(&app, &state, |database| {
+        database.spending_by_payee(&input).map_err(ledger_error)
     })
 }
 #[tauri::command]
@@ -409,6 +419,7 @@ pub fn run() {
             get_account_register,
             get_scheduled_occurrences,
             get_spending_by_category,
+            get_spending_by_payee,
             get_net_worth_report,
             create_monthly_schedule,
             post_scheduled_occurrence,

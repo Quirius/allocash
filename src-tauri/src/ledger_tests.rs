@@ -200,6 +200,38 @@ fn spending_report_groups_posted_ordinary_outflows_only() {
 }
 
 #[test]
+fn spending_by_payee_groups_posted_ordinary_outflows_only() {
+    let (_directory, database) = database();
+    database.create_payee("market", "Market").unwrap();
+    let mut first = entry("market-first", "cash");
+    first.payee_id = Some("market".into());
+    database.create_transaction(&first, Huf(-100)).unwrap();
+    let mut second = entry("market-second", "cash");
+    second.payee_id = Some("market".into());
+    database.create_transaction(&second, Huf(-50)).unwrap();
+    database
+        .create_transaction(&entry("no-payee", "cash"), Huf(-20))
+        .unwrap();
+    let mut refund = entry("market-refund", "cash");
+    refund.payee_id = Some("market".into());
+    database.create_transaction(&refund, Huf(30)).unwrap();
+    let report = database
+        .spending_by_payee(&SpendingReportInput {
+            from: date("2026-09-10"),
+            to: date("2026-09-10"),
+            account_ids: vec![],
+        })
+        .unwrap();
+    assert_eq!(report.len(), 2);
+    assert_eq!(report[0].payee_name, "Market");
+    assert_eq!(report[0].total, Huf(150));
+    assert_eq!(report[0].transaction_count, 2);
+    assert_eq!(report[1].payee_name, "No payee");
+    assert_eq!(report[1].total, Huf(20));
+    assert_eq!(report[1].transaction_count, 1);
+}
+
+#[test]
 fn net_worth_includes_all_account_kinds_and_excludes_scheduled_rows() {
     let (_directory, database) = database();
     for (id, kind) in [

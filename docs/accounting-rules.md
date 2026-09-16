@@ -122,11 +122,11 @@ ordinary ledger history.
 
 ## Spending reports
 
-The first Spending by Category report is a read-only table over posted ordinary
-outflows in an inclusive date range. It groups by category identity, includes
-cash and credit accounts by default, and can be restricted to selected accounts.
-Transfers, scheduled rows, and inflows/refunds are excluded from this initial
-spending magnitude view.
+Spending by Category and Spending by Payee are read-only tables over posted
+ordinary outflows in an inclusive date range. They group by category identity
+or payee respectively, include cash and credit accounts by default, and can be
+restricted to selected accounts. Transfers, scheduled rows, and inflows/refunds
+are excluded from these spending magnitude views.
 
 Net Worth is a separate as-of projection: it sums the signed posted working
 balances of every account kind, including closed, loan and tracking accounts.

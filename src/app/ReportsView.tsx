@@ -1,9 +1,128 @@
 import { useEffect, useState } from "react";
-import { loadNetWorthReport, loadSpendingByCategory, type AccountOverview, type NetWorthReport, type SpendingCategoryTotal } from "../lib/desktop";
+import {
+  loadNetWorthReport,
+  loadSpendingByCategory,
+  loadSpendingByPayee,
+  type AccountOverview,
+  type NetWorthReport,
+  type SpendingCategoryTotal,
+  type SpendingPayeeTotal,
+} from "../lib/desktop";
 import { formatHuf, localCalendarDate } from "../lib/format";
+
 export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
-  const today = localCalendarDate(); const [from, setFrom] = useState(`${today.slice(0, 7)}-01`); const [to, setTo] = useState(today); const [accountIds, setAccountIds] = useState<string[]>([]); const [rows, setRows] = useState<SpendingCategoryTotal[] | null>(null); const [netWorth, setNetWorth] = useState<NetWorthReport | null>(null); const [error, setError] = useState<string | null>(null);
-  async function load() { try { const [spending, worth] = await Promise.all([loadSpendingByCategory({ from, to, accountIds }), loadNetWorthReport(to, from)]); setRows(spending); setNetWorth(worth); setError(null); } catch { setError("Could not load these reports."); } }
-  useEffect(() => { void load(); }, []); function toggle(id: string) { setAccountIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]); }
-  return <section className="reports-view"><div className="plan-toolbar"><div><p className="eyebrow">REPORTS</p><h2>Spending and net worth</h2></div></div>{error && <p className="editor-error">{error}</p>}<form className="schedule-form" onSubmit={(event) => { event.preventDefault(); void load(); }}><label>From <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label>To <input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>{accounts.map((account) => <label key={account.id}><input type="checkbox" checked={accountIds.includes(account.id)} onChange={() => toggle(account.id)} /> {account.name}</label>)}<button>Refresh</button></form>{netWorth && <div className="balance-strip"><div><span>Assets</span><strong>{formatHuf(BigInt(netWorth.assets))}</strong></div><div><span>Debts</span><strong>{formatHuf(BigInt(netWorth.debts))}</strong></div><div><span>Net worth</span><strong>{formatHuf(BigInt(netWorth.netWorth))}</strong>{netWorth.change && <small>Change {formatHuf(BigInt(netWorth.change))}</small>}</div></div>}{rows === null ? <div className="register-message">Loading report…</div> : <div className="schedule-list">{rows.length === 0 ? <p>No posted spending in this range.</p> : rows.map((row) => <div key={row.categoryId ?? "uncategorized"}><span><strong>{row.categoryName}</strong><small>{row.groupName ?? "Uncategorized"} · {row.transactionCount} transaction{row.transactionCount === 1 ? "" : "s"}</small></span><b>{formatHuf(BigInt(row.total))}</b></div>)}</div>}</section>;
+  const today = localCalendarDate();
+  const [from, setFrom] = useState(`${today.slice(0, 7)}-01`);
+  const [to, setTo] = useState(today);
+  const [accountIds, setAccountIds] = useState<string[]>([]);
+  const [categories, setCategories] = useState<SpendingCategoryTotal[] | null>(null);
+  const [payees, setPayees] = useState<SpendingPayeeTotal[] | null>(null);
+  const [netWorth, setNetWorth] = useState<NetWorthReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    try {
+      const input = { from, to, accountIds };
+      const [spendingByCategory, spendingByPayee, worth] = await Promise.all([
+        loadSpendingByCategory(input),
+        loadSpendingByPayee(input),
+        loadNetWorthReport(to, from),
+      ]);
+      setCategories(spendingByCategory);
+      setPayees(spendingByPayee);
+      setNetWorth(worth);
+      setError(null);
+    } catch {
+      setError("Could not load these reports.");
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  function toggleAccount(id: string) {
+    setAccountIds((current) =>
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
+    );
+  }
+
+  return (
+    <section className="reports-view">
+      <div className="plan-toolbar">
+        <div>
+          <p className="eyebrow">REPORTS</p>
+          <h2>Spending and net worth</h2>
+        </div>
+      </div>
+      {error && <p className="editor-error">{error}</p>}
+      <form
+        className="schedule-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void load();
+        }}
+      >
+        <label>
+          From <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+        </label>
+        <label>
+          To <input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+        </label>
+        <span>Spending accounts</span>
+        {accounts.map((account) => (
+          <label key={account.id}>
+            <input
+              type="checkbox"
+              checked={accountIds.includes(account.id)}
+              onChange={() => toggleAccount(account.id)}
+            /> {account.name}
+          </label>
+        ))}
+        <button>Refresh</button>
+      </form>
+      {netWorth && (
+        <div className="balance-strip">
+          <div><span>Assets</span><strong>{formatHuf(BigInt(netWorth.assets))}</strong></div>
+          <div><span>Debts</span><strong>{formatHuf(BigInt(netWorth.debts))}</strong></div>
+          <div>
+            <span>Net worth</span><strong>{formatHuf(BigInt(netWorth.netWorth))}</strong>
+            {netWorth.change && <small>Change {formatHuf(BigInt(netWorth.change))}</small>}
+          </div>
+        </div>
+      )}
+      {categories === null ? (
+        <div className="register-message">Loading report…</div>
+      ) : (
+        <section className="schedule-list">
+          <h3>Spending by category</h3>
+          {categories.length === 0 ? <p>No posted spending in this range.</p> : categories.map((row) => (
+            <div key={row.categoryId ?? "uncategorized"}>
+              <span>
+                <strong>{row.categoryName}</strong>
+                <small>{row.groupName ?? "Uncategorized"} · {row.transactionCount} transaction{row.transactionCount === 1 ? "" : "s"}</small>
+              </span>
+              <b>{formatHuf(BigInt(row.total))}</b>
+            </div>
+          ))}
+        </section>
+      )}
+      {payees === null ? (
+        <div className="register-message">Loading report…</div>
+      ) : (
+        <section className="schedule-list">
+          <h3>Spending by payee</h3>
+          {payees.length === 0 ? <p>No posted spending in this range.</p> : payees.map((row) => (
+            <div key={row.payeeName}>
+              <span>
+                <strong>{row.payeeName}</strong>
+                <small>{row.transactionCount} transaction{row.transactionCount === 1 ? "" : "s"}</small>
+              </span>
+              <b>{formatHuf(BigInt(row.total))}</b>
+            </div>
+          ))}
+        </section>
+      )}
+    </section>
+  );
 }

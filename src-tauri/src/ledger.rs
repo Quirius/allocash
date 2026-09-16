@@ -379,6 +379,13 @@ pub struct SpendingCategoryTotal {
     pub total: Huf,
     pub transaction_count: usize,
 }
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpendingPayeeTotal {
+    pub payee_name: String,
+    pub total: Huf,
+    pub transaction_count: usize,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -819,6 +826,45 @@ impl Database {
                     category_name: row.get(2)?,
                     total: Huf(row.get(3)?),
                     transaction_count: row.get(4)?,
+                })
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(totals)
+    }
+    pub fn spending_by_payee(
+        &self,
+        input: &SpendingReportInput,
+    ) -> LedgerResult<Vec<SpendingPayeeTotal>> {
+        if input.from.as_str() > input.to.as_str() {
+            return Err(LedgerError::InvalidValue(
+                "Report start date must not be after its end date.",
+            ));
+        }
+        let mut sql = "SELECT COALESCE(p.name,'No payee'),SUM(-t.amount_huf),COUNT(*) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN payees p ON p.id=t.payee_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        if input.account_ids.is_empty() {
+            sql.push_str(" AND a.kind IN ('cash','credit')");
+        } else {
+            sql.push_str(" AND a.id IN (");
+            sql.push_str(
+                &std::iter::repeat_n("?", input.account_ids.len())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            sql.push(')');
+        }
+        sql.push_str(" GROUP BY t.payee_id,p.name ORDER BY SUM(-t.amount_huf) DESC,p.name");
+        let mut values: Vec<rusqlite::types::Value> = vec![
+            input.from.as_str().to_owned().into(),
+            input.to.as_str().to_owned().into(),
+        ];
+        values.extend(input.account_ids.iter().cloned().map(Into::into));
+        let mut statement = self.connection.prepare(&sql)?;
+        let totals = statement
+            .query_map(rusqlite::params_from_iter(values), |row| {
+                Ok(SpendingPayeeTotal {
+                    payee_name: row.get(0)?,
+                    total: Huf(row.get(1)?),
+                    transaction_count: row.get(2)?,
                 })
             })?
             .collect::<Result<_, _>>()?;
