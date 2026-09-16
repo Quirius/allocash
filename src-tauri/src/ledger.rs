@@ -1587,7 +1587,7 @@ impl Database {
             rusqlite::params_from_iter(balance_values),
             |row| row.get(0),
         )?);
-        let mut flow_sql = "SELECT substr(t.transaction_date,1,7),t.amount_huf,t.category_id FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<>0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        let mut flow_sql = "SELECT substr(t.transaction_date,1,7),t.amount_huf,t.category_id FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.posting_state='posted' AND t.scheduled_origin_id IS NULL AND t.transfer_id IS NULL AND t.amount_huf<>0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
         scope(&mut flow_sql);
         let mut flow_values: Vec<rusqlite::types::Value> = vec![
             history_from.as_str().to_owned().into(),
@@ -1637,6 +1637,97 @@ impl Database {
                 .or_default()
                 .push(*amount);
         }
+        let through = future_dates.last().cloned().ok_or(LedgerError::NotFound)?;
+        let mut scheduled_flows = vec![0i128; future_dates.len()];
+        let include_amount = |amount: i64, category_id: &Option<String>| {
+            amount >= 0 || input.category_ids.is_empty() || input.category_ids.contains(category_id)
+        };
+        let mut posted_schedule_sql = "SELECT t.transaction_date,t.amount_huf,t.category_id FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.posting_state='posted' AND t.scheduled_origin_id IS NOT NULL AND t.transaction_date>?1 AND t.transaction_date<=?2".to_owned();
+        scope(&mut posted_schedule_sql);
+        let mut posted_schedule_values: Vec<rusqlite::types::Value> = vec![
+            input.as_of.as_str().to_owned().into(),
+            through.as_str().to_owned().into(),
+        ];
+        posted_schedule_values.extend(input.account_ids.iter().cloned().map(Into::into));
+        let posted_schedule_rows = self
+            .connection
+            .prepare(&posted_schedule_sql)?
+            .query_map(rusqlite::params_from_iter(posted_schedule_values), |row| {
+                Ok((
+                    CalendarDate::parse(&row.get::<_, String>(0)?).map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (date, amount, category_id) in posted_schedule_rows {
+            if include_amount(amount, &category_id) {
+                add_forecast_event(&future_dates, &date, amount, &mut scheduled_flows)?;
+            }
+        }
+        let mut pending_schedule_sql = "SELECT o.occurrence_date,s.day_of_month,s.end_date,t.amount_huf,t.category_id FROM schedule_occurrences o JOIN schedules s ON s.id=o.schedule_id JOIN transactions t ON t.id=o.transaction_id JOIN accounts a ON a.id=s.account_id WHERE s.active=1 AND o.state='pending' AND t.posting_state='scheduled'".to_owned();
+        scope(&mut pending_schedule_sql);
+        let pending_schedule_rows = self
+            .connection
+            .prepare(&pending_schedule_sql)?
+            .query_map(
+                rusqlite::params_from_iter(
+                    input
+                        .account_ids
+                        .iter()
+                        .cloned()
+                        .map(rusqlite::types::Value::from),
+                ),
+                |row| {
+                    Ok((
+                        CalendarDate::parse(&row.get::<_, String>(0)?).map_err(|error| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                0,
+                                rusqlite::types::Type::Text,
+                                Box::new(error),
+                            )
+                        })?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                    ))
+                },
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        for (pending, day, end_date, amount, category_id) in pending_schedule_rows {
+            if !include_amount(amount, &category_id) {
+                continue;
+            }
+            let mut occurrence = pending;
+            let mut first = true;
+            while occurrence.as_str() <= through.as_str() {
+                if occurrence.as_str() > input.as_of.as_str() || first {
+                    add_forecast_event(
+                        &future_dates,
+                        if occurrence.as_str() <= input.as_of.as_str() {
+                            &future_dates[0]
+                        } else {
+                            &occurrence
+                        },
+                        amount,
+                        &mut scheduled_flows,
+                    )?;
+                }
+                first = false;
+                let Some(next) = next_monthly_occurrence(&occurrence, day, end_date.as_deref())?
+                else {
+                    break;
+                };
+                occurrence = next;
+            }
+        }
         const SIMULATIONS: usize = 2000;
         let mut state = seed;
         let mut balances = vec![i128::from(starting_balance.0); SIMULATIONS];
@@ -1644,7 +1735,7 @@ impl Database {
             percentile,
             balances: vec![starting_balance],
         });
-        for date in &future_dates {
+        for (point_index, date) in future_dates.iter().enumerate() {
             let month: u32 = date.as_str()[5..7]
                 .parse()
                 .map_err(|_| LedgerError::InvalidValue("Invalid forecast date."))?;
@@ -1660,6 +1751,7 @@ impl Database {
                             as usize],
                     )
                     .ok_or(LedgerError::AmountOverflow)?;
+                add(balance, scheduled_flows[point_index])?;
             }
             let mut sorted = balances.clone();
             sorted.sort_unstable();
@@ -1671,10 +1763,9 @@ impl Database {
                 )?);
             }
         }
-        let through = future_dates.last().cloned().ok_or(LedgerError::NotFound)?;
         let mut point_dates = vec![input.as_of.clone()];
         point_dates.extend(future_dates);
-        Ok(ForecastReport { as_of: input.as_of.clone(), through, history_from, history_to, seed: input.seed.clone(), simulation_count: SIMULATIONS, starting_balance, point_dates, percentile_paths: paths.into(), assumptions: vec!["Each future month samples one observed whole month of ordinary posted activity.".into(), "Transfers affect the starting balance but are excluded from sampled future activity.".into(), "Pending scheduled transactions and future rows are not modeled in this first forecast.".into()] })
+        Ok(ForecastReport { as_of: input.as_of.clone(), through, history_from, history_to, seed: input.seed.clone(), simulation_count: SIMULATIONS, starting_balance, point_dates, percentile_paths: paths.into(), assumptions: vec!["Each future month samples one observed whole month of ordinary posted activity.".into(), "Transfers affect the starting balance but are excluded from sampled future activity.".into(), "Active monthly schedules are projected deterministically and excluded from sampled history.".into()] })
     }
 
     pub fn income_breakdown(
@@ -2291,6 +2382,13 @@ fn next_schedule_date(
     if !active {
         return Ok(None);
     }
+    next_monthly_occurrence(previous, day, end_date.as_deref())
+}
+fn next_monthly_occurrence(
+    previous: &CalendarDate,
+    day: i64,
+    end_date: Option<&str>,
+) -> LedgerResult<Option<CalendarDate>> {
     let text = previous.as_str();
     let year: i32 = text[..4].parse().unwrap();
     let month: u32 = text[5..7].parse().unwrap();
@@ -2303,7 +2401,7 @@ fn next_schedule_date(
         .map_err(|_| LedgerError::InvalidValue("Invalid monthly schedule."))?
         .min(days_in_month(year, month));
     let next = CalendarDate::parse(&format!("{year:04}-{month:02}-{day:02}"))?;
-    Ok((end_date.as_deref().is_none_or(|end| next.as_str() <= end)).then_some(next))
+    Ok((end_date.is_none_or(|end| next.as_str() <= end)).then_some(next))
 }
 fn calendar_day(date: &CalendarDate) -> LedgerResult<i64> {
     date.as_str()[8..10]
@@ -2538,6 +2636,23 @@ fn forecast_dates(
         ))?);
     }
     Ok((history_from, history_to, future))
+}
+fn add_forecast_event(
+    point_dates: &[CalendarDate],
+    event_date: &CalendarDate,
+    amount: i64,
+    totals: &mut [i128],
+) -> LedgerResult<()> {
+    let index = point_dates
+        .iter()
+        .position(|point| event_date.as_str() <= point.as_str())
+        .ok_or(LedgerError::InvalidValue(
+            "Invalid scheduled forecast date.",
+        ))?;
+    let total = totals.get_mut(index).ok_or(LedgerError::InvalidValue(
+        "Invalid scheduled forecast date.",
+    ))?;
+    add(total, i128::from(amount))
 }
 fn splitmix64(state: &mut u64) -> u64 {
     *state = state.wrapping_add(0x9e3779b97f4a7c15);

@@ -889,6 +889,125 @@ fn forecast_bootstraps_complete_months_deterministically() {
 }
 
 #[test]
+fn forecast_projects_schedules_without_resampling_posted_occurrences() {
+    let (_directory, mut database) = database();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2025-10-31"),
+            end_date: None,
+            payee_name: Some("Rent".into()),
+            category_id: None,
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-100),
+        })
+        .unwrap();
+    for _ in 0..4 {
+        let occurrence = database.scheduled_occurrences().unwrap().remove(0);
+        database
+            .post_scheduled_occurrence(&occurrence.transaction_id)
+            .unwrap();
+    }
+    let report = database
+        .forecast(&ForecastInput {
+            as_of: date("2026-01-15"),
+            horizon_months: 2,
+            history_months: 3,
+            account_ids: vec![],
+            category_ids: vec![],
+            seed: "42".into(),
+        })
+        .unwrap();
+    assert_eq!(report.starting_balance, Huf(-300));
+    assert!(report
+        .percentile_paths
+        .iter()
+        .all(|path| path.balances == vec![Huf(-300), Huf(-500), Huf(-600)]));
+}
+
+#[test]
+fn forecast_counts_an_overdue_schedule_once_and_honors_its_end_date() {
+    let (_directory, mut database) = database();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2025-10-31"),
+            end_date: Some(date("2026-02-28")),
+            payee_name: None,
+            category_id: None,
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-100),
+        })
+        .unwrap();
+    let report = database
+        .forecast(&ForecastInput {
+            as_of: date("2026-01-31"),
+            horizon_months: 2,
+            history_months: 3,
+            account_ids: vec![],
+            category_ids: vec![],
+            seed: "42".into(),
+        })
+        .unwrap();
+    assert!(report
+        .percentile_paths
+        .iter()
+        .all(|path| path.balances == vec![Huf(0), Huf(-200), Huf(-200)]));
+}
+
+#[test]
+fn forecast_applies_account_and_expense_category_scope_to_schedules() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("tracking", AccountKind::Tracking, 1))
+        .unwrap();
+    database
+        .create_category_group("living", "Living", 0)
+        .unwrap();
+    database
+        .create_category("groceries", "living", "Groceries", 0)
+        .unwrap();
+    database
+        .create_category("utilities", "living", "Utilities", 1)
+        .unwrap();
+    for (account_id, category_id, amount) in [
+        ("cash", Some("groceries"), -100),
+        ("cash", Some("utilities"), -200),
+        ("cash", None, 30),
+        ("tracking", Some("groceries"), -500),
+    ] {
+        database
+            .create_monthly_schedule(&MonthlyScheduleDraft {
+                account_id: account_id.into(),
+                start_date: date("2026-01-31"),
+                end_date: None,
+                payee_name: None,
+                category_id: category_id.map(str::to_owned),
+                memo: String::new(),
+                flag_id: None,
+                amount: Huf(amount),
+            })
+            .unwrap();
+    }
+    let report = database
+        .forecast(&ForecastInput {
+            as_of: date("2026-01-15"),
+            horizon_months: 1,
+            history_months: 3,
+            account_ids: vec!["cash".into()],
+            category_ids: vec![Some("groceries".into())],
+            seed: "42".into(),
+        })
+        .unwrap();
+    assert!(report
+        .percentile_paths
+        .iter()
+        .all(|path| path.balances == vec![Huf(0), Huf(-140)]));
+}
+
+#[test]
 fn net_worth_includes_all_account_kinds_and_excludes_scheduled_rows() {
     let (_directory, database) = database();
     for (id, kind) in [

@@ -175,9 +175,11 @@ selected accounts' exact posted balance as of the chosen date, then samples whol
 completed historical months of posted, non-transfer ordinary activity. This keeps
 observed income/expense relationships and irregular months instead of adding
 average-based noise. Transfers remain in the starting balance but are never
-sampled as future activity; pending schedules and future rows are not modeled in
-the first slice. A category filter limits negative activity only, because income
-sources are payees rather than budget categories.
+sampled as future activity. Active monthly schedules and early-posted future
+schedule occurrences are added deterministically, while schedule-origin history
+is excluded from the bootstrap to prevent double-counting. A category filter
+limits negative activity only, because income sources are payees rather than
+budget categories.
 
 Net Worth is a separate as-of projection: it sums the signed posted working
 balances of every account kind, including closed, loan and tracking accounts.
