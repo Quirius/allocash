@@ -6,6 +6,7 @@ import {
   deleteRegisterEntry,
   loadAccountRegister,
   loadBudgetInfo,
+  loadInflowOutflowByMonth,
   loadPlanMonth,
   loadSpendingByPayee,
   movePlanMoney,
@@ -85,6 +86,15 @@ it("loads spending by payee with the selected report scope", async () => {
   vi.mocked(invoke).mockResolvedValue(report);
   await expect(loadSpendingByPayee(input)).resolves.toEqual(report);
   expect(invoke).toHaveBeenCalledWith("get_spending_by_payee", { input });
+});
+
+it("loads monthly inflow and outflow with the selected report scope", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  const input = { from: "2026-09-01", to: "2026-09-14", accountIds: ["cash"] };
+  const report = { from: input.from, to: input.to, months: [], totalInflow: "0", totalOutflow: "0", totalDifference: "0" };
+  vi.mocked(invoke).mockResolvedValue(report);
+  await expect(loadInflowOutflowByMonth(input)).resolves.toEqual(report);
+  expect(invoke).toHaveBeenCalledWith("get_inflow_outflow_by_month", { input });
 });
 
 it("sends typed manual transaction and transfer inputs", async () => {

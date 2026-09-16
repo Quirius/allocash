@@ -1,9 +1,10 @@
 use crate::database::{BudgetInfo, Database};
 use crate::ledger::{
-    AccountOverview, CalendarDate, LedgerError, ManualTransactionDraft, ManualTransferInput,
-    MonthlyScheduleDraft, NetWorthReport, ReconciliationInput, ReconciliationResult,
-    ReconciliationReview, RegisterEntry, RegisterEntryEdit, ScheduledOccurrence,
-    SpendingCategoryTotal, SpendingPayeeTotal, SpendingReportInput, TransactionFormOptions,
+    AccountOverview, CalendarDate, InflowOutflowReport, LedgerError, ManualTransactionDraft,
+    ManualTransferInput, MonthlyScheduleDraft, NetWorthReport, ReconciliationInput,
+    ReconciliationResult, ReconciliationReview, RegisterEntry, RegisterEntryEdit,
+    ScheduledOccurrence, SpendingCategoryTotal, SpendingPayeeTotal, SpendingReportInput,
+    TransactionFormOptions,
 };
 use crate::plan::{CategoryTargetDefinition, PlanMonth, PlanSnapshot};
 use serde::{Deserialize, Serialize};
@@ -205,6 +206,18 @@ fn get_spending_by_payee(
 ) -> Result<Vec<SpendingPayeeTotal>, String> {
     with_database(&app, &state, |database| {
         database.spending_by_payee(&input).map_err(ledger_error)
+    })
+}
+#[tauri::command]
+fn get_inflow_outflow_by_month(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: SpendingReportInput,
+) -> Result<InflowOutflowReport, String> {
+    with_database(&app, &state, |database| {
+        database
+            .inflow_outflow_by_month(&input)
+            .map_err(ledger_error)
     })
 }
 #[tauri::command]
@@ -420,6 +433,7 @@ pub fn run() {
             get_scheduled_occurrences,
             get_spending_by_category,
             get_spending_by_payee,
+            get_inflow_outflow_by_month,
             get_net_worth_report,
             create_monthly_schedule,
             post_scheduled_occurrence,

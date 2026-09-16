@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import {
+  loadInflowOutflowByMonth,
   loadNetWorthReport,
   loadSpendingByCategory,
   loadSpendingByPayee,
   type AccountOverview,
+  type InflowOutflowReport,
   type NetWorthReport,
   type SpendingCategoryTotal,
   type SpendingPayeeTotal,
@@ -17,19 +19,22 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
   const [accountIds, setAccountIds] = useState<string[]>([]);
   const [categories, setCategories] = useState<SpendingCategoryTotal[] | null>(null);
   const [payees, setPayees] = useState<SpendingPayeeTotal[] | null>(null);
+  const [cashFlow, setCashFlow] = useState<InflowOutflowReport | null>(null);
   const [netWorth, setNetWorth] = useState<NetWorthReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
     try {
       const input = { from, to, accountIds };
-      const [spendingByCategory, spendingByPayee, worth] = await Promise.all([
+      const [spendingByCategory, spendingByPayee, inflowOutflow, worth] = await Promise.all([
         loadSpendingByCategory(input),
         loadSpendingByPayee(input),
+        loadInflowOutflowByMonth(input),
         loadNetWorthReport(to, from),
       ]);
       setCategories(spendingByCategory);
       setPayees(spendingByPayee);
+      setCashFlow(inflowOutflow);
       setNetWorth(worth);
       setError(null);
     } catch {
@@ -69,7 +74,7 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
         <label>
           To <input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
         </label>
-        <span>Spending accounts</span>
+        <span>Spending and cash-flow accounts</span>
         {accounts.map((account) => (
           <label key={account.id}>
             <input
@@ -90,6 +95,29 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
             {netWorth.change && <small>Change {formatHuf(BigInt(netWorth.change))}</small>}
           </div>
         </div>
+      )}
+      {cashFlow === null ? (
+        <div className="register-message">Loading report…</div>
+      ) : (
+        <section className="schedule-list">
+          <h3>Inflow / outflow</h3>
+          <div className="cash-flow-total">
+            <span>
+              <strong>Selected period</strong>
+              <small>Inflow {formatHuf(BigInt(cashFlow.totalInflow))} · Outflow {formatHuf(BigInt(cashFlow.totalOutflow))}</small>
+            </span>
+            <b>{formatHuf(BigInt(cashFlow.totalDifference))}</b>
+          </div>
+          {cashFlow.months.map((row) => (
+            <div key={row.month}>
+              <span>
+                <strong>{row.month}</strong>
+                <small>Inflow {formatHuf(BigInt(row.inflow))} ({row.inflowTransactionCount}) · Outflow {formatHuf(BigInt(row.outflow))} ({row.outflowTransactionCount})</small>
+              </span>
+              <b>{formatHuf(BigInt(row.difference))}</b>
+            </div>
+          ))}
+        </section>
       )}
       {categories === null ? (
         <div className="register-message">Loading report…</div>

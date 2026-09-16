@@ -389,6 +389,28 @@ pub struct SpendingPayeeTotal {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct InflowOutflowMonth {
+    pub month: String,
+    pub inflow: Huf,
+    pub outflow: Huf,
+    pub difference: Huf,
+    pub inflow_transaction_count: usize,
+    pub outflow_transaction_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InflowOutflowReport {
+    pub from: CalendarDate,
+    pub to: CalendarDate,
+    pub months: Vec<InflowOutflowMonth>,
+    pub total_inflow: Huf,
+    pub total_outflow: Huf,
+    pub total_difference: Huf,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScheduledOccurrence {
     pub schedule_id: String,
     pub transaction_id: String,
@@ -869,6 +891,82 @@ impl Database {
             })?
             .collect::<Result<_, _>>()?;
         Ok(totals)
+    }
+
+    pub fn inflow_outflow_by_month(
+        &self,
+        input: &SpendingReportInput,
+    ) -> LedgerResult<InflowOutflowReport> {
+        if input.from.as_str() > input.to.as_str() {
+            return Err(LedgerError::InvalidValue(
+                "Report start date must not be after its end date.",
+            ));
+        }
+        let mut sql = "SELECT substr(t.transaction_date,1,7),SUM(CASE WHEN t.amount_huf>0 THEN t.amount_huf ELSE 0 END),SUM(CASE WHEN t.amount_huf<0 THEN -t.amount_huf ELSE 0 END),SUM(CASE WHEN t.amount_huf>0 THEN 1 ELSE 0 END),SUM(CASE WHEN t.amount_huf<0 THEN 1 ELSE 0 END) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<>0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        if input.account_ids.is_empty() {
+            sql.push_str(" AND a.kind IN ('cash','credit')");
+        } else {
+            sql.push_str(" AND a.id IN (");
+            sql.push_str(
+                &std::iter::repeat_n("?", input.account_ids.len())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            sql.push(')');
+        }
+        sql.push_str(
+            " GROUP BY substr(t.transaction_date,1,7) ORDER BY substr(t.transaction_date,1,7)",
+        );
+        let mut values: Vec<rusqlite::types::Value> = vec![
+            input.from.as_str().to_owned().into(),
+            input.to.as_str().to_owned().into(),
+        ];
+        values.extend(input.account_ids.iter().cloned().map(Into::into));
+        let mut statement = self.connection.prepare(&sql)?;
+        let totals = statement
+            .query_map(rusqlite::params_from_iter(values), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    (
+                        Huf(row.get(1)?),
+                        Huf(row.get(2)?),
+                        row.get::<_, usize>(3)?,
+                        row.get::<_, usize>(4)?,
+                    ),
+                ))
+            })?
+            .collect::<Result<std::collections::BTreeMap<_, _>, _>>()?;
+        let mut total_inflow = 0i128;
+        let mut total_outflow = 0i128;
+        let months = report_months(&input.from, &input.to)?
+            .into_iter()
+            .map(|month| {
+                let (inflow, outflow, inflow_transaction_count, outflow_transaction_count) = totals
+                    .get(&month)
+                    .copied()
+                    .unwrap_or((Huf(0), Huf(0), 0, 0));
+                add(&mut total_inflow, i128::from(inflow.0))?;
+                add(&mut total_outflow, i128::from(outflow.0))?;
+                Ok(InflowOutflowMonth {
+                    month,
+                    inflow,
+                    outflow,
+                    difference: narrow(i128::from(inflow.0) - i128::from(outflow.0))?,
+                    inflow_transaction_count,
+                    outflow_transaction_count,
+                })
+            })
+            .collect::<LedgerResult<Vec<_>>>()?;
+        let total_inflow = narrow(total_inflow)?;
+        let total_outflow = narrow(total_outflow)?;
+        Ok(InflowOutflowReport {
+            from: input.from.clone(),
+            to: input.to.clone(),
+            total_difference: narrow(i128::from(total_inflow.0) - i128::from(total_outflow.0))?,
+            total_inflow,
+            total_outflow,
+            months,
+        })
     }
 
     pub fn create_monthly_schedule(&mut self, draft: &MonthlyScheduleDraft) -> LedgerResult<()> {
@@ -1476,6 +1574,29 @@ fn confirm_reconciled(reconciled: bool, confirmed: bool) -> LedgerResult<()> {
 fn guard_transfer(connection: &Connection, id: &str, confirmed: bool) -> LedgerResult<()> {
     let reconciled: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM transactions WHERE transfer_id=?1 AND cleared_state='reconciled')",[id],|row|row.get(0))?;
     confirm_reconciled(reconciled, confirmed)
+}
+fn report_months(from: &CalendarDate, to: &CalendarDate) -> LedgerResult<Vec<String>> {
+    let mut year: u32 = from.as_str()[..4]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid report date."))?;
+    let mut month: u32 = from.as_str()[5..7]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid report date."))?;
+    let end = &to.as_str()[..7];
+    let mut months = Vec::new();
+    loop {
+        let current = format!("{year:04}-{month:02}");
+        months.push(current.clone());
+        if current == end {
+            return Ok(months);
+        }
+        if month == 12 {
+            year += 1;
+            month = 1;
+        } else {
+            month += 1;
+        }
+    }
 }
 fn add(total: &mut i128, amount: i128) -> LedgerResult<()> {
     *total = total

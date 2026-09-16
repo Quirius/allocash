@@ -232,6 +232,99 @@ fn spending_by_payee_groups_posted_ordinary_outflows_only() {
 }
 
 #[test]
+fn inflow_outflow_report_is_monthly_dense_and_excludes_internal_movements() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("card", AccountKind::Credit, 1))
+        .unwrap();
+    database
+        .create_account(&account("closed-card", AccountKind::Credit, 2))
+        .unwrap();
+    database
+        .create_account(&account("tracking", AccountKind::Tracking, 3))
+        .unwrap();
+    let mut september_income = entry("september-income", "cash");
+    september_income.date = date("2026-09-01");
+    database
+        .create_transaction(&september_income, Huf(100))
+        .unwrap();
+    let mut september_spending = entry("september-spending", "cash");
+    september_spending.date = date("2026-09-30");
+    database
+        .create_transaction(&september_spending, Huf(-30))
+        .unwrap();
+    let mut closed_spending = entry("closed-spending", "closed-card");
+    closed_spending.date = date("2026-09-15");
+    database
+        .create_transaction(&closed_spending, Huf(-5))
+        .unwrap();
+    database.set_account_closed("closed-card", true).unwrap();
+    let mut october_spending = entry("october-spending", "card");
+    october_spending.date = date("2026-10-01");
+    database
+        .create_transaction(&october_spending, Huf(-20))
+        .unwrap();
+    let mut tracking_income = entry("tracking-income", "tracking");
+    tracking_income.date = date("2026-10-10");
+    database
+        .create_transaction(&tracking_income, Huf(999))
+        .unwrap();
+    let scheduled = Entry::scheduled("scheduled-flow", "cash", date("2026-10-10"), "legacy");
+    database.create_transaction(&scheduled, Huf(-50)).unwrap();
+    database
+        .create_transaction(&entry("zero-flow", "cash"), Huf(0))
+        .unwrap();
+    database
+        .create_transfer(&TransferDraft::manual(
+            "cash-card-transfer",
+            Huf(80),
+            entry("cash-transfer-out", "cash"),
+            entry("card-transfer-in", "card"),
+            Direction::Outflow,
+        ))
+        .unwrap();
+    let input = SpendingReportInput {
+        from: date("2026-09-01"),
+        to: date("2026-11-01"),
+        account_ids: vec![],
+    };
+    let report = database.inflow_outflow_by_month(&input).unwrap();
+    assert_eq!(report.months.len(), 3);
+    assert_eq!(report.months[0].month, "2026-09");
+    assert_eq!(report.months[0].inflow, Huf(100));
+    assert_eq!(report.months[0].outflow, Huf(35));
+    assert_eq!(report.months[0].difference, Huf(65));
+    assert_eq!(report.months[0].inflow_transaction_count, 1);
+    assert_eq!(report.months[0].outflow_transaction_count, 2);
+    assert_eq!(report.months[1].month, "2026-10");
+    assert_eq!(report.months[1].inflow, Huf(0));
+    assert_eq!(report.months[1].outflow, Huf(20));
+    assert_eq!(report.months[1].difference, Huf(-20));
+    assert_eq!(report.months[2].month, "2026-11");
+    assert_eq!(report.months[2].inflow, Huf(0));
+    assert_eq!(report.months[2].outflow, Huf(0));
+    assert_eq!(report.total_inflow, Huf(100));
+    assert_eq!(report.total_outflow, Huf(55));
+    assert_eq!(report.total_difference, Huf(45));
+    let tracking = database
+        .inflow_outflow_by_month(&SpendingReportInput {
+            account_ids: vec!["tracking".into()],
+            ..input
+        })
+        .unwrap();
+    assert_eq!(tracking.total_inflow, Huf(999));
+    assert_eq!(tracking.total_outflow, Huf(0));
+    assert!(matches!(
+        database.inflow_outflow_by_month(&SpendingReportInput {
+            from: date("2026-11-02"),
+            to: date("2026-11-01"),
+            account_ids: vec![],
+        }),
+        Err(LedgerError::InvalidValue(_))
+    ));
+}
+
+#[test]
 fn net_worth_includes_all_account_kinds_and_excludes_scheduled_rows() {
     let (_directory, database) = database();
     for (id, kind) in [

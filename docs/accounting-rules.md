@@ -128,6 +128,13 @@ or payee respectively, include cash and credit accounts by default, and can be
 restricted to selected accounts. Transfers, scheduled rows, and inflows/refunds
 are excluded from these spending magnitude views.
 
+Inflow / Outflow is a dense monthly view over the same inclusive scope. It uses
+posted, non-transfer, nonzero ordinary entries: positive amounts are gross
+inflows, negative amounts are positive outflow magnitudes, and difference is
+inflow minus outflow. Thus ordinary refunds and reimbursements appear as gross
+inflows rather than reducing a prior expense. Months without activity remain in
+the response so a later chart has a continuous series.
+
 Net Worth is a separate as-of projection: it sums the signed posted working
 balances of every account kind, including closed, loan and tracking accounts.
 Transfers remain included there because their two legs net to zero across the
