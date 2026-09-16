@@ -340,6 +340,32 @@ pub struct ManualTransactionDraft {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MonthlyScheduleDraft {
+    pub account_id: String,
+    pub start_date: CalendarDate,
+    pub end_date: Option<CalendarDate>,
+    pub payee_name: Option<String>,
+    pub category_id: Option<String>,
+    pub memo: String,
+    pub flag_id: Option<String>,
+    pub amount: Huf,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduledOccurrence {
+    pub schedule_id: String,
+    pub transaction_id: String,
+    pub account_name: String,
+    pub date: CalendarDate,
+    pub payee_name: Option<String>,
+    pub category_name: Option<String>,
+    pub memo: String,
+    pub amount: Huf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ManualTransferInput {
     pub account_id: String,
     pub counterpart_account_id: String,
@@ -705,6 +731,93 @@ impl Database {
         })
     }
 
+    pub fn create_monthly_schedule(&mut self, draft: &MonthlyScheduleDraft) -> LedgerResult<()> {
+        if draft.amount.0 == 0
+            || draft
+                .end_date
+                .as_ref()
+                .is_some_and(|end| end.as_str() < draft.start_date.as_str())
+        {
+            return Err(LedgerError::InvalidValue("Invalid monthly schedule."));
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_open_account(&transaction, &draft.account_id)?;
+        let schedule_id = random_id(&transaction, "monthly-schedule")?;
+        let payee_id = resolve_payee(&transaction, draft.payee_name.as_deref())?;
+        let day = calendar_day(&draft.start_date)?;
+        transaction.execute("INSERT INTO schedules (id,account_id,payee_id,category_id,memo,flag_id,amount_huf,start_date,day_of_month,end_date) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)", params![schedule_id,draft.account_id,payee_id,draft.category_id,draft.memo.trim(),draft.flag_id,draft.amount.0,draft.start_date.as_str(),day,draft.end_date.as_ref().map(CalendarDate::as_str)])?;
+        materialize_occurrence(&transaction, &schedule_id, &draft.start_date)?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    pub fn scheduled_occurrences(&self) -> LedgerResult<Vec<ScheduledOccurrence>> {
+        let mut statement = self.connection.prepare("SELECT o.schedule_id,o.transaction_id,a.name,t.transaction_date,p.name,c.name,t.memo,t.amount_huf FROM schedule_occurrences o JOIN transactions t ON t.id=o.transaction_id JOIN schedules s ON s.id=o.schedule_id JOIN accounts a ON a.id=s.account_id LEFT JOIN payees p ON p.id=t.payee_id LEFT JOIN categories c ON c.id=t.category_id WHERE o.state='pending' ORDER BY t.transaction_date,o.schedule_id")?;
+        let occurrences = statement
+            .query_map([], |row| {
+                Ok(ScheduledOccurrence {
+                    schedule_id: row.get(0)?,
+                    transaction_id: row.get(1)?,
+                    account_name: row.get(2)?,
+                    date: CalendarDate::parse(&row.get::<_, String>(3)?).map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            3,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })?,
+                    payee_name: row.get(4)?,
+                    category_name: row.get(5)?,
+                    memo: row.get(6)?,
+                    amount: Huf(row.get(7)?),
+                })
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(occurrences)
+    }
+
+    pub fn post_scheduled_occurrence(&mut self, transaction_id: &str) -> LedgerResult<()> {
+        self.finish_scheduled_occurrence(transaction_id, "posted")
+    }
+
+    pub fn skip_scheduled_occurrence(&mut self, transaction_id: &str) -> LedgerResult<()> {
+        self.finish_scheduled_occurrence(transaction_id, "skipped")
+    }
+
+    fn finish_scheduled_occurrence(
+        &mut self,
+        transaction_id: &str,
+        state: &str,
+    ) -> LedgerResult<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (schedule_id, date): (String, String) = transaction.query_row("SELECT schedule_id,occurrence_date FROM schedule_occurrences WHERE transaction_id=?1 AND state='pending'", [transaction_id], |row| Ok((row.get(0)?,row.get(1)?))).optional()?.ok_or(LedgerError::NotFound)?;
+        if state == "posted" {
+            transaction.execute("UPDATE transactions SET posting_state='posted' WHERE id=?1 AND posting_state='scheduled'", [transaction_id])?;
+        } else {
+            transaction.execute("UPDATE schedule_occurrences SET transaction_id=NULL,state='skipped' WHERE transaction_id=?1", [transaction_id])?;
+            transaction.execute(
+                "DELETE FROM transactions WHERE id=?1 AND posting_state='scheduled'",
+                [transaction_id],
+            )?;
+        }
+        if state == "posted" {
+            transaction.execute(
+                "UPDATE schedule_occurrences SET state='posted' WHERE transaction_id=?1",
+                [transaction_id],
+            )?;
+        }
+        let previous = CalendarDate::parse(&date)?;
+        if let Some(next) = next_schedule_date(&transaction, &schedule_id, &previous)? {
+            materialize_occurrence(&transaction, &schedule_id, &next)?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn create_manual_transaction(
         &mut self,
         draft: &ManualTransactionDraft,
@@ -792,7 +905,7 @@ impl Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current = transaction
             .query_row(
-                "SELECT transfer_id,transfer_direction,cleared_state,memo,amount_huf FROM ledger_entries WHERE id=?1",
+                "SELECT transfer_id,transfer_direction,cleared_state,memo,amount_huf,posting_state FROM ledger_entries WHERE id=?1",
                 [&edit.id],
                 |row| {
                     Ok((
@@ -801,11 +914,17 @@ impl Database {
                         row.get::<_, ClearedState>(2)?,
                         row.get::<_, String>(3)?,
                         row.get::<_, i64>(4)?,
+                        row.get::<_, PostingState>(5)?,
                     ))
                 },
             )
             .optional()?
             .ok_or(LedgerError::NotFound)?;
+        if current.5 == PostingState::Scheduled {
+            return Err(LedgerError::InvalidValue(
+                "Use the schedule Post or Skip action.",
+            ));
+        }
         let amount_changed = current.4 != edit.amount.0;
         let state_changed = current.2 != edit.cleared_state;
         let reconciled_pair = if let Some(transfer_id) = current.0.as_deref() {
@@ -914,6 +1033,19 @@ impl Database {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let scheduled: bool = transaction
+            .query_row(
+                "SELECT posting_state='scheduled' FROM transactions WHERE id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or(LedgerError::NotFound)?;
+        if scheduled {
+            return Err(LedgerError::InvalidValue(
+                "Use the schedule Post or Skip action.",
+            ));
+        }
         let (transfer, state) = entry_identity(&transaction, id)?;
         if let Some(transfer_id) = transfer {
             guard_transfer(&transaction, &transfer_id, confirmed)?;
@@ -1053,6 +1185,66 @@ fn ensure_open_account(connection: &Connection, id: &str) -> LedgerResult<()> {
         ))
     } else {
         Ok(())
+    }
+}
+fn materialize_occurrence(
+    transaction: &rusqlite::Transaction<'_>,
+    schedule_id: &str,
+    date: &CalendarDate,
+) -> LedgerResult<()> {
+    let changed = transaction.execute("INSERT INTO schedule_occurrences (schedule_id,occurrence_date,state) VALUES (?1,?2,'pending') ON CONFLICT(schedule_id,occurrence_date) DO NOTHING", params![schedule_id,date.as_str()])?;
+    if changed == 0 {
+        return Ok(());
+    }
+    let (account_id, payee_id, category_id, memo, flag_id, amount): (String, Option<String>, Option<String>, String, Option<String>, i64) = transaction.query_row("SELECT account_id,payee_id,category_id,memo,flag_id,amount_huf FROM schedules WHERE id=?1 AND active=1", [schedule_id], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?)))?;
+    let id = random_id(transaction, "scheduled-transaction")?;
+    let mut entry = Entry::scheduled(&id, &account_id, date.clone(), schedule_id);
+    entry.payee_id = payee_id;
+    entry.category_id = category_id;
+    entry.memo = memo;
+    entry.flag_id = flag_id;
+    insert_entry(transaction, &entry, Some(Huf(amount)), None)?;
+    transaction.execute("UPDATE schedule_occurrences SET transaction_id=?3 WHERE schedule_id=?1 AND occurrence_date=?2", params![schedule_id,date.as_str(),id])?;
+    Ok(())
+}
+fn next_schedule_date(
+    transaction: &rusqlite::Transaction<'_>,
+    schedule_id: &str,
+    previous: &CalendarDate,
+) -> LedgerResult<Option<CalendarDate>> {
+    let (day, end_date, active): (i64, Option<String>, bool) = transaction.query_row(
+        "SELECT day_of_month,end_date,active FROM schedules WHERE id=?1",
+        [schedule_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    if !active {
+        return Ok(None);
+    }
+    let text = previous.as_str();
+    let year: i32 = text[..4].parse().unwrap();
+    let month: u32 = text[5..7].parse().unwrap();
+    let (year, month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
+    let day = u32::try_from(day)
+        .map_err(|_| LedgerError::InvalidValue("Invalid monthly schedule."))?
+        .min(days_in_month(year, month));
+    let next = CalendarDate::parse(&format!("{year:04}-{month:02}-{day:02}"))?;
+    Ok((end_date.as_deref().is_none_or(|end| next.as_str() <= end)).then_some(next))
+}
+fn calendar_day(date: &CalendarDate) -> LedgerResult<i64> {
+    date.as_str()[8..10]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid monthly schedule."))
+}
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
     }
 }
 fn random_id(connection: &Connection, prefix: &str) -> LedgerResult<String> {

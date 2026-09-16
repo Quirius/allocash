@@ -11,6 +11,7 @@ import { formatDate, formatHuf, localCalendarDate } from "../lib/format";
 import { RegisterEntryEditor, TransactionComposer } from "./TransactionEditor";
 import { ReconciliationEditor } from "./ReconciliationEditor";
 import { PlanView } from "./PlanView";
+import { ScheduleView } from "./ScheduleView";
 
 type Startup =
   | { status: "loading" }
@@ -79,7 +80,7 @@ export function App() {
   const [register, setRegister] = useState<RegisterState>({ status: "idle" });
   const [startupAttempt, setStartupAttempt] = useState(0);
   const [registerAttempt, setRegisterAttempt] = useState(0);
-  const [view, setView] = useState<"register" | "plan">("register");
+  const [view, setView] = useState<"register" | "plan" | "schedules">("register");
 
   useEffect(() => {
     let active = true;
@@ -203,8 +204,9 @@ export function App() {
             </div>
           )}
 
-          {startup.status === "ready" && <div className="workspace-tabs"><button className={view === "register" ? "active" : ""} onClick={() => setView("register")}>Register</button><button className={view === "plan" ? "active" : ""} onClick={() => setView("plan")}>Plan</button></div>}
+          {startup.status === "ready" && <div className="workspace-tabs"><button className={view === "register" ? "active" : ""} onClick={() => setView("register")}>Register</button><button className={view === "plan" ? "active" : ""} onClick={() => setView("plan")}>Plan</button><button className={view === "schedules" ? "active" : ""} onClick={() => setView("schedules")}>Scheduled</button></div>}
           {startup.status === "ready" && view === "plan" && <PlanView />}
+          {startup.status === "ready" && view === "schedules" && <ScheduleView accounts={accounts} options={startup.workspace.transactionOptions} />}
           {startup.status === "ready" && view === "register" && selectedAccount && (
             <AccountRegister
               key={selectedAccount.id}

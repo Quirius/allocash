@@ -107,6 +107,16 @@ side cannot bypass a reconciled counterpart's warning. Confirmation allows the
 change; history is not hard-locked. Date/account/category editing and the
 reconciliation UI are future operations and must apply the same rule.
 
+## Monthly schedules
+
+The first scheduling slice supports ordinary monthly income and expense schedules,
+not recurring transfers. It materializes one uncleared, pending occurrence at a
+time. Posting explicitly turns that same row into posted ledger history and creates
+the next month (clamping dates such as the 31st to the month's last day); skipping
+records the skipped occurrence and advances instead. Pending rows are excluded
+from balances and the Plan, and cannot be edited or deleted through the generic
+register actions.
+
 ## Validation boundary
 
 The core has tests for migration backup/rollback, WAL-safe backups, transfer

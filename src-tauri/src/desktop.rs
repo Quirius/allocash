@@ -1,8 +1,8 @@
 use crate::database::{BudgetInfo, Database};
 use crate::ledger::{
     AccountOverview, CalendarDate, LedgerError, ManualTransactionDraft, ManualTransferInput,
-    ReconciliationInput, ReconciliationResult, ReconciliationReview, RegisterEntry,
-    RegisterEntryEdit, TransactionFormOptions,
+    MonthlyScheduleDraft, ReconciliationInput, ReconciliationResult, ReconciliationReview,
+    RegisterEntry, RegisterEntryEdit, ScheduledOccurrence, TransactionFormOptions,
 };
 use crate::plan::{CategoryTargetDefinition, PlanMonth, PlanSnapshot};
 use serde::{Deserialize, Serialize};
@@ -177,6 +177,52 @@ fn get_account_register(
     })
 }
 
+#[tauri::command]
+fn get_scheduled_occurrences(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+) -> Result<Vec<ScheduledOccurrence>, String> {
+    with_database(&app, &state, |database| {
+        database.scheduled_occurrences().map_err(ledger_error)
+    })
+}
+#[tauri::command]
+fn create_monthly_schedule(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: MonthlyScheduleDraft,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database
+            .create_monthly_schedule(&input)
+            .map_err(ledger_error)
+    })
+}
+#[tauri::command]
+fn post_scheduled_occurrence(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    transaction_id: String,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database
+            .post_scheduled_occurrence(&transaction_id)
+            .map_err(ledger_error)
+    })
+}
+#[tauri::command]
+fn skip_scheduled_occurrence(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    transaction_id: String,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database
+            .skip_scheduled_occurrence(&transaction_id)
+            .map_err(ledger_error)
+    })
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PlanAssignmentInput {
@@ -320,6 +366,10 @@ pub fn run() {
             get_budget_info,
             get_workspace,
             get_account_register,
+            get_scheduled_occurrences,
+            create_monthly_schedule,
+            post_scheduled_occurrence,
+            skip_scheduled_occurrence,
             create_manual_transaction,
             create_manual_transfer,
             update_register_entry,

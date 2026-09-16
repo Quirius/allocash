@@ -95,6 +95,8 @@ export interface ManualTransferInput {
   amount: string;
   direction: "outflow" | "inflow";
 }
+export interface MonthlyScheduleInput { accountId: string; startDate: string; endDate: string | null; payeeName: string | null; categoryId: string | null; memo: string; flagId: string | null; amount: string; }
+export interface ScheduledOccurrence { scheduleId: string; transactionId: string; accountName: string; date: string; payeeName: string | null; categoryName: string | null; memo: string; amount: string; }
 
 export interface RegisterEntryEdit {
   id: string;
@@ -149,6 +151,10 @@ export async function createManualTransaction(input: ManualTransactionInput): Pr
 export async function createManualTransfer(input: ManualTransferInput): Promise<string> {
   return invoke<string>("create_manual_transfer", { input });
 }
+export async function loadScheduledOccurrences(): Promise<ScheduledOccurrence[] | null> { if (!isTauri()) return null; return invoke("get_scheduled_occurrences"); }
+export async function createMonthlySchedule(input: MonthlyScheduleInput): Promise<void> { return invoke("create_monthly_schedule", { input }); }
+export async function postScheduledOccurrence(transactionId: string): Promise<void> { return invoke("post_scheduled_occurrence", { transactionId }); }
+export async function skipScheduledOccurrence(transactionId: string): Promise<void> { return invoke("skip_scheduled_occurrence", { transactionId }); }
 
 export async function updateRegisterEntry(edit: RegisterEntryEdit): Promise<void> {
   return invoke("update_register_entry", { edit });

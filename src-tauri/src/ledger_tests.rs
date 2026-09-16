@@ -80,6 +80,57 @@ fn balances_separate_cleared_uncleared_reconciled_and_future_entries() {
 }
 
 #[test]
+fn monthly_schedule_posts_once_and_clamps_the_next_short_month() {
+    let (_directory, mut database) = database();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-01-31"),
+            end_date: None,
+            payee_name: Some("Rent".into()),
+            category_id: None,
+            memo: "Monthly rent".into(),
+            flag_id: None,
+            amount: Huf(-100),
+        })
+        .unwrap();
+    let january = database.scheduled_occurrences().unwrap();
+    assert_eq!(january.len(), 1);
+    assert_eq!(january[0].date, date("2026-01-31"));
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-01-31"))
+            .unwrap()
+            .working,
+        Huf(0)
+    );
+    database
+        .post_scheduled_occurrence(&january[0].transaction_id)
+        .unwrap();
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-01-31"))
+            .unwrap()
+            .working,
+        Huf(-100)
+    );
+    let february = database.scheduled_occurrences().unwrap();
+    assert_eq!(february.len(), 1);
+    assert_eq!(february[0].date, date("2026-02-28"));
+    assert!(matches!(
+        database.post_scheduled_occurrence(&january[0].transaction_id),
+        Err(LedgerError::NotFound)
+    ));
+    database
+        .skip_scheduled_occurrence(&february[0].transaction_id)
+        .unwrap();
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].date,
+        date("2026-03-31")
+    );
+}
+
+#[test]
 fn reconciliation_promotes_eligible_entries_and_adds_only_the_reviewed_adjustment() {
     let (_directory, mut database) = database();
     database
