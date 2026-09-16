@@ -7,6 +7,7 @@ import {
   loadAccountRegister,
   loadBalanceOverTime,
   loadBudgetInfo,
+  loadForecast,
   loadIncomeBreakdown,
   loadIncomeVsExpense,
   loadInflowOutflowByMonth,
@@ -137,6 +138,15 @@ it("loads income breakdown with the selected activity scope", async () => {
   vi.mocked(invoke).mockResolvedValue(report);
   await expect(loadIncomeBreakdown(input)).resolves.toEqual(report);
   expect(invoke).toHaveBeenCalledWith("get_income_breakdown", { input });
+});
+
+it("loads a deterministic forecast with its selected scope", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  const input = { asOf: "2026-09-14", horizonMonths: 12, historyMonths: 12, accountIds: ["cash"], categoryIds: [null], seed: "42" };
+  const report = { asOf: input.asOf, through: "2027-09-30", historyFrom: "2025-09-01", historyTo: "2026-08-31", seed: input.seed, simulationCount: 2000, startingBalance: "0", pointDates: [], percentilePaths: [], assumptions: [] };
+  vi.mocked(invoke).mockResolvedValue(report);
+  await expect(loadForecast(input)).resolves.toEqual(report);
+  expect(invoke).toHaveBeenCalledWith("get_forecast", { input });
 });
 
 it("sends typed reconciliation review and completion inputs", async () => {

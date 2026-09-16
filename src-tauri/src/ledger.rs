@@ -565,6 +565,38 @@ pub struct IncomeBreakdownReport {
     pub net_income: Huf,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForecastInput {
+    pub as_of: CalendarDate,
+    pub horizon_months: u16,
+    pub history_months: u16,
+    pub account_ids: Vec<String>,
+    pub category_ids: Vec<Option<String>>,
+    pub seed: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForecastPercentilePath {
+    pub percentile: u8,
+    pub balances: Vec<Huf>,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForecastReport {
+    pub as_of: CalendarDate,
+    pub through: CalendarDate,
+    pub history_from: CalendarDate,
+    pub history_to: CalendarDate,
+    pub seed: String,
+    pub simulation_count: usize,
+    pub starting_balance: Huf,
+    pub point_dates: Vec<CalendarDate>,
+    pub percentile_paths: Vec<ForecastPercentilePath>,
+    pub assumptions: Vec<String>,
+}
+
 struct IncomeExpenseCategoryAccum {
     group_id: Option<String>,
     group_name: String,
@@ -1497,6 +1529,154 @@ impl Database {
         })
     }
 
+    pub fn forecast(&self, input: &ForecastInput) -> LedgerResult<ForecastReport> {
+        if !(1..=120).contains(&input.horizon_months) || !(3..=120).contains(&input.history_months)
+        {
+            return Err(LedgerError::InvalidValue(
+                "Forecast months must be between 1 and 120 (history at least 3).",
+            ));
+        }
+        let seed: u64 = input
+            .seed
+            .parse()
+            .map_err(|_| LedgerError::InvalidValue("Forecast seed must be an unsigned integer."))?;
+        if seed.to_string() != input.seed {
+            return Err(LedgerError::InvalidValue(
+                "Forecast seed must be canonical unsigned integer text.",
+            ));
+        }
+        let (history_from, history_to, future_dates) =
+            forecast_dates(&input.as_of, input.history_months, input.horizon_months)?;
+        let scope = |sql: &mut String| {
+            if input.account_ids.is_empty() {
+                sql.push_str(" AND a.kind IN ('cash','credit') AND a.closed=0");
+            } else {
+                sql.push_str(" AND a.id IN (");
+                sql.push_str(
+                    &std::iter::repeat_n("?", input.account_ids.len())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
+                sql.push(')');
+            }
+        };
+        if !input.account_ids.is_empty() {
+            let known: i64 = self.connection.query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM accounts WHERE id IN ({})",
+                    std::iter::repeat_n("?", input.account_ids.len())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                ),
+                rusqlite::params_from_iter(input.account_ids.iter()),
+                |row| row.get(0),
+            )?;
+            if usize::try_from(known).map_err(|_| LedgerError::AmountOverflow)?
+                != input.account_ids.len()
+            {
+                return Err(LedgerError::NotFound);
+            }
+        }
+        let mut balance_sql = "SELECT COALESCE(SUM(t.amount_huf),0) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.posting_state='posted' AND t.transaction_date<=?1".to_owned();
+        scope(&mut balance_sql);
+        let mut balance_values: Vec<rusqlite::types::Value> =
+            vec![input.as_of.as_str().to_owned().into()];
+        balance_values.extend(input.account_ids.iter().cloned().map(Into::into));
+        let starting_balance = Huf(self.connection.query_row(
+            &balance_sql,
+            rusqlite::params_from_iter(balance_values),
+            |row| row.get(0),
+        )?);
+        let mut flow_sql = "SELECT substr(t.transaction_date,1,7),t.amount_huf,t.category_id FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<>0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        scope(&mut flow_sql);
+        let mut flow_values: Vec<rusqlite::types::Value> = vec![
+            history_from.as_str().to_owned().into(),
+            history_to.as_str().to_owned().into(),
+        ];
+        flow_values.extend(input.account_ids.iter().cloned().map(Into::into));
+        let rows = self
+            .connection
+            .prepare(&flow_sql)?
+            .query_map(rusqlite::params_from_iter(flow_values), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let months = report_months(&history_from, &history_to)?;
+        let mut flows = std::collections::BTreeMap::<String, i128>::new();
+        for month in &months {
+            flows.insert(month.clone(), 0);
+        }
+        for (month, amount, category_id) in rows {
+            if amount < 0
+                && !input.category_ids.is_empty()
+                && !input.category_ids.contains(&category_id)
+            {
+                continue;
+            }
+            let total = flows
+                .get_mut(&month)
+                .ok_or(LedgerError::InvalidValue("Invalid forecast month."))?;
+            add(total, i128::from(amount))?;
+        }
+        let samples = months
+            .iter()
+            .map(|month| flows.get(month).copied().ok_or(LedgerError::NotFound))
+            .collect::<LedgerResult<Vec<_>>>()?;
+        let mut seasonal = std::collections::BTreeMap::<u32, Vec<i128>>::new();
+        for (month, amount) in months.iter().zip(samples.iter()) {
+            seasonal
+                .entry(
+                    month[5..]
+                        .parse()
+                        .map_err(|_| LedgerError::InvalidValue("Invalid forecast month."))?,
+                )
+                .or_default()
+                .push(*amount);
+        }
+        const SIMULATIONS: usize = 2000;
+        let mut state = seed;
+        let mut balances = vec![i128::from(starting_balance.0); SIMULATIONS];
+        let mut paths = [10u8, 25, 50, 75, 90].map(|percentile| ForecastPercentilePath {
+            percentile,
+            balances: vec![starting_balance],
+        });
+        for date in &future_dates {
+            let month: u32 = date.as_str()[5..7]
+                .parse()
+                .map_err(|_| LedgerError::InvalidValue("Invalid forecast date."))?;
+            let pool = seasonal
+                .get(&month)
+                .filter(|values| values.len() >= 2)
+                .unwrap_or(&samples);
+            for balance in &mut balances {
+                *balance = balance
+                    .checked_add(
+                        pool[(splitmix64(&mut state)
+                            % u64::try_from(pool.len()).map_err(|_| LedgerError::AmountOverflow)?)
+                            as usize],
+                    )
+                    .ok_or(LedgerError::AmountOverflow)?;
+            }
+            let mut sorted = balances.clone();
+            sorted.sort_unstable();
+            for path in &mut paths {
+                path.balances.push(narrow(
+                    sorted[(usize::from(path.percentile) * SIMULATIONS)
+                        .div_ceil(100)
+                        .saturating_sub(1)],
+                )?);
+            }
+        }
+        let through = future_dates.last().cloned().ok_or(LedgerError::NotFound)?;
+        let mut point_dates = vec![input.as_of.clone()];
+        point_dates.extend(future_dates);
+        Ok(ForecastReport { as_of: input.as_of.clone(), through, history_from, history_to, seed: input.seed.clone(), simulation_count: SIMULATIONS, starting_balance, point_dates, percentile_paths: paths.into(), assumptions: vec!["Each future month samples one observed whole month of ordinary posted activity.".into(), "Transfers affect the starting balance but are excluded from sampled future activity.".into(), "Pending scheduled transactions and future rows are not modeled in this first forecast.".into()] })
+    }
+
     pub fn income_breakdown(
         &self,
         input: &IncomeBreakdownInput,
@@ -2304,6 +2484,67 @@ fn balance_point_dates(from: &CalendarDate, to: &CalendarDate) -> LedgerResult<V
         dates.push(to.clone());
     }
     Ok(dates)
+}
+fn forecast_dates(
+    as_of: &CalendarDate,
+    history_months: u16,
+    horizon_months: u16,
+) -> LedgerResult<(CalendarDate, CalendarDate, Vec<CalendarDate>)> {
+    let mut year: i32 = as_of.as_str()[..4]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid forecast date."))?;
+    let mut month: i32 = as_of.as_str()[5..7]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid forecast date."))?;
+    month -= i32::from(history_months);
+    while month <= 0 {
+        year -= 1;
+        month += 12;
+    }
+    let history_from = CalendarDate::parse(&format!("{year:04}-{month:02}-01"))?;
+    let mut end_year: i32 = as_of.as_str()[..4]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid forecast date."))?;
+    let mut end_month: u32 = as_of.as_str()[5..7]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid forecast date."))?;
+    if end_month == 1 {
+        end_year -= 1;
+        end_month = 12;
+    } else {
+        end_month -= 1;
+    }
+    let history_to = CalendarDate::parse(&format!(
+        "{end_year:04}-{end_month:02}-{:02}",
+        days_in_month(end_year, end_month)
+    ))?;
+    let mut future = Vec::new();
+    let mut future_year: i32 = as_of.as_str()[..4]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid forecast date."))?;
+    let mut future_month: u32 = as_of.as_str()[5..7]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid forecast date."))?;
+    for _ in 0..horizon_months {
+        if future_month == 12 {
+            future_year += 1;
+            future_month = 1;
+        } else {
+            future_month += 1;
+        }
+        future.push(CalendarDate::parse(&format!(
+            "{future_year:04}-{future_month:02}-{:02}",
+            days_in_month(future_year, future_month)
+        ))?);
+    }
+    Ok((history_from, history_to, future))
+}
+fn splitmix64(state: &mut u64) -> u64 {
+    *state = state.wrapping_add(0x9e3779b97f4a7c15);
+    let mut value = *state;
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
+    value ^ (value >> 31)
 }
 fn report_months(from: &CalendarDate, to: &CalendarDate) -> LedgerResult<Vec<String>> {
     let mut year: u32 = from.as_str()[..4]

@@ -116,6 +116,9 @@ export interface IncomeBreakdownInput { from: string; to: string; accountIds: st
 export interface IncomeBreakdownSource { payeeId: string | null; payeeName: string; total: string; transactionCount: number; }
 export interface IncomeBreakdownExpenseGroup { groupId: string | null; groupName: string; total: string; transactionCount: number; }
 export interface IncomeBreakdownReport { from: string; to: string; incomeSources: IncomeBreakdownSource[]; expenseGroups: IncomeBreakdownExpenseGroup[]; totalIncome: string; totalExpense: string; netIncome: string; }
+export interface ForecastInput { asOf: string; horizonMonths: number; historyMonths: number; accountIds: string[]; categoryIds: Array<string | null>; seed: string; }
+export interface ForecastPercentilePath { percentile: number; balances: string[]; }
+export interface ForecastReport { asOf: string; through: string; historyFrom: string; historyTo: string; seed: string; simulationCount: number; startingBalance: string; pointDates: string[]; percentilePaths: ForecastPercentilePath[]; assumptions: string[]; }
 export interface NetWorthReport { asOf: string; comparedTo: string | null; assets: string; debts: string; netWorth: string; change: string | null; }
 export interface ScheduledOccurrence { scheduleId: string; transactionId: string; accountName: string; date: string; payeeName: string | null; categoryName: string | null; memo: string; amount: string; }
 
@@ -184,6 +187,7 @@ export async function loadIncomeVsExpense(input: SpendingReportInput): Promise<I
 export async function loadBalanceOverTime(input: BalanceOverTimeInput): Promise<BalanceOverTimeReport | null> { if (!isTauri()) return null; return invoke("get_balance_over_time", { input }); }
 export async function loadOutflowOverTime(input: OutflowOverTimeInput): Promise<OutflowOverTimeReport | null> { if (!isTauri()) return null; return invoke("get_outflow_over_time", { input }); }
 export async function loadIncomeBreakdown(input: IncomeBreakdownInput): Promise<IncomeBreakdownReport | null> { if (!isTauri()) return null; return invoke("get_income_breakdown", { input }); }
+export async function loadForecast(input: ForecastInput): Promise<ForecastReport | null> { if (!isTauri()) return null; return invoke("get_forecast", { input }); }
 export async function loadNetWorthReport(asOf: string, comparedTo: string | null): Promise<NetWorthReport | null> { if (!isTauri()) return null; return invoke("get_net_worth_report", { asOf, comparedTo }); }
 
 export async function updateRegisterEntry(edit: RegisterEntryEdit): Promise<void> {

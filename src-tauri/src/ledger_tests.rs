@@ -813,6 +813,82 @@ fn income_breakdown_uses_payees_and_budget_groups_without_tracing_funds() {
 }
 
 #[test]
+fn forecast_bootstraps_complete_months_deterministically() {
+    let (_directory, database) = database();
+    database
+        .create_category_group("living", "Living", 0)
+        .unwrap();
+    database
+        .create_category("groceries", "living", "Groceries", 0)
+        .unwrap();
+    for (id, day, amount, category) in [
+        ("march-income", "2026-03-10", 100, None),
+        ("april-groceries", "2026-04-10", -40, Some("groceries")),
+        ("may-income", "2026-05-10", 10, None),
+        ("may-uncategorized", "2026-05-20", -30, None),
+        ("current-income", "2026-06-10", 20, None),
+    ] {
+        let mut row = entry(id, "cash");
+        row.date = date(day);
+        row.category_id = category.map(str::to_owned);
+        database.create_transaction(&row, Huf(amount)).unwrap();
+    }
+    let input = ForecastInput {
+        as_of: date("2026-06-15"),
+        horizon_months: 2,
+        history_months: 3,
+        account_ids: vec![],
+        category_ids: vec![],
+        seed: "42".into(),
+    };
+    let first = database.forecast(&input).unwrap();
+    let second = database.forecast(&input).unwrap();
+    assert_eq!(
+        first
+            .point_dates
+            .iter()
+            .map(CalendarDate::as_str)
+            .collect::<Vec<_>>(),
+        vec!["2026-06-15", "2026-07-31", "2026-08-31"]
+    );
+    assert_eq!(first.starting_balance, Huf(60));
+    assert_eq!(first.history_from.as_str(), "2026-03-01");
+    assert_eq!(first.history_to.as_str(), "2026-05-31");
+    assert_eq!(first.percentile_paths.len(), 5);
+    assert!(first
+        .percentile_paths
+        .iter()
+        .all(|path| path.balances.len() == 3 && path.balances[0] == Huf(60)));
+    assert_eq!(
+        first.percentile_paths[2].balances,
+        second.percentile_paths[2].balances
+    );
+    for index in 0..3 {
+        assert!(
+            first.percentile_paths[0].balances[index].0
+                <= first.percentile_paths[1].balances[index].0
+                && first.percentile_paths[1].balances[index].0
+                    <= first.percentile_paths[2].balances[index].0
+                && first.percentile_paths[2].balances[index].0
+                    <= first.percentile_paths[3].balances[index].0
+                && first.percentile_paths[3].balances[index].0
+                    <= first.percentile_paths[4].balances[index].0
+        );
+    }
+    let groceries_only = database
+        .forecast(&ForecastInput {
+            category_ids: vec![Some("groceries".into())],
+            ..input
+        })
+        .unwrap();
+    assert_eq!(groceries_only.starting_balance, Huf(60));
+    assert_ne!(
+        first.percentile_paths[2].balances,
+        groceries_only.percentile_paths[2].balances
+    );
+}
+
+#[test]
 fn net_worth_includes_all_account_kinds_and_excludes_scheduled_rows() {
     let (_directory, database) = database();
     for (id, kind) in [
