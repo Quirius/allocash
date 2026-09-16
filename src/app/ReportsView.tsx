@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import {
   loadBalanceOverTime,
+  loadForecast,
   loadIncomeBreakdown,
   loadIncomeVsExpense,
   loadInflowOutflowByMonth,
@@ -11,6 +12,7 @@ import {
   type AccountOverview,
   type BalanceOverTimeReport,
   type CategoryOption,
+  type ForecastReport,
   type IncomeBreakdownReport,
   type IncomeExpenseReport,
   type InflowOutflowReport,
@@ -43,6 +45,10 @@ function balancePath(values: string[]): string {
   }).join(" ");
 }
 
+function forecastPath(report: ForecastReport, percentile: number): string[] {
+  return report.percentilePaths.find((path) => path.percentile === percentile)?.balances ?? [];
+}
+
 export function ReportsView({ accounts, categories: categoryOptions }: { accounts: AccountOverview[]; categories: CategoryOption[] }) {
   const today = localCalendarDate();
   const [from, setFrom] = useState(`${today.slice(0, 7)}-01`);
@@ -50,6 +56,9 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
   const [accountIds, setAccountIds] = useState<string[]>([]);
   const [balanceAccountIds, setBalanceAccountIds] = useState<string[]>([]);
   const [outflowCategoryIds, setOutflowCategoryIds] = useState<Array<string | null>>([]);
+  const [forecastHorizon, setForecastHorizon] = useState(12);
+  const [forecastHistory, setForecastHistory] = useState(12);
+  const [forecastSeed, setForecastSeed] = useState("1");
   const [categories, setCategories] = useState<SpendingCategoryTotal[] | null>(null);
   const [payees, setPayees] = useState<SpendingPayeeTotal[] | null>(null);
   const [cashFlow, setCashFlow] = useState<InflowOutflowReport | null>(null);
@@ -57,13 +66,14 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
   const [balanceHistory, setBalanceHistory] = useState<BalanceOverTimeReport | null>(null);
   const [outflowHistory, setOutflowHistory] = useState<OutflowOverTimeReport | null>(null);
   const [incomeBreakdown, setIncomeBreakdown] = useState<IncomeBreakdownReport | null>(null);
+  const [forecast, setForecast] = useState<ForecastReport | null>(null);
   const [netWorth, setNetWorth] = useState<NetWorthReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
     try {
       const input = { from, to, accountIds };
-      const [spendingByCategory, spendingByPayee, inflowOutflow, incomeVsExpense, history, outflow, breakdown, worth] = await Promise.all([
+      const [spendingByCategory, spendingByPayee, inflowOutflow, incomeVsExpense, history, outflow, breakdown, projection, worth] = await Promise.all([
         loadSpendingByCategory(input),
         loadSpendingByPayee(input),
         loadInflowOutflowByMonth(input),
@@ -71,6 +81,7 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
         loadBalanceOverTime({ from, to, accountIds: balanceAccountIds }),
         loadOutflowOverTime({ from, to, accountIds, categoryIds: outflowCategoryIds }),
         loadIncomeBreakdown({ from, to, accountIds }),
+        loadForecast({ asOf: to, horizonMonths: forecastHorizon, historyMonths: forecastHistory, accountIds, categoryIds: outflowCategoryIds, seed: forecastSeed }),
         loadNetWorthReport(to, from),
       ]);
       setCategories(spendingByCategory);
@@ -80,6 +91,7 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
       setBalanceHistory(history);
       setOutflowHistory(outflow);
       setIncomeBreakdown(breakdown);
+      setForecast(projection);
       setNetWorth(worth);
       setError(null);
     } catch {
@@ -142,7 +154,7 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
           </label>
         ))}
         <label>
-          Outflow categories
+          Outflow / forecast expense categories
           <select
             multiple
             value={outflowCategoryIds.map((id) => id ?? "__uncategorized__")}
@@ -154,6 +166,17 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
             ))}
           </select>
         </label>
+        <label>Forecast horizon
+          <select value={forecastHorizon} onChange={(event) => setForecastHorizon(Number(event.target.value))}>
+            {[3, 6, 12, 24, 36].map((months) => <option key={months} value={months}>{months} months</option>)}
+          </select>
+        </label>
+        <label>Forecast history
+          <select value={forecastHistory} onChange={(event) => setForecastHistory(Number(event.target.value))}>
+            {[3, 6, 12, 24, 36, 60].map((months) => <option key={months} value={months}>{months} complete months</option>)}
+          </select>
+        </label>
+        <label>Forecast seed<input value={forecastSeed} onChange={(event) => setForecastSeed(event.target.value)} inputMode="numeric" /></label>
         <span>Balance accounts (all when none selected)</span>
         {accounts.map((account) => (
           <label key={`balance-${account.id}`}>
@@ -193,6 +216,30 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
               <b>{formatHuf(BigInt(balanceHistory.totalBalances[index] ?? "0"))}</b>
             </div>
           ))}
+        </section>
+      )}
+      {forecast === null ? (
+        <div className="register-message">Loading forecast…</div>
+      ) : (
+        <section className="schedule-list forecast-report">
+          <h3>Balance forecast</h3>
+          <figure className="balance-chart">
+            <svg viewBox="0 0 360 120" role="img" aria-label="Forecast percentile paths">
+              <polyline points={balancePath(forecastPath(forecast, 10))} style={{ stroke: "#bd7a78" }} />
+              <polyline points={balancePath(forecastPath(forecast, 25))} style={{ stroke: "#c9a96c" }} />
+              <polyline points={balancePath(forecastPath(forecast, 50))} style={{ stroke: "#8ad3a7", strokeWidth: 4 }} />
+              <polyline points={balancePath(forecastPath(forecast, 75))} style={{ stroke: "#87b9d0" }} />
+              <polyline points={balancePath(forecastPath(forecast, 90))} style={{ stroke: "#728fc2" }} />
+            </svg>
+            <figcaption>{forecast.simulationCount.toLocaleString()} deterministic simulations · {forecast.historyFrom} to {forecast.historyTo} · P10 / P25 / median / P75 / P90</figcaption>
+          </figure>
+          {forecast.pointDates.map((point, index) => (
+            <div key={point}>
+              <span><strong>{point}</strong><small>P10 {formatHuf(BigInt(forecastPath(forecast, 10)[index] ?? "0"))} · P90 {formatHuf(BigInt(forecastPath(forecast, 90)[index] ?? "0"))}</small></span>
+              <b>{formatHuf(BigInt(forecastPath(forecast, 50)[index] ?? "0"))}</b>
+            </div>
+          ))}
+          <p className="forecast-assumptions">{forecast.assumptions.join(" ")}</p>
         </section>
       )}
       {cashFlow === null ? (
