@@ -54,6 +54,7 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
   const [from, setFrom] = useState(`${today.slice(0, 7)}-01`);
   const [to, setTo] = useState(today);
   const [accountIds, setAccountIds] = useState<string[]>([]);
+  const [forecastAccountIds, setForecastAccountIds] = useState<string[]>([]);
   const [balanceAccountIds, setBalanceAccountIds] = useState<string[]>([]);
   const [outflowCategoryIds, setOutflowCategoryIds] = useState<Array<string | null>>([]);
   const [forecastHorizon, setForecastHorizon] = useState(12);
@@ -81,7 +82,7 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
         loadBalanceOverTime({ from, to, accountIds: balanceAccountIds }),
         loadOutflowOverTime({ from, to, accountIds, categoryIds: outflowCategoryIds }),
         loadIncomeBreakdown({ from, to, accountIds }),
-        loadForecast({ asOf: to, horizonMonths: forecastHorizon, historyMonths: forecastHistory, accountIds, categoryIds: outflowCategoryIds, seed: forecastSeed }),
+        loadForecast({ asOf: to, horizonMonths: forecastHorizon, historyMonths: forecastHistory, accountIds: forecastAccountIds, categoryIds: outflowCategoryIds, seed: forecastSeed }),
         loadNetWorthReport(to, from),
       ]);
       setCategories(spendingByCategory);
@@ -111,6 +112,12 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
 
   function toggleBalanceAccount(id: string) {
     setBalanceAccountIds((current) =>
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
+    );
+  }
+
+  function toggleForecastAccount(id: string) {
+    setForecastAccountIds((current) =>
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
     );
   }
@@ -177,6 +184,16 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
           </select>
         </label>
         <label>Forecast seed<input value={forecastSeed} onChange={(event) => setForecastSeed(event.target.value)} inputMode="numeric" /></label>
+        <span>Forecast accounts (open cash/credit when none selected)</span>
+        {accounts.map((account) => (
+          <label key={`forecast-${account.id}`}>
+            <input
+              type="checkbox"
+              checked={forecastAccountIds.includes(account.id)}
+              onChange={() => toggleForecastAccount(account.id)}
+            /> {account.name}
+          </label>
+        ))}
         <span>Balance accounts (all when none selected)</span>
         {accounts.map((account) => (
           <label key={`balance-${account.id}`}>
