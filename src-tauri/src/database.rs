@@ -64,9 +64,17 @@ impl Database {
     }
 
     pub fn create_native_backup(&self) -> DatabaseResult<NativeBackupReceipt> {
+        self.create_backup("manual")
+    }
+
+    pub fn create_safety_backup(&self) -> DatabaseResult<NativeBackupReceipt> {
+        self.create_backup("safety")
+    }
+
+    fn create_backup(&self, purpose: &str) -> DatabaseResult<NativeBackupReceipt> {
         let path = create_verified_backup(
             &self.path,
-            &format!("allocash-manual-v{SCHEMA_VERSION}-"),
+            &format!("allocash-{purpose}-v{SCHEMA_VERSION}-"),
             SCHEMA_VERSION,
         )?;
         Ok(NativeBackupReceipt {
@@ -79,6 +87,24 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ledger::{
+        Account, AccountKind, CalendarDate, Direction, Entry, Huf, MonthlyScheduleDraft,
+        TransferDraft,
+    };
+
+    fn account(id: &str, kind: AccountKind, sort_order: i64) -> Account {
+        Account {
+            id: id.into(),
+            name: id.into(),
+            kind,
+            sort_order,
+            closed: false,
+        }
+    }
+
+    fn date(text: &str) -> CalendarDate {
+        CalendarDate::parse(text).unwrap()
+    }
 
     fn initialize(connection: &mut Connection) -> DatabaseResult<()> {
         migrations::initialize(connection, None)
@@ -207,6 +233,15 @@ mod tests {
         let path = directory.path().join("budget.sqlite3");
         let database = Database::open(&path).unwrap();
         database
+            .create_account(&account("cash", AccountKind::Cash, 0))
+            .unwrap();
+        database
+            .create_transaction(
+                &Entry::manual("preserve", "cash", date("2026-09-10")),
+                Huf(-10),
+            )
+            .unwrap();
+        database
             .connection
             .execute("UPDATE budget_settings SET name = 'Still live'", [])
             .unwrap();
@@ -215,8 +250,110 @@ mod tests {
         assert!(database.create_native_backup().is_err());
         assert_eq!(database.info().unwrap().name, "Still live");
         assert_eq!(
+            database
+                .connection
+                .query_row::<i64, _, _>("SELECT COUNT(*) FROM transactions", [], |row| row.get(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
             std::fs::read(directory.path().join("backups")).unwrap(),
             b"not a directory"
         );
+    }
+
+    #[test]
+    fn pre_delete_snapshot_preserves_an_entry_and_both_transfer_legs() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("budget.sqlite3");
+        let mut database = Database::open(&path).unwrap();
+        database
+            .create_account(&account("cash", AccountKind::Cash, 0))
+            .unwrap();
+        database
+            .create_account(&account("other", AccountKind::Cash, 1))
+            .unwrap();
+        database
+            .create_transaction(
+                &Entry::manual("ordinary", "cash", date("2026-09-10")),
+                Huf(-10),
+            )
+            .unwrap();
+        database
+            .create_transfer(&TransferDraft::manual(
+                "paired",
+                Huf(20),
+                Entry::manual("paired-out", "cash", date("2026-09-10")),
+                Entry::manual("paired-in", "other", date("2026-09-10")),
+                Direction::Outflow,
+            ))
+            .unwrap();
+
+        let receipt = database.create_safety_backup().unwrap();
+        assert!(receipt.path.contains("allocash-safety-v"));
+        database.delete_entry("ordinary", false).unwrap();
+        database.delete_entry("paired-out", false).unwrap();
+
+        let backup = Connection::open(receipt.path).unwrap();
+        assert_eq!(
+            backup
+                .query_row::<i64, _, _>("SELECT COUNT(*) FROM transactions", [], |row| row.get(0))
+                .unwrap(),
+            3
+        );
+        assert_eq!(
+            database
+                .connection
+                .query_row::<i64, _, _>("SELECT COUNT(*) FROM transactions", [], |row| row.get(0))
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn pre_deactivation_snapshot_preserves_the_active_schedule_and_pending_entry() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("budget.sqlite3");
+        let mut database = Database::open(&path).unwrap();
+        database
+            .create_account(&account("cash", AccountKind::Cash, 0))
+            .unwrap();
+        database
+            .create_monthly_schedule(&MonthlyScheduleDraft {
+                account_id: "cash".into(),
+                start_date: date("2026-09-10"),
+                end_date: None,
+                payee_name: Some("Rent".into()),
+                category_id: None,
+                memo: "September".into(),
+                flag_id: None,
+                amount: Huf(-100),
+            })
+            .unwrap();
+        let occurrence = database.scheduled_occurrences().unwrap().remove(0);
+
+        let receipt = database.create_safety_backup().unwrap();
+        database
+            .deactivate_schedule(&occurrence.schedule_id)
+            .unwrap();
+
+        let backup = Connection::open(receipt.path).unwrap();
+        assert_eq!(
+            backup
+                .query_row::<i64, _, _>("SELECT active FROM schedules", [], |row| row.get(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            backup
+                .query_row::<i64, _, _>(
+                    "SELECT COUNT(*) FROM transactions WHERE posting_state='scheduled'",
+                    [],
+                    |row| row.get(0)
+                )
+                .unwrap(),
+            1
+        );
+        assert!(database.scheduled_occurrences().unwrap().is_empty());
     }
 }

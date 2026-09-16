@@ -2175,33 +2175,37 @@ impl Database {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let scheduled: bool = transaction
-            .query_row(
-                "SELECT posting_state='scheduled' FROM transactions WHERE id=?1",
-                [id],
-                |row| row.get(0),
-            )
-            .optional()?
-            .ok_or(LedgerError::NotFound)?;
-        if scheduled {
-            return Err(LedgerError::InvalidValue(
-                "Use the schedule Post or Skip action.",
-            ));
-        }
-        let (transfer, state) = entry_identity(&transaction, id)?;
+        let transfer = guard_entry_deletion(&transaction, id, confirmed)?;
         if let Some(transfer_id) = transfer {
-            guard_transfer(&transaction, &transfer_id, confirmed)?;
             transaction.execute(
                 "DELETE FROM transactions WHERE transfer_id=?1",
                 [&transfer_id],
             )?;
             transaction.execute("DELETE FROM transfers WHERE id=?1", [&transfer_id])?;
         } else {
-            confirm_reconciled(state == ClearedState::Reconciled, confirmed)?;
             transaction.execute("DELETE FROM transactions WHERE id=?1", [id])?;
         }
         transaction.commit()?;
         Ok(())
+    }
+
+    /// Validates deletion before taking a safety snapshot. The actual mutation
+    /// repeats this guard inside its own transaction.
+    pub fn check_entry_deletion(&self, id: &str, confirmed: bool) -> LedgerResult<()> {
+        guard_entry_deletion(&self.connection, id, confirmed).map(|_| ())
+    }
+
+    pub fn check_schedule_deactivation(&self, schedule_id: &str) -> LedgerResult<()> {
+        let active: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM schedules WHERE id=?1 AND active=1)",
+            [schedule_id],
+            |row| row.get(0),
+        )?;
+        if active {
+            Ok(())
+        } else {
+            Err(LedgerError::NotFound)
+        }
     }
 
     pub fn update_memo(&self, id: &str, memo: &str) -> LedgerResult<()> {
@@ -2465,6 +2469,33 @@ fn confirm_reconciled(reconciled: bool, confirmed: bool) -> LedgerResult<()> {
 fn guard_transfer(connection: &Connection, id: &str, confirmed: bool) -> LedgerResult<()> {
     let reconciled: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM transactions WHERE transfer_id=?1 AND cleared_state='reconciled')",[id],|row|row.get(0))?;
     confirm_reconciled(reconciled, confirmed)
+}
+
+fn guard_entry_deletion(
+    connection: &Connection,
+    id: &str,
+    confirmed: bool,
+) -> LedgerResult<Option<String>> {
+    let scheduled: bool = connection
+        .query_row(
+            "SELECT posting_state='scheduled' FROM transactions WHERE id=?1",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()?
+        .ok_or(LedgerError::NotFound)?;
+    if scheduled {
+        return Err(LedgerError::InvalidValue(
+            "Use the schedule Post or Skip action.",
+        ));
+    }
+    let (transfer, state) = entry_identity(connection, id)?;
+    if let Some(transfer_id) = &transfer {
+        guard_transfer(connection, transfer_id, confirmed)?;
+    } else {
+        confirm_reconciled(state == ClearedState::Reconciled, confirmed)?;
+    }
+    Ok(transfer)
 }
 fn sum_amounts(amounts: &[i128]) -> LedgerResult<i128> {
     amounts.iter().try_fold(0i128, |total, amount| {

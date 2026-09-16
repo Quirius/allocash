@@ -135,7 +135,9 @@ retaining its verified backup. Unknown versions and populated unversioned databa
 are rejected. Reopening an up-to-date database does not repeat the migration or
 backup. A local backup helps recover from mistakes or corruption, but it remains on
 the same disk: copy it to another private drive or storage location for disk-loss
-protection. Restore and automatic retention are still future work.
+protection. Deleting a register entry or canceling a schedule first creates a
+verified safety snapshot; if that snapshot fails, Allocash makes no change. Restore
+and automatic retention are still future work.
 
 ## Git convention
 

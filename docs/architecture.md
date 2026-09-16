@@ -35,6 +35,12 @@ overwritten. They protect against local mistakes or corruption, not disk loss, s
 the owner should copy an important backup elsewhere. Initialization refuses populated
 unversioned databases and unsupported versions. Restore is deliberately separate:
 it needs connection handoff, a pre-restore snapshot, validation and recovery UX.
+The desktop command layer also creates a required safety snapshot immediately before
+register deletion (including both transfer legs) and schedule deactivation, which
+removes a pending occurrence. It validates the action before snapshotting to avoid
+unnecessary files for rejected requests, holds the database mutex across snapshot
+and mutation, and aborts the mutation if the snapshot fails. Skipping a schedule
+occurrence and reversible Plan configuration changes are intentionally excluded.
 
 The ledger uses signed 64-bit integer forints. Rust must use checked
 integer arithmetic. Money crosses JSON IPC as decimal strings and becomes `bigint`

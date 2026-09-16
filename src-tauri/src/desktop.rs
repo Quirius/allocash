@@ -16,6 +16,9 @@ use tauri::Manager;
 // A failed open remains visible in the UI instead of crashing the application.
 struct BudgetState(Mutex<Option<Database>>);
 
+const SAFETY_BACKUP_ERROR: &str =
+    "Could not create the required safety backup. No changes were made.";
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkspaceSnapshot {
@@ -58,6 +61,13 @@ fn ledger_error(error: LedgerError) -> String {
         LedgerError::ReconciliationOutOfDate => "reconciliation_out_of_date".to_owned(),
         other => other.to_string(),
     }
+}
+
+fn create_safety_backup(database: &Database) -> Result<(), String> {
+    database
+        .create_safety_backup()
+        .map(|_| ())
+        .map_err(|_| SAFETY_BACKUP_ERROR.to_owned())
 }
 
 #[tauri::command]
@@ -152,6 +162,10 @@ fn delete_register_entry(
     confirmed: bool,
 ) -> Result<(), String> {
     with_database(&app, &state, |database| {
+        database
+            .check_entry_deletion(&id, confirmed)
+            .map_err(ledger_error)?;
+        create_safety_backup(database)?;
         database.delete_entry(&id, confirmed).map_err(ledger_error)
     })
 }
@@ -345,6 +359,10 @@ fn deactivate_schedule(
     schedule_id: String,
 ) -> Result<(), String> {
     with_database(&app, &state, |database| {
+        database
+            .check_schedule_deactivation(&schedule_id)
+            .map_err(ledger_error)?;
+        create_safety_backup(database)?;
         database
             .deactivate_schedule(&schedule_id)
             .map_err(ledger_error)
