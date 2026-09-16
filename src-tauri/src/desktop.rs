@@ -222,6 +222,18 @@ fn skip_scheduled_occurrence(
             .map_err(ledger_error)
     })
 }
+#[tauri::command]
+fn deactivate_schedule(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    schedule_id: String,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database
+            .deactivate_schedule(&schedule_id)
+            .map_err(ledger_error)
+    })
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -370,6 +382,7 @@ pub fn run() {
             create_monthly_schedule,
             post_scheduled_occurrence,
             skip_scheduled_occurrence,
+            deactivate_schedule,
             create_manual_transaction,
             create_manual_transfer,
             update_register_entry,

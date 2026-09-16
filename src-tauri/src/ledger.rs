@@ -786,6 +786,26 @@ impl Database {
         self.finish_scheduled_occurrence(transaction_id, "skipped")
     }
 
+    pub fn deactivate_schedule(&mut self, schedule_id: &str) -> LedgerResult<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        require_changed(transaction.execute(
+            "UPDATE schedules SET active=0 WHERE id=?1 AND active=1",
+            [schedule_id],
+        )?)?;
+        let ids = transaction.prepare("SELECT transaction_id FROM schedule_occurrences WHERE schedule_id=?1 AND state='pending'")?.query_map([schedule_id], |row| row.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
+        transaction.execute("UPDATE schedule_occurrences SET transaction_id=NULL,state='skipped' WHERE schedule_id=?1 AND state='pending'", [schedule_id])?;
+        for id in ids {
+            transaction.execute(
+                "DELETE FROM transactions WHERE id=?1 AND posting_state='scheduled'",
+                [id],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     fn finish_scheduled_occurrence(
         &mut self,
         transaction_id: &str,

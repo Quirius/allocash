@@ -155,6 +155,7 @@ export async function loadScheduledOccurrences(): Promise<ScheduledOccurrence[] 
 export async function createMonthlySchedule(input: MonthlyScheduleInput): Promise<void> { return invoke("create_monthly_schedule", { input }); }
 export async function postScheduledOccurrence(transactionId: string): Promise<void> { return invoke("post_scheduled_occurrence", { transactionId }); }
 export async function skipScheduledOccurrence(transactionId: string): Promise<void> { return invoke("skip_scheduled_occurrence", { transactionId }); }
+export async function deactivateSchedule(scheduleId: string): Promise<void> { return invoke("deactivate_schedule", { scheduleId }); }
 
 export async function updateRegisterEntry(edit: RegisterEntryEdit): Promise<void> {
   return invoke("update_register_entry", { edit });

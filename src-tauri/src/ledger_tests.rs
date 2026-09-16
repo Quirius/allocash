@@ -131,6 +131,37 @@ fn monthly_schedule_posts_once_and_clamps_the_next_short_month() {
 }
 
 #[test]
+fn deactivating_a_schedule_removes_pending_not_posted_occurrences() {
+    let (_directory, mut database) = database();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-09-10"),
+            end_date: None,
+            payee_name: None,
+            category_id: None,
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-10),
+        })
+        .unwrap();
+    let first = database.scheduled_occurrences().unwrap().remove(0);
+    database
+        .post_scheduled_occurrence(&first.transaction_id)
+        .unwrap();
+    let pending = database.scheduled_occurrences().unwrap().remove(0);
+    database.deactivate_schedule(&pending.schedule_id).unwrap();
+    assert!(database.scheduled_occurrences().unwrap().is_empty());
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-09-10"))
+            .unwrap()
+            .working,
+        Huf(-10)
+    );
+}
+
+#[test]
 fn reconciliation_promotes_eligible_entries_and_adds_only_the_reviewed_adjustment() {
     let (_directory, mut database) = database();
     database

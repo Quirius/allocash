@@ -116,6 +116,9 @@ the next month (clamping dates such as the 31st to the month's last day); skippi
 records the skipped occurrence and advances instead. Pending rows are excluded
 from balances and the Plan, and cannot be edited or deleted through the generic
 register actions.
+An optional end date prevents generation after its inclusive date. Canceling a
+schedule removes its pending occurrence but preserves every posted occurrence as
+ordinary ledger history.
 
 ## Validation boundary
 
