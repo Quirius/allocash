@@ -12,6 +12,7 @@ import {
   setPlanAssignment,
   setCreditPaymentCategory,
   setCategoryTarget,
+  setCategoryTargetSnoozed,
   updateRegisterEntry,
 } from "../src/lib/desktop";
 
@@ -73,6 +74,7 @@ it("loads and updates a plan month with canonical HUF text", async () => {
   await movePlanMoney("groceries", "fun", "2026-09", "500"); expect(invoke).toHaveBeenCalledWith("move_plan_money", { input: { fromCategoryId: "groceries", toCategoryId: "fun", month: "2026-09", amount: "500" } });
   await setCreditPaymentCategory("card", "card-payment"); expect(invoke).toHaveBeenCalledWith("set_credit_payment_category", { input: { accountId: "card", categoryId: "card-payment" } });
   await setCategoryTarget("groceries", "2026-09", { behavior: "refill", amount: "20000", dueKind: "last_day", dueDay: null }); expect(invoke).toHaveBeenCalledWith("set_category_target", { input: { categoryId: "groceries", effectiveMonth: "2026-09", target: { behavior: "refill", amount: "20000", dueKind: "last_day", dueDay: null } } });
+  await setCategoryTargetSnoozed("groceries", "2026-09", true); expect(invoke).toHaveBeenCalledWith("set_category_target_snoozed", { input: { categoryId: "groceries", month: "2026-09", snoozed: true } });
 });
 
 it("sends typed manual transaction and transfer inputs", async () => {

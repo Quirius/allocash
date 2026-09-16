@@ -91,7 +91,12 @@ difference between its amount and the category's nonnegative opening Available
 amount. Both report Funding and To Go from that month's positive assigned amount;
 current-month spending and refunds do not alter progress. The initial target
 slice supports monthly targets with a day-of-month or last-day due marker; it
-does not auto-assign, snooze, or support other frequencies.
+does not auto-assign or support other frequencies.
+
+A target can be snoozed for one category and one month. Snoozing retains the
+target definition but reports zero Needed, Funded and To Go for that month; it
+does not alter the budget's money. Resuming removes only that month's snooze,
+and adjacent months continue to use their normal target guidance.
 
 ## Reconciled edits
 

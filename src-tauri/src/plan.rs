@@ -95,6 +95,7 @@ pub struct CategoryTargetProgress {
     pub needed_this_month: Huf,
     pub funded: Huf,
     pub to_go: Huf,
+    pub snoozed: bool,
 }
 
 #[derive(Default)]
@@ -197,6 +198,39 @@ impl Database {
         Ok(())
     }
 
+    pub fn set_category_target_snoozed(
+        &self,
+        category_id: &str,
+        month: &PlanMonth,
+        snoozed: bool,
+    ) -> LedgerResult<()> {
+        let exists: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
+            [category_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(LedgerError::NotFound);
+        }
+        if snoozed && !target_definitions_for(&self.connection, month)?.contains_key(category_id) {
+            return Err(LedgerError::InvalidValue(
+                "A category needs an active target before it can be snoozed.",
+            ));
+        }
+        if snoozed {
+            self.connection.execute(
+                "INSERT INTO category_target_snoozes (category_id,month) VALUES (?1,?2) ON CONFLICT(category_id,month) DO NOTHING",
+                params![category_id, month.as_str()],
+            )?;
+        } else {
+            self.connection.execute(
+                "DELETE FROM category_target_snoozes WHERE category_id=?1 AND month=?2",
+                params![category_id, month.as_str()],
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn move_monthly_money(
         &mut self,
         from_category_id: &str,
@@ -264,6 +298,7 @@ impl Database {
     pub fn plan_month(&self, month: &PlanMonth) -> LedgerResult<PlanSnapshot> {
         let derivation = derive_plan(&self.connection, month)?;
         let target_definitions = target_definitions_for(&self.connection, month)?;
+        let target_snoozes = target_snoozes_for(&self.connection, month)?;
         let mut categories = Vec::new();
         let mut category_query = self.connection.prepare("SELECT g.id,g.name,c.id,c.name FROM category_groups g JOIN categories c ON c.group_id=g.id WHERE g.hidden=0 AND c.hidden=0 ORDER BY g.sort_order,c.sort_order,c.id")?;
         let mut rows = category_query.query([])?;
@@ -290,6 +325,7 @@ impl Database {
                                     .get(&category_id)
                                     .unwrap_or(&0),
                                 assigned,
+                                target_snoozes.contains(&category_id),
                             )
                         })
                         .transpose()?;
@@ -593,6 +629,7 @@ fn target_progress(
     definition: &CategoryTargetDefinition,
     starting_available: i128,
     assigned: i128,
+    snoozed: bool,
 ) -> LedgerResult<CategoryTargetProgress> {
     let amount = i128::from(definition.amount.0);
     let needed = match definition.behavior.as_str() {
@@ -600,13 +637,25 @@ fn target_progress(
         "refill" => checked_sub(amount, starting_available.max(0))?.max(0),
         _ => return Err(LedgerError::InvalidValue("Invalid category target.")),
     };
+    let needed = if snoozed { 0 } else { needed };
     let funded = assigned.max(0).min(needed);
     Ok(CategoryTargetProgress {
         definition: definition.clone(),
         needed_this_month: narrow(needed)?,
         funded: narrow(funded)?,
         to_go: narrow(checked_sub(needed, funded)?)?,
+        snoozed,
     })
+}
+
+fn target_snoozes_for(
+    connection: &rusqlite::Connection,
+    month: &PlanMonth,
+) -> LedgerResult<BTreeSet<String>> {
+    Ok(connection
+        .prepare("SELECT category_id FROM category_target_snoozes WHERE month=?1")?
+        .query_map([month.as_str()], |row| row.get(0))?
+        .collect::<Result<_, _>>()?)
 }
 
 fn category_available_for(
@@ -1215,5 +1264,61 @@ mod tests {
                 .needed_this_month,
             Huf(100)
         );
+    }
+
+    #[test]
+    fn target_snoozes_are_month_specific_and_leave_budget_money_unchanged() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_category_target(
+                "food",
+                &september,
+                Some(&CategoryTargetDefinition {
+                    behavior: "set_aside".into(),
+                    amount: Huf(100),
+                    due_kind: "last_day".into(),
+                    due_day: None,
+                }),
+            )
+            .unwrap();
+        let october = PlanMonth::parse("2026-10").unwrap();
+        let before = database.plan_month(&october).unwrap();
+        database
+            .set_category_target_snoozed("food", &october, true)
+            .unwrap();
+        let snoozed = database.plan_month(&october).unwrap();
+        let progress = category_available_target(&snoozed, "food");
+        assert!(progress.snoozed);
+        assert_eq!(progress.needed_this_month, Huf(0));
+        assert_eq!(progress.funded, Huf(0));
+        assert_eq!(progress.to_go, Huf(0));
+        assert_eq!(
+            category_available(&before, "food"),
+            category_available(&snoozed, "food")
+        );
+        assert_eq!(before.ready_to_assign, snoozed.ready_to_assign);
+        let november = database
+            .plan_month(&PlanMonth::parse("2026-11").unwrap())
+            .unwrap();
+        assert!(!category_available_target(&november, "food").snoozed);
+        assert_eq!(
+            category_available_target(&november, "food").needed_this_month,
+            Huf(100)
+        );
+        database
+            .set_category_target_snoozed("food", &october, false)
+            .unwrap();
+        assert_eq!(
+            category_available_target(&database.plan_month(&october).unwrap(), "food").to_go,
+            Huf(100)
+        );
+        assert!(matches!(
+            database.set_category_target_snoozed("missing", &october, true),
+            Err(LedgerError::NotFound)
+        ));
     }
 }

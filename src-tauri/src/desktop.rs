@@ -205,6 +205,13 @@ struct CategoryTargetInput {
     effective_month: String,
     target: Option<CategoryTargetDefinition>,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CategoryTargetSnoozeInput {
+    category_id: String,
+    month: String,
+    snoozed: bool,
+}
 
 #[tauri::command]
 fn get_plan_month(
@@ -292,6 +299,20 @@ fn set_category_target(
     })
 }
 
+#[tauri::command]
+fn set_category_target_snoozed(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: CategoryTargetSnoozeInput,
+) -> Result<(), String> {
+    let month = PlanMonth::parse(&input.month).map_err(ledger_error)?;
+    with_database(&app, &state, |database| {
+        database
+            .set_category_target_snoozed(&input.category_id, &month, input.snoozed)
+            .map_err(ledger_error)
+    })
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(BudgetState(Mutex::new(None)))
@@ -309,7 +330,8 @@ pub fn run() {
             set_plan_assignment,
             move_plan_money,
             set_credit_payment_category,
-            set_category_target
+            set_category_target,
+            set_category_target_snoozed
         ])
         .run(tauri::generate_context!())
         .expect("Could not start the desktop application");

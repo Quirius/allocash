@@ -80,7 +80,7 @@ mod tests {
         drop(database);
         let reopened = Database::open(&path).unwrap();
         assert_eq!(reopened.info().unwrap().name, "Test budget");
-        assert_eq!(reopened.info().unwrap().schema_version, 6);
+        assert_eq!(reopened.info().unwrap().schema_version, 7);
     }
 
     #[test]

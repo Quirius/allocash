@@ -164,6 +164,24 @@ fn category_target_revisions_require_complete_active_definitions() {
     ] {
         assert!(connection.execute(sql, []).is_err());
     }
+    connection
+        .execute(
+            "INSERT INTO category_target_snoozes (category_id,month) VALUES ('c','2026-09')",
+            [],
+        )
+        .unwrap();
+    assert!(connection
+        .execute(
+            "INSERT INTO category_target_snoozes (category_id,month) VALUES ('c','2026-09')",
+            [],
+        )
+        .is_err());
+    assert!(connection
+        .execute(
+            "INSERT INTO category_target_snoozes (category_id,month) VALUES ('c','2026-13')",
+            [],
+        )
+        .is_err());
 }
 
 #[test]
