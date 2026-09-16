@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import {
+  loadBalanceOverTime,
   loadIncomeVsExpense,
   loadInflowOutflowByMonth,
   loadNetWorthReport,
   loadSpendingByCategory,
   loadSpendingByPayee,
   type AccountOverview,
+  type BalanceOverTimeReport,
   type IncomeExpenseReport,
   type InflowOutflowReport,
   type NetWorthReport,
@@ -22,32 +24,50 @@ function formatSavingsRatio(value: string | null): string {
   return `${sign}${magnitude / 100n}.${(magnitude % 100n).toString().padStart(2, "0")}%`;
 }
 
+function balancePath(values: string[]): string {
+  if (values.length === 0) return "";
+  const amounts = values.map(BigInt);
+  const minimum = amounts.reduce((current, amount) => amount < current ? amount : current);
+  const maximum = amounts.reduce((current, amount) => amount > current ? amount : current);
+  const range = maximum - minimum;
+  const denominator = BigInt(Math.max(amounts.length - 1, 1));
+  return amounts.map((amount, index) => {
+    const x = 10 + Number(BigInt(index) * 340n / denominator);
+    const y = range === 0n ? 60 : 10 + Number((maximum - amount) * 100n / range);
+    return `${x},${y}`;
+  }).join(" ");
+}
+
 export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
   const today = localCalendarDate();
   const [from, setFrom] = useState(`${today.slice(0, 7)}-01`);
   const [to, setTo] = useState(today);
   const [accountIds, setAccountIds] = useState<string[]>([]);
+  const [balanceAccountIds, setBalanceAccountIds] = useState<string[]>([]);
   const [categories, setCategories] = useState<SpendingCategoryTotal[] | null>(null);
   const [payees, setPayees] = useState<SpendingPayeeTotal[] | null>(null);
   const [cashFlow, setCashFlow] = useState<InflowOutflowReport | null>(null);
   const [incomeExpense, setIncomeExpense] = useState<IncomeExpenseReport | null>(null);
+  const [balanceHistory, setBalanceHistory] = useState<BalanceOverTimeReport | null>(null);
   const [netWorth, setNetWorth] = useState<NetWorthReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
     try {
       const input = { from, to, accountIds };
-      const [spendingByCategory, spendingByPayee, inflowOutflow, incomeVsExpense, worth] = await Promise.all([
+      const [spendingByCategory, spendingByPayee, inflowOutflow, incomeVsExpense, history, worth] = await Promise.all([
         loadSpendingByCategory(input),
         loadSpendingByPayee(input),
         loadInflowOutflowByMonth(input),
         loadIncomeVsExpense(input),
+        loadBalanceOverTime({ from, to, accountIds: balanceAccountIds }),
         loadNetWorthReport(to, from),
       ]);
       setCategories(spendingByCategory);
       setPayees(spendingByPayee);
       setCashFlow(inflowOutflow);
       setIncomeExpense(incomeVsExpense);
+      setBalanceHistory(history);
       setNetWorth(worth);
       setError(null);
     } catch {
@@ -61,6 +81,12 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
 
   function toggleAccount(id: string) {
     setAccountIds((current) =>
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
+    );
+  }
+
+  function toggleBalanceAccount(id: string) {
+    setBalanceAccountIds((current) =>
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
     );
   }
@@ -97,6 +123,16 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
             /> {account.name}
           </label>
         ))}
+        <span>Balance accounts (all when none selected)</span>
+        {accounts.map((account) => (
+          <label key={`balance-${account.id}`}>
+            <input
+              type="checkbox"
+              checked={balanceAccountIds.includes(account.id)}
+              onChange={() => toggleBalanceAccount(account.id)}
+            /> {account.name}
+          </label>
+        ))}
         <button>Refresh</button>
       </form>
       {netWorth && (
@@ -108,6 +144,25 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
             {netWorth.change && <small>Change {formatHuf(BigInt(netWorth.change))}</small>}
           </div>
         </div>
+      )}
+      {balanceHistory === null ? (
+        <div className="register-message">Loading report…</div>
+      ) : (
+        <section className="schedule-list">
+          <h3>Balance over time · selected accounts</h3>
+          <figure className="balance-chart">
+            <svg viewBox="0 0 360 120" role="img" aria-label="Balance over time">
+              <polyline points={balancePath(balanceHistory.totalBalances)} />
+            </svg>
+            <figcaption>{balanceHistory.accounts.length} account{balanceHistory.accounts.length === 1 ? "" : "s"} · posted working balances</figcaption>
+          </figure>
+          {balanceHistory.pointDates.map((point, index) => (
+            <div key={point}>
+              <span><strong>{point}</strong><small>Inclusive as-of balance</small></span>
+              <b>{formatHuf(BigInt(balanceHistory.totalBalances[index] ?? "0"))}</b>
+            </div>
+          ))}
+        </section>
       )}
       {cashFlow === null ? (
         <div className="register-message">Loading report…</div>

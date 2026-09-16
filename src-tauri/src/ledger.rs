@@ -455,6 +455,35 @@ pub struct IncomeExpenseReport {
     pub savings_ratio_basis_points: Option<Huf>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BalanceOverTimeInput {
+    pub from: CalendarDate,
+    pub to: CalendarDate,
+    pub account_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BalanceOverTimeAccountSeries {
+    pub account_id: String,
+    pub account_name: String,
+    pub kind: AccountKind,
+    pub closed: bool,
+    pub sort_order: i64,
+    pub balances: Vec<Huf>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BalanceOverTimeReport {
+    pub from: CalendarDate,
+    pub to: CalendarDate,
+    pub point_dates: Vec<CalendarDate>,
+    pub total_balances: Vec<Huf>,
+    pub accounts: Vec<BalanceOverTimeAccountSeries>,
+}
+
 struct IncomeExpenseCategoryAccum {
     group_id: Option<String>,
     group_name: String,
@@ -1141,6 +1170,100 @@ impl Database {
         })
     }
 
+    pub fn balance_over_time(
+        &self,
+        input: &BalanceOverTimeInput,
+    ) -> LedgerResult<BalanceOverTimeReport> {
+        if input.from.as_str() > input.to.as_str() {
+            return Err(LedgerError::InvalidValue(
+                "Report start date must not be after its end date.",
+            ));
+        }
+        let all_accounts = self.accounts()?;
+        let requested: std::collections::BTreeSet<_> = input.account_ids.iter().cloned().collect();
+        if !requested.is_empty()
+            && requested
+                .iter()
+                .any(|id| !all_accounts.iter().any(|account| &account.id == id))
+        {
+            return Err(LedgerError::NotFound);
+        }
+        let accounts: Vec<_> = all_accounts
+            .into_iter()
+            .filter(|account| requested.is_empty() || requested.contains(&account.id))
+            .collect();
+        let point_dates = balance_point_dates(&input.from, &input.to)?;
+        let mut sql = "SELECT account_id,transaction_date,amount_huf FROM ledger_entries WHERE posting_state='posted' AND transaction_date<=?1".to_owned();
+        if !accounts.is_empty() {
+            sql.push_str(" AND account_id IN (");
+            sql.push_str(
+                &std::iter::repeat_n("?", accounts.len())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            sql.push(')');
+        }
+        sql.push_str(" ORDER BY account_id,transaction_date,id");
+        let mut values: Vec<rusqlite::types::Value> = vec![input.to.as_str().to_owned().into()];
+        values.extend(accounts.iter().map(|account| account.id.clone().into()));
+        let mut statement = self.connection.prepare(&sql)?;
+        let rows = statement
+            .query_map(rusqlite::params_from_iter(values), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    Huf(row.get(2)?),
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut entries: std::collections::BTreeMap<String, Vec<(String, Huf)>> =
+            std::collections::BTreeMap::new();
+        for (account_id, date, amount) in rows {
+            entries.entry(account_id).or_default().push((date, amount));
+        }
+        let mut total_balances = vec![0i128; point_dates.len()];
+        let account_series = accounts
+            .into_iter()
+            .map(|account| {
+                let mut entry_index = 0;
+                let account_entries = entries.get(&account.id).map(Vec::as_slice).unwrap_or(&[]);
+                let mut balance = 0i128;
+                let balances = point_dates
+                    .iter()
+                    .enumerate()
+                    .map(|(point_index, point)| {
+                        while entry_index < account_entries.len()
+                            && account_entries[entry_index].0.as_str() <= point.as_str()
+                        {
+                            add(&mut balance, i128::from(account_entries[entry_index].1 .0))?;
+                            entry_index += 1;
+                        }
+                        add(&mut total_balances[point_index], balance)?;
+                        narrow(balance)
+                    })
+                    .collect::<LedgerResult<Vec<_>>>()?;
+                Ok(BalanceOverTimeAccountSeries {
+                    account_id: account.id,
+                    account_name: account.name,
+                    kind: account.kind,
+                    closed: account.closed,
+                    sort_order: account.sort_order,
+                    balances,
+                })
+            })
+            .collect::<LedgerResult<Vec<_>>>()?;
+        Ok(BalanceOverTimeReport {
+            from: input.from.clone(),
+            to: input.to.clone(),
+            point_dates,
+            total_balances: total_balances
+                .into_iter()
+                .map(narrow)
+                .collect::<LedgerResult<Vec<_>>>()?,
+            accounts: account_series,
+        })
+    }
+
     pub fn create_monthly_schedule(&mut self, draft: &MonthlyScheduleDraft) -> LedgerResult<()> {
         if draft.amount.0 == 0
             || draft
@@ -1801,6 +1924,43 @@ fn income_expense_groups(
         }
     }
     Ok(groups)
+}
+fn balance_point_dates(from: &CalendarDate, to: &CalendarDate) -> LedgerResult<Vec<CalendarDate>> {
+    let mut dates = vec![from.clone()];
+    let mut year: i32 = from.as_str()[..4]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid report date."))?;
+    let mut month: u32 = from.as_str()[5..7]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid report date."))?;
+    let end_year: i32 = to.as_str()[..4]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid report date."))?;
+    let end_month: u32 = to.as_str()[5..7]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid report date."))?;
+    loop {
+        let month_end = CalendarDate::parse(&format!(
+            "{year:04}-{month:02}-{:02}",
+            days_in_month(year, month)
+        ))?;
+        if month_end.as_str() > from.as_str() && month_end.as_str() < to.as_str() {
+            dates.push(month_end);
+        }
+        if year == end_year && month == end_month {
+            break;
+        }
+        if month == 12 {
+            year += 1;
+            month = 1;
+        } else {
+            month += 1;
+        }
+    }
+    if from.as_str() != to.as_str() {
+        dates.push(to.clone());
+    }
+    Ok(dates)
 }
 fn report_months(from: &CalendarDate, to: &CalendarDate) -> LedgerResult<Vec<String>> {
     let mut year: u32 = from.as_str()[..4]

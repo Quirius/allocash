@@ -5,6 +5,7 @@ import {
   createManualTransfer,
   deleteRegisterEntry,
   loadAccountRegister,
+  loadBalanceOverTime,
   loadBudgetInfo,
   loadIncomeVsExpense,
   loadInflowOutflowByMonth,
@@ -105,6 +106,15 @@ it("loads income versus expense with the selected report scope", async () => {
   vi.mocked(invoke).mockResolvedValue(report);
   await expect(loadIncomeVsExpense(input)).resolves.toEqual(report);
   expect(invoke).toHaveBeenCalledWith("get_income_vs_expense", { input });
+});
+
+it("loads balance history with its selected-account scope", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  const input = { from: "2026-09-01", to: "2026-09-14", accountIds: ["cash"] };
+  const report = { from: input.from, to: input.to, pointDates: [input.from, input.to], totalBalances: ["0", "1200"], accounts: [] };
+  vi.mocked(invoke).mockResolvedValue(report);
+  await expect(loadBalanceOverTime(input)).resolves.toEqual(report);
+  expect(invoke).toHaveBeenCalledWith("get_balance_over_time", { input });
 });
 
 it("sends typed manual transaction and transfer inputs", async () => {

@@ -143,6 +143,14 @@ It returns month-aligned category amounts, period/month totals, whole-HUF
 monthly averages, and a savings ratio in integer basis points when income is
 nonzero.
 
+Balance Over Time is a separate, dense as-of working-balance series. Its first
+point is the inclusive `from` date, intermediate points are calendar month ends,
+and its final point is the inclusive `to` date. It includes all account kinds
+and closed history by default; its account selection is independent of activity
+reports. Transfers remain included exactly as ledger movements, so a transfer
+between two selected accounts nets out while selecting one side changes that
+selected aggregate. Pending scheduled rows are excluded until posted.
+
 Net Worth is a separate as-of projection: it sums the signed posted working
 balances of every account kind, including closed, loan and tracking accounts.
 Transfers remain included there because their two legs net to zero across the

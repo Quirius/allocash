@@ -467,6 +467,113 @@ fn income_vs_expense_keeps_category_sides_and_months_distinct() {
 }
 
 #[test]
+fn balance_over_time_uses_signed_posted_balances_and_month_end_points() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("card", AccountKind::Credit, 1))
+        .unwrap();
+    database
+        .create_account(&account("closed-card", AccountKind::Credit, 2))
+        .unwrap();
+    database
+        .create_account(&account("tracking", AccountKind::Tracking, 3))
+        .unwrap();
+    let mut opening_cash = entry("opening-cash", "cash");
+    opening_cash.date = date("2026-09-01");
+    database.create_transaction(&opening_cash, Huf(10)).unwrap();
+    let mut on_from = entry("on-from", "cash");
+    on_from.date = date("2026-09-15");
+    database.create_transaction(&on_from, Huf(5)).unwrap();
+    let mut month_end = entry("month-end", "cash");
+    month_end.date = date("2026-09-30");
+    database.create_transaction(&month_end, Huf(-3)).unwrap();
+    let mut closed_debt = entry("closed-debt", "closed-card");
+    closed_debt.date = date("2026-09-10");
+    database.create_transaction(&closed_debt, Huf(-2)).unwrap();
+    database.set_account_closed("closed-card", true).unwrap();
+    let mut transfer_out = entry("balance-transfer-out", "cash");
+    transfer_out.date = date("2026-10-01");
+    let mut transfer_in = entry("balance-transfer-in", "card");
+    transfer_in.date = date("2026-10-02");
+    database
+        .create_transfer(&TransferDraft::manual(
+            "balance-transfer",
+            Huf(4),
+            transfer_out,
+            transfer_in,
+            Direction::Outflow,
+        ))
+        .unwrap();
+    let mut tracking_gain = entry("tracking-gain", "tracking");
+    tracking_gain.date = date("2026-10-31");
+    database.create_transaction(&tracking_gain, Huf(7)).unwrap();
+    let scheduled = Entry::scheduled("balance-scheduled", "cash", date("2026-11-01"), "legacy");
+    database.create_transaction(&scheduled, Huf(-100)).unwrap();
+    let mut on_to = entry("on-to", "cash");
+    on_to.date = date("2026-11-10");
+    database.create_transaction(&on_to, Huf(1)).unwrap();
+    let mut after_to = entry("after-to", "cash");
+    after_to.date = date("2026-11-11");
+    database.create_transaction(&after_to, Huf(100)).unwrap();
+    let input = BalanceOverTimeInput {
+        from: date("2026-09-15"),
+        to: date("2026-11-10"),
+        account_ids: vec![],
+    };
+    let report = database.balance_over_time(&input).unwrap();
+    assert_eq!(
+        report
+            .point_dates
+            .iter()
+            .map(CalendarDate::as_str)
+            .collect::<Vec<_>>(),
+        ["2026-09-15", "2026-09-30", "2026-10-31", "2026-11-10"]
+    );
+    assert_eq!(report.total_balances, [Huf(13), Huf(10), Huf(17), Huf(18)]);
+    assert_eq!(report.accounts.len(), 4);
+    assert_eq!(report.accounts[0].account_name, "cash");
+    assert_eq!(
+        report.accounts[0].balances,
+        [Huf(15), Huf(12), Huf(8), Huf(9)]
+    );
+    assert_eq!(
+        report.accounts[1].balances,
+        [Huf(0), Huf(0), Huf(4), Huf(4)]
+    );
+    assert_eq!(
+        report.accounts[2].balances,
+        [Huf(0), Huf(0), Huf(7), Huf(7)]
+    );
+    assert_eq!(
+        report.accounts[3].balances,
+        [Huf(-2), Huf(-2), Huf(-2), Huf(-2)]
+    );
+    let cash_only = database
+        .balance_over_time(&BalanceOverTimeInput {
+            account_ids: vec!["cash".into()],
+            ..input
+        })
+        .unwrap();
+    assert_eq!(cash_only.total_balances, [Huf(15), Huf(12), Huf(8), Huf(9)]);
+    assert!(matches!(
+        database.balance_over_time(&BalanceOverTimeInput {
+            from: date("2026-11-11"),
+            to: date("2026-11-10"),
+            account_ids: vec![],
+        }),
+        Err(LedgerError::InvalidValue(_))
+    ));
+    assert!(matches!(
+        database.balance_over_time(&BalanceOverTimeInput {
+            from: date("2026-09-15"),
+            to: date("2026-11-10"),
+            account_ids: vec!["missing".into()],
+        }),
+        Err(LedgerError::NotFound)
+    ));
+}
+
+#[test]
 fn net_worth_includes_all_account_kinds_and_excludes_scheduled_rows() {
     let (_directory, database) = database();
     for (id, kind) in [
