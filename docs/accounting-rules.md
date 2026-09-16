@@ -65,6 +65,20 @@ same pair model. Transfer identity is retained for later reports to distinguish
 movements from ordinary income/spending; report and category-budget semantics are
 not implemented in this phase.
 
+## Plan cash and credit spending
+
+The Plan replays posted on-budget activity one calendar month at a time. Each
+closed month carries positive category money forward and resets a negative
+category balance. Cash overspending reduces Ready to Assign in the next month;
+credit overspending is card debt and does not reduce Ready to Assign.
+
+Within a category/month, cash spending has first claim on the category's
+available money. Remaining funded money moves to the mapped card-payment
+category for card spending, allocated in the account presentation order. Card
+refunds reverse that movement. A posted cash-to-credit transfer reduces the
+mapped payment category without changing Ready to Assign. Scheduled, off-budget
+and ordinary transfer rows do not affect Plan activity.
+
 ## Reconciled edits
 
 Memo-only edits are allowed without confirmation. Amount changes, clearing-state

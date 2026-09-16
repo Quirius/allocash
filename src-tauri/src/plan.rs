@@ -4,7 +4,7 @@ use crate::{
 };
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanMonth(String);
@@ -27,9 +27,6 @@ impl PlanMonth {
         }
         Ok(Self(value.into()))
     }
-    fn start(&self) -> String {
-        format!("{}-01", self.0)
-    }
     fn next_start(&self) -> String {
         let year: i32 = self.0[..4].parse().unwrap();
         let month: u32 = self.0[5..].parse().unwrap();
@@ -37,6 +34,15 @@ impl PlanMonth {
             format!("{:04}-01-01", year + 1)
         } else {
             format!("{:04}-{:02}-01", year, month + 1)
+        }
+    }
+    fn next(&self) -> Self {
+        let year: i32 = self.0[..4].parse().unwrap();
+        let month: u32 = self.0[5..].parse().unwrap();
+        if month == 12 {
+            Self(format!("{:04}-01", year + 1))
+        } else {
+            Self(format!("{:04}-{:02}", year, month + 1))
         }
     }
     fn as_str(&self) -> &str {
@@ -69,6 +75,28 @@ pub struct CreditPaymentCategory {
     pub account_id: String,
     pub account_name: String,
     pub category_id: Option<String>,
+}
+
+#[derive(Default)]
+struct CategoryMonthActivity {
+    assignment: i128,
+    cash_net: i128,
+    credit_net: BTreeMap<String, i128>,
+    normal_activity: i128,
+}
+
+#[derive(Default)]
+struct MonthActivity {
+    categories: BTreeMap<String, CategoryMonthActivity>,
+    payment_deltas: BTreeMap<String, i128>,
+    ready_income: i128,
+}
+
+struct PlanDerivation {
+    assigned: BTreeMap<String, i128>,
+    activity: BTreeMap<String, i128>,
+    available: BTreeMap<String, i128>,
+    ready_to_assign: i128,
 }
 
 impl Database {
@@ -178,8 +206,7 @@ impl Database {
     }
 
     pub fn plan_month(&self, month: &PlanMonth) -> LedgerResult<PlanSnapshot> {
-        let next = month.next_start();
-        let start = month.start();
+        let derivation = derive_plan(&self.connection, month)?;
         let mut categories = Vec::new();
         let mut category_query = self.connection.prepare("SELECT g.id,g.name,c.id,c.name FROM category_groups g JOIN categories c ON c.group_id=g.id WHERE g.hidden=0 AND c.hidden=0 ORDER BY g.sort_order,c.sort_order,c.id")?;
         let mut rows = category_query.query([])?;
@@ -191,104 +218,18 @@ impl Database {
                 row.get::<_, String>(3)?,
             ));
         }
-        let mut assigned = BTreeMap::<String, i128>::new();
-        let mut assignment_total = 0i128;
-        let mut statement = self.connection.prepare(
-            "SELECT category_id,amount_huf FROM category_month_assignments WHERE month<=?1",
-        )?;
-        for row in statement.query_map([month.as_str()], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-        })? {
-            let (id, amount) = row?;
-            *assigned.entry(id).or_default() += i128::from(amount);
-            assignment_total += i128::from(amount);
-        }
-        let payment_categories: BTreeMap<String, String> = self
-            .connection
-            .prepare("SELECT account_id,category_id FROM credit_payment_categories")?
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-            .collect::<Result<_, _>>()?;
-        let mut assignments_by_month = BTreeMap::<String, Vec<(String, i128)>>::new();
-        let mut assignment_events = self.connection.prepare("SELECT month,category_id,amount_huf FROM category_month_assignments WHERE month<=?1 ORDER BY month,category_id")?;
-        for row in assignment_events.query_map([month.as_str()], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-            ))
-        })? {
-            let (assignment_month, category_id, amount) = row?;
-            assignments_by_month
-                .entry(assignment_month)
-                .or_default()
-                .push((category_id, i128::from(amount)));
-        }
-        let mut available = BTreeMap::<String, i128>::new();
-        let mut activity = BTreeMap::<String, i128>::new();
-        let mut ready_income = 0i128;
-        let mut applied_through = String::new();
-        let mut entry_query = self.connection.prepare("SELECT t.category_id,t.amount_huf,t.transaction_date,a.kind,t.account_id,t.transfer_id FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.posting_state='posted' AND t.transaction_date<?1 AND a.kind IN ('cash','credit') ORDER BY t.transaction_date,t.id")?;
-        let mut entries = entry_query.query([&next])?;
-        while let Some(row) = entries.next()? {
-            let category: Option<String> = row.get(0)?;
-            let amount = i128::from(row.get::<_, i64>(1)?);
-            let date: String = row.get(2)?;
-            let kind: String = row.get(3)?;
-            let account_id: String = row.get(4)?;
-            let transfer_id: Option<String> = row.get(5)?;
-            let entry_month = &date[..7];
-            for (assignment_month, assignments) in assignments_by_month.range((
-                std::ops::Bound::Excluded(applied_through.clone()),
-                std::ops::Bound::Included(entry_month.to_owned()),
-            )) {
-                for (category_id, assignment) in assignments {
-                    *available.entry(category_id.clone()).or_default() += assignment;
-                }
-                applied_through = assignment_month.clone();
-            }
-            if let Some(id) = category {
-                let before = *available.get(&id).unwrap_or(&0);
-                *available.entry(id.clone()).or_default() += amount;
-                if date >= start {
-                    *activity.entry(id).or_default() += amount;
-                }
-                if kind == "credit" && amount < 0 {
-                    if let Some(payment_category_id) = payment_categories.get(&account_id) {
-                        let funded = before.max(0).min(-amount);
-                        *available.entry(payment_category_id.clone()).or_default() += funded;
-                        if date >= start {
-                            *activity.entry(payment_category_id.clone()).or_default() += funded;
-                        }
-                    }
-                }
-            } else if kind == "cash" && transfer_id.is_none() {
-                ready_income += amount;
-            }
-        }
-        for (assignment_month, assignments) in assignments_by_month.range((
-            std::ops::Bound::Excluded(applied_through),
-            std::ops::Bound::Unbounded,
-        )) {
-            let _ = assignment_month;
-            for (category_id, assignment) in assignments {
-                *available.entry(category_id.clone()).or_default() += assignment;
-            }
-        }
         let categories = categories
             .into_iter()
             .map(
                 |(group_id, group_name, category_id, category_name)| -> LedgerResult<_> {
-                    let a = *assigned.get(&category_id).unwrap_or(&0);
                     Ok(PlanCategory {
                         group_id,
                         group_name,
                         category_id: category_id.clone(),
                         category_name,
-                        assigned: narrow(
-                            a - assigned_before(&self.connection, &month.0, &category_id)?,
-                        )?,
-                        activity: narrow(*activity.get(&category_id).unwrap_or(&0))?,
-                        available: narrow(*available.get(&category_id).unwrap_or(&0))?,
+                        assigned: narrow(*derivation.assigned.get(&category_id).unwrap_or(&0))?,
+                        activity: narrow(*derivation.activity.get(&category_id).unwrap_or(&0))?,
+                        available: narrow(*derivation.available.get(&category_id).unwrap_or(&0))?,
                     })
                 },
             )
@@ -305,44 +246,229 @@ impl Database {
             .collect::<Result<_, _>>()?;
         Ok(PlanSnapshot {
             month: month.0.clone(),
-            ready_to_assign: narrow(ready_income - assignment_total)?,
+            ready_to_assign: narrow(derivation.ready_to_assign)?,
             categories,
             credit_payment_categories,
         })
     }
 }
 
-fn assigned_before(
+/// Replays the budget one calendar month at a time. A closed month carries only
+/// positive category money forward; cash overspending reduces Ready to Assign
+/// in the following month, while credit overspending remains card debt.
+fn derive_plan(
     connection: &rusqlite::Connection,
-    month: &str,
-    category_id: &str,
-) -> LedgerResult<i128> {
-    let value: Option<i64> = connection.query_row(
-        "SELECT SUM(amount_huf) FROM category_month_assignments WHERE category_id=?1 AND month<?2",
-        params![category_id, month],
-        |row| row.get(0),
+    target: &PlanMonth,
+) -> LedgerResult<PlanDerivation> {
+    let payment_categories: BTreeMap<String, String> = connection
+        .prepare("SELECT account_id,category_id FROM credit_payment_categories")?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let credit_accounts: Vec<String> = connection
+        .prepare("SELECT id FROM accounts WHERE kind='credit' ORDER BY sort_order,id")?
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    let mut months = BTreeMap::<String, MonthActivity>::new();
+    let mut assignment_total = 0i128;
+    let mut assignments = connection.prepare(
+        "SELECT month,category_id,amount_huf FROM category_month_assignments WHERE month<=?1",
     )?;
-    Ok(i128::from(value.unwrap_or(0)))
+    for row in assignments.query_map([target.as_str()], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })? {
+        let (month, category_id, amount) = row?;
+        let amount = i128::from(amount);
+        assignment_total = checked_add(assignment_total, amount)?;
+        let activity = months
+            .entry(month)
+            .or_default()
+            .categories
+            .entry(category_id)
+            .or_default();
+        activity.assignment = checked_add(activity.assignment, amount)?;
+    }
+    let mut entries = connection.prepare(
+        "SELECT t.category_id,t.amount_huf,t.transaction_date,a.kind,t.account_id,t.transfer_id,
+                EXISTS(SELECT 1 FROM ledger_entries other JOIN accounts other_account ON other_account.id=other.account_id WHERE other.transfer_id=t.transfer_id AND other_account.kind='cash')
+         FROM ledger_entries t JOIN accounts a ON a.id=t.account_id
+         WHERE t.posting_state='posted' AND t.transaction_date<?1 AND a.kind IN ('cash','credit')
+         ORDER BY t.transaction_date,t.id",
+    )?;
+    let mut rows = entries.query([target.next_start()])?;
+    while let Some(row) = rows.next()? {
+        let category_id: Option<String> = row.get(0)?;
+        let amount = i128::from(row.get::<_, i64>(1)?);
+        let date: String = row.get(2)?;
+        let kind: String = row.get(3)?;
+        let account_id: String = row.get(4)?;
+        let transfer_id: Option<String> = row.get(5)?;
+        let has_cash_counterpart: bool = row.get(6)?;
+        let month = &date[..7];
+        let month_activity = months.entry(month.to_owned()).or_default();
+        if transfer_id.is_some() {
+            if kind == "credit" && amount > 0 && has_cash_counterpart {
+                if let Some(payment_category) = payment_categories.get(&account_id) {
+                    let delta = month_activity
+                        .payment_deltas
+                        .entry(payment_category.clone())
+                        .or_default();
+                    *delta = checked_add(*delta, -amount)?;
+                }
+            }
+            continue;
+        }
+        if let Some(category_id) = category_id {
+            let category = month_activity.categories.entry(category_id).or_default();
+            category.normal_activity = checked_add(category.normal_activity, amount)?;
+            if kind == "cash" {
+                category.cash_net = checked_add(category.cash_net, amount)?;
+            } else {
+                let credit = category.credit_net.entry(account_id).or_default();
+                *credit = checked_add(*credit, amount)?;
+            }
+        } else if kind == "cash" {
+            month_activity.ready_income = checked_add(month_activity.ready_income, amount)?;
+        }
+    }
+
+    let first_month = months
+        .keys()
+        .next()
+        .cloned()
+        .unwrap_or_else(|| target.as_str().to_owned());
+    let mut current = PlanMonth::parse(&first_month)?;
+    let mut available = BTreeMap::<String, i128>::new();
+    let mut target_assigned = BTreeMap::<String, i128>::new();
+    let mut target_activity = BTreeMap::<String, i128>::new();
+    let mut ready_income = 0i128;
+    let mut closed_cash_overspending = 0i128;
+
+    loop {
+        let is_target = current == *target;
+        let MonthActivity {
+            categories: month_categories,
+            mut payment_deltas,
+            ready_income: month_ready_income,
+        } = months.remove(current.as_str()).unwrap_or_default();
+        ready_income = checked_add(ready_income, month_ready_income)?;
+        let mut category_ids: BTreeSet<String> = month_categories.keys().cloned().collect();
+        category_ids.extend(payment_deltas.keys().cloned());
+        for category_id in category_ids {
+            let entry = month_categories.get(&category_id);
+            let assignment = entry.map_or(0, |value| value.assignment);
+            let cash_net = entry.map_or(0, |value| value.cash_net);
+            let normal_activity = entry.map_or(0, |value| value.normal_activity);
+            let carry = *available.get(&category_id).unwrap_or(&0);
+            let cash_in = cash_net.max(0);
+            let cash_spend = (-cash_net).max(0);
+            let credit_refunds = entry
+                .map(|value| {
+                    value
+                        .credit_net
+                        .values()
+                        .filter(|amount| **amount > 0)
+                        .try_fold(0i128, |total, amount| checked_add(total, *amount))
+                })
+                .transpose()?
+                .unwrap_or(0);
+            let pool = checked_add(
+                checked_add(carry, assignment)?,
+                checked_add(cash_in, credit_refunds)?,
+            )?;
+            let mut credit_capacity = checked_sub(pool, cash_spend)?.max(0);
+            let mut total_credit_spend = 0i128;
+            let mut credit_overspending = 0i128;
+            if let Some(entry) = entry {
+                for account_id in &credit_accounts {
+                    let net = *entry.credit_net.get(account_id).unwrap_or(&0);
+                    if net > 0 {
+                        if let Some(payment_category) = payment_categories.get(account_id) {
+                            let delta = payment_deltas.entry(payment_category.clone()).or_default();
+                            *delta = checked_add(*delta, -net)?;
+                        }
+                        continue;
+                    }
+                    if net == 0 {
+                        continue;
+                    }
+                    let spend = -net;
+                    total_credit_spend = checked_add(total_credit_spend, spend)?;
+                    let funded = credit_capacity.min(spend);
+                    credit_capacity = checked_sub(credit_capacity, funded)?;
+                    credit_overspending =
+                        checked_add(credit_overspending, checked_sub(spend, funded)?)?;
+                    if let Some(payment_category) = payment_categories.get(account_id) {
+                        let delta = payment_deltas.entry(payment_category.clone()).or_default();
+                        *delta = checked_add(*delta, funded)?;
+                    }
+                }
+            }
+            let raw_available = checked_sub(checked_sub(pool, cash_spend)?, total_credit_spend)?;
+            let cash_overspending = checked_sub((-raw_available).max(0), credit_overspending)?;
+            available.insert(category_id.clone(), raw_available);
+            if is_target {
+                target_assigned.insert(category_id.clone(), assignment);
+                target_activity.insert(category_id, normal_activity);
+            } else {
+                closed_cash_overspending =
+                    checked_add(closed_cash_overspending, cash_overspending)?;
+            }
+        }
+        // A mapped card purchase moves only its funded portion into the payment
+        // category; a refund and a cash-to-card payment reverse that movement.
+        // The deltas are computed after cash gets first claim on category money.
+        if is_target {
+            for (category_id, delta) in payment_deltas {
+                let current_available = available.entry(category_id.clone()).or_default();
+                *current_available = checked_add(*current_available, delta)?;
+                let current_activity = target_activity.entry(category_id).or_default();
+                *current_activity = checked_add(*current_activity, delta)?;
+            }
+            break;
+        }
+        for (category_id, delta) in payment_deltas {
+            let current_available = available.entry(category_id).or_default();
+            *current_available = checked_add(*current_available, delta)?;
+        }
+        for value in available.values_mut() {
+            *value = (*value).max(0);
+        }
+        current = current.next();
+    }
+    Ok(PlanDerivation {
+        assigned: target_assigned,
+        activity: target_activity,
+        available,
+        ready_to_assign: checked_sub(
+            checked_sub(ready_income, assignment_total)?,
+            closed_cash_overspending,
+        )?,
+    })
 }
+
+fn checked_add(left: i128, right: i128) -> LedgerResult<i128> {
+    left.checked_add(right).ok_or(LedgerError::AmountOverflow)
+}
+
+fn checked_sub(left: i128, right: i128) -> LedgerResult<i128> {
+    left.checked_sub(right).ok_or(LedgerError::AmountOverflow)
+}
+
 fn category_available_for(
     connection: &rusqlite::Connection,
     category_id: &str,
     month: &PlanMonth,
 ) -> LedgerResult<Huf> {
-    let assignments: Option<i64> = connection.query_row(
-        "SELECT SUM(amount_huf) FROM category_month_assignments WHERE category_id=?1 AND month<=?2",
-        params![category_id, month.as_str()],
-        |row| row.get(0),
-    )?;
-    let mut activity = 0i128;
-    let mut query = connection.prepare("SELECT t.amount_huf FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.category_id=?1 AND t.posting_state='posted' AND t.transaction_date<?2 AND a.kind IN ('cash','credit')")?;
-    let mut rows = query.query(params![category_id, month.next_start()])?;
-    while let Some(row) = rows.next()? {
-        activity = activity
-            .checked_add(i128::from(row.get::<_, i64>(0)?))
-            .ok_or(LedgerError::AmountOverflow)?;
-    }
-    narrow(i128::from(assignments.unwrap_or(0)) + activity)
+    narrow(
+        *derive_plan(connection, month)?
+            .available
+            .get(category_id)
+            .unwrap_or(&0),
+    )
 }
 fn narrow(value: i128) -> LedgerResult<Huf> {
     i64::try_from(value)
@@ -353,7 +479,15 @@ fn narrow(value: i128) -> LedgerResult<Huf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ledger::{Account, AccountKind, CalendarDate, Entry};
+    use crate::ledger::{Account, AccountKind, CalendarDate, Direction, Entry, TransferDraft};
+
+    fn category_available(plan: &PlanSnapshot, category_id: &str) -> Huf {
+        plan.categories
+            .iter()
+            .find(|category| category.category_id == category_id)
+            .unwrap()
+            .available
+    }
     #[test]
     fn plan_uses_posted_on_budget_activity_and_rolls_available_forward() {
         let directory = tempfile::tempdir().unwrap();
@@ -546,7 +680,7 @@ mod tests {
     #[test]
     fn funded_credit_spending_moves_only_available_money_to_the_payment_category() {
         let directory = tempfile::tempdir().unwrap();
-        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
         database
             .create_account(&Account {
                 id: "card".into(),
@@ -561,6 +695,7 @@ mod tests {
         database
             .create_category("payment", "g", "Card payment", 1)
             .unwrap();
+        database.create_category("other", "g", "Other", 2).unwrap();
         let month = PlanMonth::parse("2026-09").unwrap();
         database
             .set_monthly_assignment("food", &month, Huf(1_000))
@@ -592,6 +727,12 @@ mod tests {
                 .available,
             Huf(600)
         );
+        database
+            .move_monthly_money("payment", "other", &month, Huf(600))
+            .unwrap();
+        let moved = database.plan_month(&month).unwrap();
+        assert_eq!(category_available(&moved, "payment"), Huf(0));
+        assert_eq!(category_available(&moved, "other"), Huf(600));
     }
 
     #[test]
@@ -657,5 +798,146 @@ mod tests {
                 .available,
             Huf(200)
         );
+    }
+
+    #[test]
+    fn cash_overspending_resets_on_rollover_and_reduces_ready_to_assign() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "cash".into(),
+                name: "Cash".into(),
+                kind: AccountKind::Cash,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &september, Huf(100))
+            .unwrap();
+        let mut purchase = Entry::manual(
+            "cash-purchase",
+            "cash",
+            CalendarDate::parse("2026-09-10").unwrap(),
+        );
+        purchase.category_id = Some("food".into());
+        database.create_transaction(&purchase, Huf(-150)).unwrap();
+        let september_plan = database.plan_month(&september).unwrap();
+        assert_eq!(category_available(&september_plan, "food"), Huf(-50));
+        let october = PlanMonth::parse("2026-10").unwrap();
+        let october_plan = database.plan_month(&october).unwrap();
+        assert_eq!(category_available(&october_plan, "food"), Huf(0));
+        assert_eq!(october_plan.ready_to_assign, Huf(-150));
+    }
+
+    #[test]
+    fn mixed_cash_and_credit_spending_gives_cash_first_claim_on_category_money() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        for (id, kind, sort_order) in [
+            ("cash", AccountKind::Cash, 0),
+            ("card", AccountKind::Credit, 1),
+        ] {
+            database
+                .create_account(&Account {
+                    id: id.into(),
+                    name: id.into(),
+                    kind,
+                    sort_order,
+                    closed: false,
+                })
+                .unwrap();
+        }
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        database
+            .create_category("payment", "g", "Card payment", 1)
+            .unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &september, Huf(150))
+            .unwrap();
+        database
+            .set_credit_payment_category("card", Some("payment"))
+            .unwrap();
+        for (id, account_id, amount) in [("cash-spend", "cash", -100), ("card-spend", "card", -100)]
+        {
+            let mut entry =
+                Entry::manual(id, account_id, CalendarDate::parse("2026-09-10").unwrap());
+            entry.category_id = Some("food".into());
+            database.create_transaction(&entry, Huf(amount)).unwrap();
+        }
+        let september_plan = database.plan_month(&september).unwrap();
+        assert_eq!(category_available(&september_plan, "food"), Huf(-50));
+        assert_eq!(category_available(&september_plan, "payment"), Huf(50));
+        let october_plan = database
+            .plan_month(&PlanMonth::parse("2026-10").unwrap())
+            .unwrap();
+        assert_eq!(category_available(&october_plan, "food"), Huf(0));
+        assert_eq!(category_available(&october_plan, "payment"), Huf(50));
+        assert_eq!(october_plan.ready_to_assign, Huf(-150));
+    }
+
+    #[test]
+    fn card_refunds_reverse_the_payment_category_and_cash_payments_consume_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        for (id, kind, sort_order) in [
+            ("cash", AccountKind::Cash, 0),
+            ("card", AccountKind::Credit, 1),
+        ] {
+            database
+                .create_account(&Account {
+                    id: id.into(),
+                    name: id.into(),
+                    kind,
+                    sort_order,
+                    closed: false,
+                })
+                .unwrap();
+        }
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        database
+            .create_category("payment", "g", "Card payment", 1)
+            .unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &september, Huf(100))
+            .unwrap();
+        database
+            .set_credit_payment_category("card", Some("payment"))
+            .unwrap();
+        for (id, amount) in [("purchase", -100), ("refund", 40)] {
+            let mut entry = Entry::manual(id, "card", CalendarDate::parse("2026-09-10").unwrap());
+            entry.category_id = Some("food".into());
+            database.create_transaction(&entry, Huf(amount)).unwrap();
+        }
+        let september_plan = database.plan_month(&september).unwrap();
+        assert_eq!(category_available(&september_plan, "food"), Huf(40));
+        assert_eq!(category_available(&september_plan, "payment"), Huf(60));
+        let transfer = TransferDraft::manual(
+            "card-payment",
+            Huf(60),
+            Entry::manual(
+                "cash-leg",
+                "cash",
+                CalendarDate::parse("2026-09-20").unwrap(),
+            ),
+            Entry::manual(
+                "card-leg",
+                "card",
+                CalendarDate::parse("2026-09-20").unwrap(),
+            ),
+            Direction::Outflow,
+        );
+        database.create_transfer(&transfer).unwrap();
+        let after_payment = database.plan_month(&september).unwrap();
+        assert_eq!(category_available(&after_payment, "payment"), Huf(0));
+        assert_eq!(after_payment.ready_to_assign, Huf(-100));
     }
 }
