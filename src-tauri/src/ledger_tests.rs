@@ -200,6 +200,37 @@ fn spending_report_groups_posted_ordinary_outflows_only() {
 }
 
 #[test]
+fn net_worth_includes_all_account_kinds_and_excludes_scheduled_rows() {
+    let (_directory, database) = database();
+    for (id, kind) in [
+        ("card", AccountKind::Credit),
+        ("loan", AccountKind::Loan),
+        ("tracking", AccountKind::Tracking),
+    ] {
+        database.create_account(&account(id, kind, 1)).unwrap();
+    }
+    for (id, account_id, amount) in [
+        ("cash", "cash", 100),
+        ("card", "card", -30),
+        ("loan", "loan", -20),
+        ("tracking", "tracking", 50),
+    ] {
+        database
+            .create_transaction(&entry(id, account_id), Huf(amount))
+            .unwrap();
+    }
+    let scheduled = Entry::scheduled("scheduled-worth", "cash", date("2026-09-10"), "legacy");
+    database.create_transaction(&scheduled, Huf(999)).unwrap();
+    let report = database
+        .net_worth_report(&date("2026-09-10"), Some(&date("2026-09-09")))
+        .unwrap();
+    assert_eq!(report.assets, Huf(150));
+    assert_eq!(report.debts, Huf(50));
+    assert_eq!(report.net_worth, Huf(100));
+    assert_eq!(report.change, Some(Huf(100)));
+}
+
+#[test]
 fn reconciliation_promotes_eligible_entries_and_adds_only_the_reviewed_adjustment() {
     let (_directory, mut database) = database();
     database

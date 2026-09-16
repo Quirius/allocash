@@ -1,9 +1,9 @@
 use crate::database::{BudgetInfo, Database};
 use crate::ledger::{
     AccountOverview, CalendarDate, LedgerError, ManualTransactionDraft, ManualTransferInput,
-    MonthlyScheduleDraft, ReconciliationInput, ReconciliationResult, ReconciliationReview,
-    RegisterEntry, RegisterEntryEdit, ScheduledOccurrence, SpendingCategoryTotal,
-    SpendingReportInput, TransactionFormOptions,
+    MonthlyScheduleDraft, NetWorthReport, ReconciliationInput, ReconciliationResult,
+    ReconciliationReview, RegisterEntry, RegisterEntryEdit, ScheduledOccurrence,
+    SpendingCategoryTotal, SpendingReportInput, TransactionFormOptions,
 };
 use crate::plan::{CategoryTargetDefinition, PlanMonth, PlanSnapshot};
 use serde::{Deserialize, Serialize};
@@ -195,6 +195,24 @@ fn get_spending_by_category(
 ) -> Result<Vec<SpendingCategoryTotal>, String> {
     with_database(&app, &state, |database| {
         database.spending_by_category(&input).map_err(ledger_error)
+    })
+}
+#[tauri::command]
+fn get_net_worth_report(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    as_of: String,
+    compared_to: Option<String>,
+) -> Result<NetWorthReport, String> {
+    let as_of = CalendarDate::parse(&as_of).map_err(ledger_error)?;
+    let compared_to = compared_to
+        .map(|date| CalendarDate::parse(&date))
+        .transpose()
+        .map_err(ledger_error)?;
+    with_database(&app, &state, |database| {
+        database
+            .net_worth_report(&as_of, compared_to.as_ref())
+            .map_err(ledger_error)
     })
 }
 #[tauri::command]
@@ -391,6 +409,7 @@ pub fn run() {
             get_account_register,
             get_scheduled_occurrences,
             get_spending_by_category,
+            get_net_worth_report,
             create_monthly_schedule,
             post_scheduled_occurrence,
             skip_scheduled_occurrence,

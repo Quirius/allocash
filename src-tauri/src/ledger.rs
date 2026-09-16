@@ -276,6 +276,17 @@ pub struct AccountOverview {
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct NetWorthReport {
+    pub as_of: CalendarDate,
+    pub compared_to: Option<CalendarDate>,
+    pub assets: Huf,
+    pub debts: Huf,
+    pub net_worth: Huf,
+    pub change: Option<Huf>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RegisterEntry {
     pub id: String,
     pub date: CalendarDate,
@@ -647,6 +658,29 @@ impl Database {
                 })
             })
             .collect()
+    }
+
+    pub fn net_worth_report(
+        &self,
+        as_of: &CalendarDate,
+        compared_to: Option<&CalendarDate>,
+    ) -> LedgerResult<NetWorthReport> {
+        let net_worth = net_worth_for(self.account_overviews(as_of)?)?;
+        let (assets, debts) = asset_debt_totals(self.account_overviews(as_of)?)?;
+        let change = compared_to
+            .map(|date| {
+                net_worth_for(self.account_overviews(date)?)
+                    .and_then(|prior| narrow(i128::from(net_worth.0) - i128::from(prior.0)))
+            })
+            .transpose()?;
+        Ok(NetWorthReport {
+            as_of: as_of.clone(),
+            compared_to: compared_to.cloned(),
+            assets,
+            debts,
+            net_worth,
+            change,
+        })
     }
 
     /// Returns display-ready ledger rows while keeping all financial querying
@@ -1200,6 +1234,26 @@ fn account_balance_for(
         uncleared: narrow(uncleared)?,
         reconciled: narrow(reconciled)?,
     })
+}
+
+fn net_worth_for(accounts: Vec<AccountOverview>) -> LedgerResult<Huf> {
+    let mut total = 0i128;
+    for account in accounts {
+        add(&mut total, i128::from(account.balance.working.0))?;
+    }
+    narrow(total)
+}
+fn asset_debt_totals(accounts: Vec<AccountOverview>) -> LedgerResult<(Huf, Huf)> {
+    let mut assets = 0i128;
+    let mut debts = 0i128;
+    for account in accounts {
+        if account.balance.working.0 >= 0 {
+            add(&mut assets, i128::from(account.balance.working.0))?;
+        } else {
+            add(&mut debts, -i128::from(account.balance.working.0))?;
+        }
+    }
+    Ok((narrow(assets)?, narrow(debts)?))
 }
 
 fn reconciliation_review_for(
