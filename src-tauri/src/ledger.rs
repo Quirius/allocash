@@ -411,6 +411,60 @@ pub struct InflowOutflowReport {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct IncomeExpenseCategory {
+    pub category_id: Option<String>,
+    pub category_name: String,
+    pub amounts: Vec<Huf>,
+    pub average: Huf,
+    pub total: Huf,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IncomeExpenseGroup {
+    pub group_id: Option<String>,
+    pub group_name: String,
+    pub categories: Vec<IncomeExpenseCategory>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IncomeExpenseMonthTotal {
+    pub month: String,
+    pub income: Huf,
+    pub expense: Huf,
+    pub net_income: Huf,
+    pub savings_ratio_basis_points: Option<Huf>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IncomeExpenseReport {
+    pub from: CalendarDate,
+    pub to: CalendarDate,
+    pub months: Vec<String>,
+    pub income_groups: Vec<IncomeExpenseGroup>,
+    pub expense_groups: Vec<IncomeExpenseGroup>,
+    pub monthly_totals: Vec<IncomeExpenseMonthTotal>,
+    pub total_income: Huf,
+    pub total_expense: Huf,
+    pub total_net_income: Huf,
+    pub average_monthly_income: Huf,
+    pub average_monthly_expense: Huf,
+    pub average_monthly_net_income: Huf,
+    pub savings_ratio_basis_points: Option<Huf>,
+}
+
+struct IncomeExpenseCategoryAccum {
+    group_id: Option<String>,
+    group_name: String,
+    category_id: Option<String>,
+    category_name: String,
+    amounts: Vec<i128>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScheduledOccurrence {
     pub schedule_id: String,
     pub transaction_id: String,
@@ -966,6 +1020,124 @@ impl Database {
             total_inflow,
             total_outflow,
             months,
+        })
+    }
+
+    pub fn income_vs_expense(
+        &self,
+        input: &SpendingReportInput,
+    ) -> LedgerResult<IncomeExpenseReport> {
+        if input.from.as_str() > input.to.as_str() {
+            return Err(LedgerError::InvalidValue(
+                "Report start date must not be after its end date.",
+            ));
+        }
+        let months = report_months(&input.from, &input.to)?;
+        let mut sql = "SELECT t.category_id,g.id,g.name,c.name,substr(t.transaction_date,1,7),t.amount_huf FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN category_groups g ON g.id=c.group_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<>0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        if input.account_ids.is_empty() {
+            sql.push_str(" AND a.kind IN ('cash','credit')");
+        } else {
+            sql.push_str(" AND a.id IN (");
+            sql.push_str(
+                &std::iter::repeat_n("?", input.account_ids.len())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            sql.push(')');
+        }
+        sql.push_str(" ORDER BY CASE WHEN t.amount_huf>0 THEN 0 ELSE 1 END,CASE WHEN g.id IS NULL THEN 1 ELSE 0 END,g.sort_order,g.id,c.sort_order,c.id,t.transaction_date,t.id");
+        let mut values: Vec<rusqlite::types::Value> = vec![
+            input.from.as_str().to_owned().into(),
+            input.to.as_str().to_owned().into(),
+        ];
+        values.extend(input.account_ids.iter().cloned().map(Into::into));
+        let mut statement = self.connection.prepare(&sql)?;
+        let rows = statement
+            .query_map(rusqlite::params_from_iter(values), |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, i64>(5)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut income = Vec::new();
+        let mut expense = Vec::new();
+        let mut monthly_income = vec![0i128; months.len()];
+        let mut monthly_expense = vec![0i128; months.len()];
+        for (category_id, group_id, group_name, category_name, month, amount) in rows {
+            let month_index = months
+                .binary_search(&month)
+                .map_err(|_| LedgerError::InvalidValue("Invalid report month."))?;
+            let (target, magnitude) = if amount > 0 {
+                (&mut income, i128::from(amount))
+            } else {
+                (&mut expense, -i128::from(amount))
+            };
+            let category = target
+                .iter_mut()
+                .find(|category: &&mut IncomeExpenseCategoryAccum| {
+                    category.category_id == category_id
+                });
+            let category = match category {
+                Some(category) => category,
+                None => {
+                    target.push(IncomeExpenseCategoryAccum {
+                        group_id,
+                        group_name: group_name.unwrap_or_else(|| "Uncategorized".into()),
+                        category_id,
+                        category_name: category_name.unwrap_or_else(|| "Uncategorized".into()),
+                        amounts: vec![0; months.len()],
+                    });
+                    target.last_mut().ok_or(LedgerError::NotFound)?
+                }
+            };
+            add(&mut category.amounts[month_index], magnitude)?;
+            if amount > 0 {
+                add(&mut monthly_income[month_index], magnitude)?;
+            } else {
+                add(&mut monthly_expense[month_index], magnitude)?;
+            }
+        }
+        let total_income = sum_amounts(&monthly_income)?;
+        let total_expense = sum_amounts(&monthly_expense)?;
+        let total_net_income = total_income
+            .checked_sub(total_expense)
+            .ok_or(LedgerError::AmountOverflow)?;
+        let month_count = i128::try_from(months.len()).map_err(|_| LedgerError::AmountOverflow)?;
+        let monthly_totals = months
+            .iter()
+            .zip(monthly_income.iter().zip(monthly_expense.iter()))
+            .map(|(month, (income, expense))| {
+                let net_income = income
+                    .checked_sub(*expense)
+                    .ok_or(LedgerError::AmountOverflow)?;
+                Ok(IncomeExpenseMonthTotal {
+                    month: month.clone(),
+                    income: narrow(*income)?,
+                    expense: narrow(*expense)?,
+                    net_income: narrow(net_income)?,
+                    savings_ratio_basis_points: savings_ratio(*income, net_income)?,
+                })
+            })
+            .collect::<LedgerResult<Vec<_>>>()?;
+        Ok(IncomeExpenseReport {
+            from: input.from.clone(),
+            to: input.to.clone(),
+            income_groups: income_expense_groups(income, month_count)?,
+            expense_groups: income_expense_groups(expense, month_count)?,
+            months,
+            monthly_totals,
+            total_income: narrow(total_income)?,
+            total_expense: narrow(total_expense)?,
+            total_net_income: narrow(total_net_income)?,
+            average_monthly_income: narrow(total_income / month_count)?,
+            average_monthly_expense: narrow(total_expense / month_count)?,
+            average_monthly_net_income: narrow(total_net_income / month_count)?,
+            savings_ratio_basis_points: savings_ratio(total_income, total_net_income)?,
         })
     }
 
@@ -1574,6 +1746,61 @@ fn confirm_reconciled(reconciled: bool, confirmed: bool) -> LedgerResult<()> {
 fn guard_transfer(connection: &Connection, id: &str, confirmed: bool) -> LedgerResult<()> {
     let reconciled: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM transactions WHERE transfer_id=?1 AND cleared_state='reconciled')",[id],|row|row.get(0))?;
     confirm_reconciled(reconciled, confirmed)
+}
+fn sum_amounts(amounts: &[i128]) -> LedgerResult<i128> {
+    amounts.iter().try_fold(0i128, |total, amount| {
+        total
+            .checked_add(*amount)
+            .ok_or(LedgerError::AmountOverflow)
+    })
+}
+fn savings_ratio(income: i128, net_income: i128) -> LedgerResult<Option<Huf>> {
+    if income == 0 {
+        return Ok(None);
+    }
+    net_income
+        .checked_mul(10_000)
+        .ok_or(LedgerError::AmountOverflow)
+        .and_then(|basis_points| {
+            i64::try_from(basis_points / income).map_err(|_| LedgerError::AmountOverflow)
+        })
+        .map(Huf)
+        .map(Some)
+}
+fn income_expense_groups(
+    categories: Vec<IncomeExpenseCategoryAccum>,
+    month_count: i128,
+) -> LedgerResult<Vec<IncomeExpenseGroup>> {
+    let mut groups: Vec<IncomeExpenseGroup> = Vec::new();
+    for category in categories {
+        let IncomeExpenseCategoryAccum {
+            group_id,
+            group_name,
+            category_id,
+            category_name,
+            amounts,
+        } = category;
+        let total = sum_amounts(&amounts)?;
+        let category = IncomeExpenseCategory {
+            category_id,
+            category_name,
+            amounts: amounts
+                .into_iter()
+                .map(narrow)
+                .collect::<LedgerResult<Vec<_>>>()?,
+            average: narrow(total / month_count)?,
+            total: narrow(total)?,
+        };
+        match groups.iter_mut().find(|group| group.group_id == group_id) {
+            Some(group) => group.categories.push(category),
+            None => groups.push(IncomeExpenseGroup {
+                group_id,
+                group_name,
+                categories: vec![category],
+            }),
+        }
+    }
+    Ok(groups)
 }
 fn report_months(from: &CalendarDate, to: &CalendarDate) -> LedgerResult<Vec<String>> {
     let mut year: u32 = from.as_str()[..4]

@@ -135,6 +135,14 @@ inflow minus outflow. Thus ordinary refunds and reimbursements appear as gross
 inflows rather than reducing a prior expense. Months without activity remain in
 the response so a later chart has a continuous series.
 
+Income vs Expense uses that same gross-entry scope, but keeps positive and
+negative activity separate by category and group. A category with both signs
+therefore appears in both sections. It preserves stored group/category order,
+including hidden history; null categories form a final `Uncategorized` row.
+It returns month-aligned category amounts, period/month totals, whole-HUF
+monthly averages, and a savings ratio in integer basis points when income is
+nonzero.
+
 Net Worth is a separate as-of projection: it sums the signed posted working
 balances of every account kind, including closed, loan and tracking accounts.
 Transfers remain included there because their two legs net to zero across the

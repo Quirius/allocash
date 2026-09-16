@@ -325,6 +325,148 @@ fn inflow_outflow_report_is_monthly_dense_and_excludes_internal_movements() {
 }
 
 #[test]
+fn income_vs_expense_keeps_category_sides_and_months_distinct() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("card", AccountKind::Credit, 1))
+        .unwrap();
+    database
+        .create_account(&account("closed-card", AccountKind::Credit, 2))
+        .unwrap();
+    database
+        .create_account(&account("tracking", AccountKind::Tracking, 3))
+        .unwrap();
+    database
+        .create_category_group("income", "Income", 0)
+        .unwrap();
+    database
+        .create_category_group("living", "Living", 1)
+        .unwrap();
+    database
+        .create_category("salary", "income", "Salary", 0)
+        .unwrap();
+    database
+        .create_category("groceries", "living", "Groceries", 0)
+        .unwrap();
+    let mut salary = entry("salary", "cash");
+    salary.date = date("2026-09-01");
+    salary.category_id = Some("salary".into());
+    database.create_transaction(&salary, Huf(100)).unwrap();
+    let mut groceries = entry("groceries", "cash");
+    groceries.date = date("2026-09-30");
+    groceries.category_id = Some("groceries".into());
+    database.create_transaction(&groceries, Huf(-30)).unwrap();
+    let mut closed_groceries = entry("closed-groceries", "closed-card");
+    closed_groceries.date = date("2026-09-15");
+    closed_groceries.category_id = Some("groceries".into());
+    database
+        .create_transaction(&closed_groceries, Huf(-3))
+        .unwrap();
+    database.set_account_closed("closed-card", true).unwrap();
+    let mut refund = entry("refund", "cash");
+    refund.date = date("2026-10-01");
+    refund.category_id = Some("groceries".into());
+    database.create_transaction(&refund, Huf(5)).unwrap();
+    let mut october_groceries = entry("october-groceries", "card");
+    october_groceries.date = date("2026-10-01");
+    october_groceries.category_id = Some("groceries".into());
+    database
+        .create_transaction(&october_groceries, Huf(-10))
+        .unwrap();
+    let mut uncategorized_income = entry("uncategorized-income", "cash");
+    uncategorized_income.date = date("2026-09-01");
+    database
+        .create_transaction(&uncategorized_income, Huf(7))
+        .unwrap();
+    let mut uncategorized_expense = entry("uncategorized-expense", "cash");
+    uncategorized_expense.date = date("2026-10-01");
+    database
+        .create_transaction(&uncategorized_expense, Huf(-2))
+        .unwrap();
+    let mut tracking_income = entry("tracking-income", "tracking");
+    tracking_income.date = date("2026-10-01");
+    database
+        .create_transaction(&tracking_income, Huf(999))
+        .unwrap();
+    let scheduled = Entry::scheduled(
+        "scheduled-income-expense",
+        "cash",
+        date("2026-10-01"),
+        "legacy",
+    );
+    database.create_transaction(&scheduled, Huf(-50)).unwrap();
+    database
+        .create_transaction(&entry("zero-income-expense", "cash"), Huf(0))
+        .unwrap();
+    database
+        .create_transfer(&TransferDraft::manual(
+            "income-expense-transfer",
+            Huf(80),
+            entry("income-expense-transfer-out", "cash"),
+            entry("income-expense-transfer-in", "card"),
+            Direction::Outflow,
+        ))
+        .unwrap();
+    let input = SpendingReportInput {
+        from: date("2026-09-01"),
+        to: date("2026-11-01"),
+        account_ids: vec![],
+    };
+    let report = database.income_vs_expense(&input).unwrap();
+    assert_eq!(report.months, ["2026-09", "2026-10", "2026-11"]);
+    assert_eq!(report.total_income, Huf(112));
+    assert_eq!(report.total_expense, Huf(45));
+    assert_eq!(report.total_net_income, Huf(67));
+    assert_eq!(report.average_monthly_income, Huf(37));
+    assert_eq!(report.average_monthly_expense, Huf(15));
+    assert_eq!(report.average_monthly_net_income, Huf(22));
+    assert_eq!(report.savings_ratio_basis_points, Some(Huf(5982)));
+    assert_eq!(report.monthly_totals[0].income, Huf(107));
+    assert_eq!(report.monthly_totals[0].expense, Huf(33));
+    assert_eq!(report.monthly_totals[0].net_income, Huf(74));
+    assert_eq!(report.monthly_totals[1].income, Huf(5));
+    assert_eq!(report.monthly_totals[1].expense, Huf(12));
+    assert_eq!(report.monthly_totals[1].net_income, Huf(-7));
+    assert_eq!(report.monthly_totals[2].savings_ratio_basis_points, None);
+    assert_eq!(report.income_groups[0].group_name, "Income");
+    assert_eq!(
+        report.income_groups[0].categories[0].amounts,
+        [Huf(100), Huf(0), Huf(0)]
+    );
+    assert_eq!(report.income_groups[1].group_name, "Living");
+    assert_eq!(
+        report.income_groups[1].categories[0].amounts,
+        [Huf(0), Huf(5), Huf(0)]
+    );
+    assert_eq!(report.income_groups[2].group_name, "Uncategorized");
+    assert_eq!(
+        report.expense_groups[0].categories[0].amounts,
+        [Huf(33), Huf(10), Huf(0)]
+    );
+    assert_eq!(report.expense_groups[1].group_name, "Uncategorized");
+    assert_eq!(
+        report.expense_groups[1].categories[0].amounts,
+        [Huf(0), Huf(2), Huf(0)]
+    );
+    let tracking = database
+        .income_vs_expense(&SpendingReportInput {
+            account_ids: vec!["tracking".into()],
+            ..input
+        })
+        .unwrap();
+    assert_eq!(tracking.total_income, Huf(999));
+    assert_eq!(tracking.total_expense, Huf(0));
+    assert!(matches!(
+        database.income_vs_expense(&SpendingReportInput {
+            from: date("2026-11-02"),
+            to: date("2026-11-01"),
+            account_ids: vec![],
+        }),
+        Err(LedgerError::InvalidValue(_))
+    ));
+}
+
+#[test]
 fn net_worth_includes_all_account_kinds_and_excludes_scheduled_rows() {
     let (_directory, database) = database();
     for (id, kind) in [

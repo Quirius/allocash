@@ -1,16 +1,26 @@
 import { useEffect, useState } from "react";
 import {
+  loadIncomeVsExpense,
   loadInflowOutflowByMonth,
   loadNetWorthReport,
   loadSpendingByCategory,
   loadSpendingByPayee,
   type AccountOverview,
+  type IncomeExpenseReport,
   type InflowOutflowReport,
   type NetWorthReport,
   type SpendingCategoryTotal,
   type SpendingPayeeTotal,
 } from "../lib/desktop";
 import { formatHuf, localCalendarDate } from "../lib/format";
+
+function formatSavingsRatio(value: string | null): string {
+  if (value === null) return "No income";
+  const basisPoints = BigInt(value);
+  const sign = basisPoints < 0n ? "−" : "";
+  const magnitude = basisPoints < 0n ? -basisPoints : basisPoints;
+  return `${sign}${magnitude / 100n}.${(magnitude % 100n).toString().padStart(2, "0")}%`;
+}
 
 export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
   const today = localCalendarDate();
@@ -20,21 +30,24 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
   const [categories, setCategories] = useState<SpendingCategoryTotal[] | null>(null);
   const [payees, setPayees] = useState<SpendingPayeeTotal[] | null>(null);
   const [cashFlow, setCashFlow] = useState<InflowOutflowReport | null>(null);
+  const [incomeExpense, setIncomeExpense] = useState<IncomeExpenseReport | null>(null);
   const [netWorth, setNetWorth] = useState<NetWorthReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
     try {
       const input = { from, to, accountIds };
-      const [spendingByCategory, spendingByPayee, inflowOutflow, worth] = await Promise.all([
+      const [spendingByCategory, spendingByPayee, inflowOutflow, incomeVsExpense, worth] = await Promise.all([
         loadSpendingByCategory(input),
         loadSpendingByPayee(input),
         loadInflowOutflowByMonth(input),
+        loadIncomeVsExpense(input),
         loadNetWorthReport(to, from),
       ]);
       setCategories(spendingByCategory);
       setPayees(spendingByPayee);
       setCashFlow(inflowOutflow);
+      setIncomeExpense(incomeVsExpense);
       setNetWorth(worth);
       setError(null);
     } catch {
@@ -74,7 +87,7 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
         <label>
           To <input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
         </label>
-        <span>Spending and cash-flow accounts</span>
+        <span>Activity report accounts</span>
         {accounts.map((account) => (
           <label key={account.id}>
             <input
@@ -117,6 +130,47 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
               <b>{formatHuf(BigInt(row.difference))}</b>
             </div>
           ))}
+        </section>
+      )}
+      {incomeExpense === null ? (
+        <div className="register-message">Loading report…</div>
+      ) : (
+        <section className="schedule-list">
+          <h3>Income vs expense</h3>
+          <div className="cash-flow-total">
+            <span>
+              <strong>Selected period</strong>
+              <small>Income {formatHuf(BigInt(incomeExpense.totalIncome))} · Expense {formatHuf(BigInt(incomeExpense.totalExpense))} · Savings {formatSavingsRatio(incomeExpense.savingsRatioBasisPoints)}</small>
+            </span>
+            <b>{formatHuf(BigInt(incomeExpense.totalNetIncome))}</b>
+          </div>
+          {incomeExpense.monthlyTotals.map((row) => (
+            <div key={row.month}>
+              <span>
+                <strong>{row.month}</strong>
+                <small>Income {formatHuf(BigInt(row.income))} · Expense {formatHuf(BigInt(row.expense))} · Savings {formatSavingsRatio(row.savingsRatioBasisPoints)}</small>
+              </span>
+              <b>{formatHuf(BigInt(row.netIncome))}</b>
+            </div>
+          ))}
+          {incomeExpense.incomeGroups.flatMap((group) => group.categories.map((category) => (
+            <div key={`income-${category.categoryId ?? "uncategorized"}`}>
+              <span>
+                <strong>Income · {group.groupName} / {category.categoryName}</strong>
+                <small>{incomeExpense.months.map((month, index) => `${month}: ${formatHuf(BigInt(category.amounts[index] ?? "0"))}`).join(" · ")} · Average {formatHuf(BigInt(category.average))}</small>
+              </span>
+              <b>{formatHuf(BigInt(category.total))}</b>
+            </div>
+          )))}
+          {incomeExpense.expenseGroups.flatMap((group) => group.categories.map((category) => (
+            <div key={`expense-${category.categoryId ?? "uncategorized"}`}>
+              <span>
+                <strong>Expense · {group.groupName} / {category.categoryName}</strong>
+                <small>{incomeExpense.months.map((month, index) => `${month}: ${formatHuf(BigInt(category.amounts[index] ?? "0"))}`).join(" · ")} · Average {formatHuf(BigInt(category.average))}</small>
+              </span>
+              <b>{formatHuf(BigInt(category.total))}</b>
+            </div>
+          )))}
         </section>
       )}
       {categories === null ? (
