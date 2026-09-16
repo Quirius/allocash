@@ -162,6 +162,44 @@ fn deactivating_a_schedule_removes_pending_not_posted_occurrences() {
 }
 
 #[test]
+fn spending_report_groups_posted_ordinary_outflows_only() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("card", AccountKind::Credit, 1))
+        .unwrap();
+    database.create_category_group("g", "Living", 0).unwrap();
+    database.create_category("food", "g", "Food", 0).unwrap();
+    let mut cash = entry("cash-spend", "cash");
+    cash.category_id = Some("food".into());
+    database.create_transaction(&cash, Huf(-100)).unwrap();
+    let mut card = entry("card-spend", "card");
+    card.category_id = Some("food".into());
+    database.create_transaction(&card, Huf(-50)).unwrap();
+    let mut refund = entry("refund", "cash");
+    refund.category_id = Some("food".into());
+    database.create_transaction(&refund, Huf(20)).unwrap();
+    let transfer = TransferDraft::manual(
+        "transfer",
+        Huf(30),
+        entry("transfer-out", "cash"),
+        entry("transfer-in", "card"),
+        Direction::Outflow,
+    );
+    database.create_transfer(&transfer).unwrap();
+    let report = database
+        .spending_by_category(&SpendingReportInput {
+            from: date("2026-09-10"),
+            to: date("2026-09-10"),
+            account_ids: vec![],
+        })
+        .unwrap();
+    assert_eq!(report.len(), 1);
+    assert_eq!(report[0].category_name, "Food");
+    assert_eq!(report[0].total, Huf(150));
+    assert_eq!(report[0].transaction_count, 2);
+}
+
+#[test]
 fn reconciliation_promotes_eligible_entries_and_adds_only_the_reviewed_adjustment() {
     let (_directory, mut database) = database();
     database

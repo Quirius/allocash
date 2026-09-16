@@ -96,6 +96,8 @@ export interface ManualTransferInput {
   direction: "outflow" | "inflow";
 }
 export interface MonthlyScheduleInput { accountId: string; startDate: string; endDate: string | null; payeeName: string | null; categoryId: string | null; memo: string; flagId: string | null; amount: string; }
+export interface SpendingReportInput { from: string; to: string; accountIds: string[]; }
+export interface SpendingCategoryTotal { categoryId: string | null; groupName: string | null; categoryName: string; total: string; transactionCount: number; }
 export interface ScheduledOccurrence { scheduleId: string; transactionId: string; accountName: string; date: string; payeeName: string | null; categoryName: string | null; memo: string; amount: string; }
 
 export interface RegisterEntryEdit {
@@ -156,6 +158,7 @@ export async function createMonthlySchedule(input: MonthlyScheduleInput): Promis
 export async function postScheduledOccurrence(transactionId: string): Promise<void> { return invoke("post_scheduled_occurrence", { transactionId }); }
 export async function skipScheduledOccurrence(transactionId: string): Promise<void> { return invoke("skip_scheduled_occurrence", { transactionId }); }
 export async function deactivateSchedule(scheduleId: string): Promise<void> { return invoke("deactivate_schedule", { scheduleId }); }
+export async function loadSpendingByCategory(input: SpendingReportInput): Promise<SpendingCategoryTotal[] | null> { if (!isTauri()) return null; return invoke("get_spending_by_category", { input }); }
 
 export async function updateRegisterEntry(edit: RegisterEntryEdit): Promise<void> {
   return invoke("update_register_entry", { edit });

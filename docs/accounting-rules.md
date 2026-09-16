@@ -120,6 +120,14 @@ An optional end date prevents generation after its inclusive date. Canceling a
 schedule removes its pending occurrence but preserves every posted occurrence as
 ordinary ledger history.
 
+## Spending reports
+
+The first Spending by Category report is a read-only table over posted ordinary
+outflows in an inclusive date range. It groups by category identity, includes
+cash and credit accounts by default, and can be restricted to selected accounts.
+Transfers, scheduled rows, and inflows/refunds are excluded from this initial
+spending magnitude view.
+
 ## Validation boundary
 
 The core has tests for migration backup/rollback, WAL-safe backups, transfer

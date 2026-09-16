@@ -1,0 +1,10 @@
+import { useEffect, useState } from "react";
+import { loadSpendingByCategory, type AccountOverview, type SpendingCategoryTotal } from "../lib/desktop";
+import { formatHuf, localCalendarDate } from "../lib/format";
+export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
+  const today = localCalendarDate(); const [from, setFrom] = useState(`${today.slice(0, 7)}-01`); const [to, setTo] = useState(today); const [accountIds, setAccountIds] = useState<string[]>([]); const [rows, setRows] = useState<SpendingCategoryTotal[] | null>(null); const [error, setError] = useState<string | null>(null);
+  async function load() { try { setRows(await loadSpendingByCategory({ from, to, accountIds })); setError(null); } catch { setError("Could not load this report."); } }
+  useEffect(() => { void load(); }, []);
+  function toggle(id: string) { setAccountIds((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]); }
+  return <section className="reports-view"><div className="plan-toolbar"><div><p className="eyebrow">REPORTS</p><h2>Spending by category</h2></div></div>{error && <p className="editor-error">{error}</p>}<form className="schedule-form" onSubmit={(event) => { event.preventDefault(); void load(); }}><label>From <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label>To <input type="date" value={to} onChange={(event) => setTo(event.target.value)} /></label>{accounts.map((account) => <label key={account.id}><input type="checkbox" checked={accountIds.includes(account.id)} onChange={() => toggle(account.id)} /> {account.name}</label>)}<button>Refresh</button></form>{rows === null ? <div className="register-message">Loading report…</div> : <div className="schedule-list">{rows.length === 0 ? <p>No posted spending in this range.</p> : rows.map((row) => <div key={row.categoryId ?? "uncategorized"}><span><strong>{row.categoryName}</strong><small>{row.groupName ?? "Uncategorized"} · {row.transactionCount} transaction{row.transactionCount === 1 ? "" : "s"}</small></span><b>{formatHuf(BigInt(row.total))}</b></div>)}</div>}</section>;
+}
