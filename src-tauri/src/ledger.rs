@@ -527,6 +527,44 @@ pub struct OutflowOverTimeReport {
     pub transaction_count: usize,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IncomeBreakdownInput {
+    pub from: CalendarDate,
+    pub to: CalendarDate,
+    pub account_ids: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IncomeBreakdownSource {
+    pub payee_id: Option<String>,
+    pub payee_name: String,
+    pub total: Huf,
+    pub transaction_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IncomeBreakdownExpenseGroup {
+    pub group_id: Option<String>,
+    pub group_name: String,
+    pub total: Huf,
+    pub transaction_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IncomeBreakdownReport {
+    pub from: CalendarDate,
+    pub to: CalendarDate,
+    pub income_sources: Vec<IncomeBreakdownSource>,
+    pub expense_groups: Vec<IncomeBreakdownExpenseGroup>,
+    pub total_income: Huf,
+    pub total_expense: Huf,
+    pub net_income: Huf,
+}
+
 struct IncomeExpenseCategoryAccum {
     group_id: Option<String>,
     group_name: String,
@@ -1456,6 +1494,91 @@ impl Database {
             total_outflow: narrow(total_outflow)?,
             average_monthly_outflow: narrow(total_outflow / month_count)?,
             transaction_count,
+        })
+    }
+
+    pub fn income_breakdown(
+        &self,
+        input: &IncomeBreakdownInput,
+    ) -> LedgerResult<IncomeBreakdownReport> {
+        if input.from.as_str() > input.to.as_str() {
+            return Err(LedgerError::InvalidValue(
+                "Report start date must not be after its end date.",
+            ));
+        }
+        let scope = |sql: &mut String| {
+            if input.account_ids.is_empty() {
+                sql.push_str(" AND a.kind IN ('cash','credit')");
+            } else {
+                sql.push_str(" AND a.id IN (");
+                sql.push_str(
+                    &std::iter::repeat_n("?", input.account_ids.len())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
+                sql.push(')');
+            }
+        };
+        let values = || {
+            let mut values: Vec<rusqlite::types::Value> = vec![
+                input.from.as_str().to_owned().into(),
+                input.to.as_str().to_owned().into(),
+            ];
+            values.extend(input.account_ids.iter().cloned().map(Into::into));
+            values
+        };
+        let mut income_sql = "SELECT t.payee_id,COALESCE(p.name,'No payee'),SUM(t.amount_huf),COUNT(*) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN payees p ON p.id=t.payee_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf>0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        scope(&mut income_sql);
+        income_sql.push_str(" GROUP BY t.payee_id,p.name ORDER BY SUM(t.amount_huf) DESC,COALESCE(p.name,'No payee'),t.payee_id");
+        let mut income_statement = self.connection.prepare(&income_sql)?;
+        let income_sources = income_statement
+            .query_map(rusqlite::params_from_iter(values()), |row| {
+                Ok(IncomeBreakdownSource {
+                    payee_id: row.get(0)?,
+                    payee_name: row.get(1)?,
+                    total: Huf(row.get(2)?),
+                    transaction_count: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut expense_sql = "SELECT g.id,COALESCE(g.name,'Uncategorized'),SUM(-t.amount_huf),COUNT(*) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN category_groups g ON g.id=c.group_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        scope(&mut expense_sql);
+        expense_sql.push_str(" GROUP BY g.id,g.name ORDER BY CASE WHEN g.id IS NULL THEN 1 ELSE 0 END,g.sort_order,g.id");
+        let mut expense_statement = self.connection.prepare(&expense_sql)?;
+        let expense_groups = expense_statement
+            .query_map(rusqlite::params_from_iter(values()), |row| {
+                Ok(IncomeBreakdownExpenseGroup {
+                    group_id: row.get(0)?,
+                    group_name: row.get(1)?,
+                    total: Huf(row.get(2)?),
+                    transaction_count: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let total_income = sum_amounts(
+            &income_sources
+                .iter()
+                .map(|source| i128::from(source.total.0))
+                .collect::<Vec<_>>(),
+        )?;
+        let total_expense = sum_amounts(
+            &expense_groups
+                .iter()
+                .map(|group| i128::from(group.total.0))
+                .collect::<Vec<_>>(),
+        )?;
+        Ok(IncomeBreakdownReport {
+            from: input.from.clone(),
+            to: input.to.clone(),
+            income_sources,
+            expense_groups,
+            total_income: narrow(total_income)?,
+            total_expense: narrow(total_expense)?,
+            net_income: narrow(
+                total_income
+                    .checked_sub(total_expense)
+                    .ok_or(LedgerError::AmountOverflow)?,
+            )?,
         })
     }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import {
   loadBalanceOverTime,
+  loadIncomeBreakdown,
   loadIncomeVsExpense,
   loadInflowOutflowByMonth,
   loadNetWorthReport,
@@ -10,6 +11,7 @@ import {
   type AccountOverview,
   type BalanceOverTimeReport,
   type CategoryOption,
+  type IncomeBreakdownReport,
   type IncomeExpenseReport,
   type InflowOutflowReport,
   type NetWorthReport,
@@ -54,19 +56,21 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
   const [incomeExpense, setIncomeExpense] = useState<IncomeExpenseReport | null>(null);
   const [balanceHistory, setBalanceHistory] = useState<BalanceOverTimeReport | null>(null);
   const [outflowHistory, setOutflowHistory] = useState<OutflowOverTimeReport | null>(null);
+  const [incomeBreakdown, setIncomeBreakdown] = useState<IncomeBreakdownReport | null>(null);
   const [netWorth, setNetWorth] = useState<NetWorthReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
     try {
       const input = { from, to, accountIds };
-      const [spendingByCategory, spendingByPayee, inflowOutflow, incomeVsExpense, history, outflow, worth] = await Promise.all([
+      const [spendingByCategory, spendingByPayee, inflowOutflow, incomeVsExpense, history, outflow, breakdown, worth] = await Promise.all([
         loadSpendingByCategory(input),
         loadSpendingByPayee(input),
         loadInflowOutflowByMonth(input),
         loadIncomeVsExpense(input),
         loadBalanceOverTime({ from, to, accountIds: balanceAccountIds }),
         loadOutflowOverTime({ from, to, accountIds, categoryIds: outflowCategoryIds }),
+        loadIncomeBreakdown({ from, to, accountIds }),
         loadNetWorthReport(to, from),
       ]);
       setCategories(spendingByCategory);
@@ -75,6 +79,7 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
       setIncomeExpense(incomeVsExpense);
       setBalanceHistory(history);
       setOutflowHistory(outflow);
+      setIncomeBreakdown(breakdown);
       setNetWorth(worth);
       setError(null);
     } catch {
@@ -243,6 +248,39 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
               <b>{formatHuf(BigInt(category.total))}</b>
             </div>
           ))}
+        </section>
+      )}
+      {incomeBreakdown === null ? (
+        <div className="register-message">Loading report…</div>
+      ) : (
+        <section className="schedule-list">
+          <h3>Income breakdown</h3>
+          {incomeBreakdown.totalIncome === "0" && incomeBreakdown.totalExpense === "0" ? <p className="income-flow-empty">No posted activity in this range.</p> : (
+            <>
+              <div className="income-flow">
+                <section>
+                  <h4>Income sources</h4>
+                  {incomeBreakdown.incomeSources.map((source) => (
+                    <div key={source.payeeId ?? "no-payee"}><span>{source.payeeName}</span><b>{formatHuf(BigInt(source.total))}</b></div>
+                  ))}
+                </section>
+                <section className="income-flow-total">
+                  <h4>Total income</h4>
+                  <strong>{formatHuf(BigInt(incomeBreakdown.totalIncome))}</strong>
+                  <span>→ Total expenses</span>
+                  <strong>{formatHuf(BigInt(incomeBreakdown.totalExpense))}</strong>
+                  {BigInt(incomeBreakdown.netIncome) >= 0n ? <small>Net gain {formatHuf(BigInt(incomeBreakdown.netIncome))}</small> : <small>Period shortfall {formatHuf(-BigInt(incomeBreakdown.netIncome))}<br />Funded by prior balances or debt.</small>}
+                </section>
+                <section>
+                  <h4>Expense groups</h4>
+                  {incomeBreakdown.expenseGroups.map((group) => (
+                    <div key={group.groupId ?? "uncategorized"}><span>{group.groupName}</span><b>{formatHuf(BigInt(group.total))}</b></div>
+                  ))}
+                </section>
+              </div>
+              <p className="income-flow-disclosure">Flows compare aggregate period income and spending; they do not trace individual funds.</p>
+            </>
+          )}
         </section>
       )}
       {incomeExpense === null ? (

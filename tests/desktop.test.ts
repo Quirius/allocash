@@ -7,6 +7,7 @@ import {
   loadAccountRegister,
   loadBalanceOverTime,
   loadBudgetInfo,
+  loadIncomeBreakdown,
   loadIncomeVsExpense,
   loadInflowOutflowByMonth,
   loadOutflowOverTime,
@@ -125,6 +126,15 @@ it("loads outflow history with account and category scope", async () => {
   vi.mocked(invoke).mockResolvedValue(report);
   await expect(loadOutflowOverTime(input)).resolves.toEqual(report);
   expect(invoke).toHaveBeenCalledWith("get_outflow_over_time", { input });
+});
+
+it("loads income breakdown with the selected activity scope", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  const input = { from: "2026-09-01", to: "2026-09-14", accountIds: ["cash"] };
+  const report = { from: input.from, to: input.to, incomeSources: [], expenseGroups: [], totalIncome: "0", totalExpense: "0", netIncome: "0" };
+  vi.mocked(invoke).mockResolvedValue(report);
+  await expect(loadIncomeBreakdown(input)).resolves.toEqual(report);
+  expect(invoke).toHaveBeenCalledWith("get_income_breakdown", { input });
 });
 
 it("sends typed manual transaction and transfer inputs", async () => {

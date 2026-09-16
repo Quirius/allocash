@@ -158,6 +158,14 @@ matches stable category identities; choosing `Uncategorized` explicitly includes
 null-category history. Its category series preserve stored order and are aligned
 to every returned month, including zero-activity months.
 
+Income Breakdown treats payees as income sources and category groups as aggregate
+expense destinations. It includes posted, non-transfer, nonzero ordinary entries
+in the activity-report account scope; null payees are `No payee` and null expense
+categories form a final `Uncategorized` group. Transfers, including Capital Gains
+routing, are excluded structurally. The visual joins sources to Total Income and
+expenses from Total Expenses; its net gain or shortfall is period-level only and
+never traces individual funds.
+
 Net Worth is a separate as-of projection: it sums the signed posted working
 balances of every account kind, including closed, loan and tracking accounts.
 Transfers remain included there because their two legs net to zero across the

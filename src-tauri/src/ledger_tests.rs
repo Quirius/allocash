@@ -698,6 +698,121 @@ fn outflow_over_time_is_dense_and_filters_category_identity() {
 }
 
 #[test]
+fn income_breakdown_uses_payees_and_budget_groups_without_tracing_funds() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("card", AccountKind::Credit, 1))
+        .unwrap();
+    database
+        .create_account(&account("closed-card", AccountKind::Credit, 2))
+        .unwrap();
+    database
+        .create_account(&account("tracking", AccountKind::Tracking, 3))
+        .unwrap();
+    database.create_category_group("fixed", "Fixed", 0).unwrap();
+    database
+        .create_category_group("living", "Living", 1)
+        .unwrap();
+    database
+        .create_category("rent", "fixed", "Rent", 0)
+        .unwrap();
+    database
+        .create_category("groceries", "living", "Groceries", 0)
+        .unwrap();
+    database.create_payee("salary", "Salary payer").unwrap();
+    database.create_payee("interest", "Interest").unwrap();
+    database.create_payee("store", "Store").unwrap();
+    let mut salary_cash = entry("salary-cash", "cash");
+    salary_cash.payee_id = Some("salary".into());
+    database.create_transaction(&salary_cash, Huf(100)).unwrap();
+    let mut salary_card = entry("salary-card", "card");
+    salary_card.payee_id = Some("salary".into());
+    database.create_transaction(&salary_card, Huf(50)).unwrap();
+    let mut interest = entry("interest", "cash");
+    interest.payee_id = Some("interest".into());
+    database.create_transaction(&interest, Huf(10)).unwrap();
+    database
+        .create_transaction(&entry("no-payee-income", "cash"), Huf(5))
+        .unwrap();
+    let mut refund = entry("refund-source", "cash");
+    refund.payee_id = Some("store".into());
+    refund.category_id = Some("groceries".into());
+    database.create_transaction(&refund, Huf(3)).unwrap();
+    let mut rent = entry("rent-expense", "cash");
+    rent.category_id = Some("rent".into());
+    database.create_transaction(&rent, Huf(-40)).unwrap();
+    let mut groceries = entry("groceries-expense", "card");
+    groceries.category_id = Some("groceries".into());
+    database.create_transaction(&groceries, Huf(-20)).unwrap();
+    let mut closed_groceries = entry("closed-groceries-expense", "closed-card");
+    closed_groceries.category_id = Some("groceries".into());
+    database
+        .create_transaction(&closed_groceries, Huf(-2))
+        .unwrap();
+    database.set_account_closed("closed-card", true).unwrap();
+    database
+        .create_transaction(&entry("uncategorized-expense", "cash"), Huf(-7))
+        .unwrap();
+    let mut tracking_income = entry("tracking-income-source", "tracking");
+    tracking_income.payee_id = Some("interest".into());
+    database
+        .create_transaction(&tracking_income, Huf(99))
+        .unwrap();
+    let scheduled = Entry::scheduled(
+        "income-breakdown-scheduled",
+        "cash",
+        date("2026-09-10"),
+        "legacy",
+    );
+    database.create_transaction(&scheduled, Huf(-50)).unwrap();
+    database
+        .create_transfer(&TransferDraft::manual(
+            "income-breakdown-transfer",
+            Huf(25),
+            entry("income-breakdown-transfer-out", "cash"),
+            entry("income-breakdown-transfer-in", "card"),
+            Direction::Outflow,
+        ))
+        .unwrap();
+    let input = IncomeBreakdownInput {
+        from: date("2026-09-10"),
+        to: date("2026-09-10"),
+        account_ids: vec![],
+    };
+    let report = database.income_breakdown(&input).unwrap();
+    assert_eq!(report.total_income, Huf(168));
+    assert_eq!(report.total_expense, Huf(69));
+    assert_eq!(report.net_income, Huf(99));
+    assert_eq!(report.income_sources[0].payee_name, "Salary payer");
+    assert_eq!(report.income_sources[0].total, Huf(150));
+    assert_eq!(report.income_sources[1].payee_name, "Interest");
+    assert_eq!(report.income_sources[2].payee_name, "No payee");
+    assert_eq!(report.income_sources[3].payee_name, "Store");
+    assert_eq!(report.expense_groups[0].group_name, "Fixed");
+    assert_eq!(report.expense_groups[0].total, Huf(40));
+    assert_eq!(report.expense_groups[1].group_name, "Living");
+    assert_eq!(report.expense_groups[1].total, Huf(22));
+    assert_eq!(report.expense_groups[2].group_name, "Uncategorized");
+    assert_eq!(report.expense_groups[2].total, Huf(7));
+    let tracking_only = database
+        .income_breakdown(&IncomeBreakdownInput {
+            account_ids: vec!["tracking".into()],
+            ..input
+        })
+        .unwrap();
+    assert_eq!(tracking_only.total_income, Huf(99));
+    assert_eq!(tracking_only.total_expense, Huf(0));
+    assert!(matches!(
+        database.income_breakdown(&IncomeBreakdownInput {
+            from: date("2026-09-11"),
+            to: date("2026-09-10"),
+            account_ids: vec![],
+        }),
+        Err(LedgerError::InvalidValue(_))
+    ));
+}
+
+#[test]
 fn net_worth_includes_all_account_kinds_and_excludes_scheduled_rows() {
     let (_directory, database) = database();
     for (id, kind) in [
