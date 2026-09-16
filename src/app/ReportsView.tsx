@@ -1,16 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import {
   loadBalanceOverTime,
   loadIncomeVsExpense,
   loadInflowOutflowByMonth,
   loadNetWorthReport,
+  loadOutflowOverTime,
   loadSpendingByCategory,
   loadSpendingByPayee,
   type AccountOverview,
   type BalanceOverTimeReport,
+  type CategoryOption,
   type IncomeExpenseReport,
   type InflowOutflowReport,
   type NetWorthReport,
+  type OutflowOverTimeReport,
   type SpendingCategoryTotal,
   type SpendingPayeeTotal,
 } from "../lib/desktop";
@@ -38,29 +41,32 @@ function balancePath(values: string[]): string {
   }).join(" ");
 }
 
-export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
+export function ReportsView({ accounts, categories: categoryOptions }: { accounts: AccountOverview[]; categories: CategoryOption[] }) {
   const today = localCalendarDate();
   const [from, setFrom] = useState(`${today.slice(0, 7)}-01`);
   const [to, setTo] = useState(today);
   const [accountIds, setAccountIds] = useState<string[]>([]);
   const [balanceAccountIds, setBalanceAccountIds] = useState<string[]>([]);
+  const [outflowCategoryIds, setOutflowCategoryIds] = useState<Array<string | null>>([]);
   const [categories, setCategories] = useState<SpendingCategoryTotal[] | null>(null);
   const [payees, setPayees] = useState<SpendingPayeeTotal[] | null>(null);
   const [cashFlow, setCashFlow] = useState<InflowOutflowReport | null>(null);
   const [incomeExpense, setIncomeExpense] = useState<IncomeExpenseReport | null>(null);
   const [balanceHistory, setBalanceHistory] = useState<BalanceOverTimeReport | null>(null);
+  const [outflowHistory, setOutflowHistory] = useState<OutflowOverTimeReport | null>(null);
   const [netWorth, setNetWorth] = useState<NetWorthReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
     try {
       const input = { from, to, accountIds };
-      const [spendingByCategory, spendingByPayee, inflowOutflow, incomeVsExpense, history, worth] = await Promise.all([
+      const [spendingByCategory, spendingByPayee, inflowOutflow, incomeVsExpense, history, outflow, worth] = await Promise.all([
         loadSpendingByCategory(input),
         loadSpendingByPayee(input),
         loadInflowOutflowByMonth(input),
         loadIncomeVsExpense(input),
         loadBalanceOverTime({ from, to, accountIds: balanceAccountIds }),
+        loadOutflowOverTime({ from, to, accountIds, categoryIds: outflowCategoryIds }),
         loadNetWorthReport(to, from),
       ]);
       setCategories(spendingByCategory);
@@ -68,6 +74,7 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
       setCashFlow(inflowOutflow);
       setIncomeExpense(incomeVsExpense);
       setBalanceHistory(history);
+      setOutflowHistory(outflow);
       setNetWorth(worth);
       setError(null);
     } catch {
@@ -89,6 +96,12 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
     setBalanceAccountIds((current) =>
       current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
     );
+  }
+
+  function updateOutflowCategories(event: ChangeEvent<HTMLSelectElement>) {
+    setOutflowCategoryIds(Array.from(event.target.selectedOptions, (option) =>
+      option.value === "__uncategorized__" ? null : option.value,
+    ));
   }
 
   return (
@@ -123,6 +136,19 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
             /> {account.name}
           </label>
         ))}
+        <label>
+          Outflow categories
+          <select
+            multiple
+            value={outflowCategoryIds.map((id) => id ?? "__uncategorized__")}
+            onChange={updateOutflowCategories}
+          >
+            <option value="__uncategorized__">Uncategorized</option>
+            {categoryOptions.map((category) => (
+              <option key={category.id} value={category.id}>{category.groupName} / {category.name}</option>
+            ))}
+          </select>
+        </label>
         <span>Balance accounts (all when none selected)</span>
         {accounts.map((account) => (
           <label key={`balance-${account.id}`}>
@@ -183,6 +209,38 @@ export function ReportsView({ accounts }: { accounts: AccountOverview[] }) {
                 <small>Inflow {formatHuf(BigInt(row.inflow))} ({row.inflowTransactionCount}) · Outflow {formatHuf(BigInt(row.outflow))} ({row.outflowTransactionCount})</small>
               </span>
               <b>{formatHuf(BigInt(row.difference))}</b>
+            </div>
+          ))}
+        </section>
+      )}
+      {outflowHistory === null ? (
+        <div className="register-message">Loading report…</div>
+      ) : (
+        <section className="schedule-list">
+          <h3>Outflow over time</h3>
+          <figure className="balance-chart">
+            <svg viewBox="0 0 360 120" role="img" aria-label="Outflow over time">
+              <polyline points={balancePath(outflowHistory.monthlyTotals.map((row) => row.outflow))} />
+            </svg>
+            <figcaption>{outflowHistory.transactionCount} posted outflow{outflowHistory.transactionCount === 1 ? "" : "s"} · Average {formatHuf(BigInt(outflowHistory.averageMonthlyOutflow))}</figcaption>
+          </figure>
+          <div className="cash-flow-total">
+            <span><strong>Selected period</strong><small>Gross ordinary outflow</small></span>
+            <b>{formatHuf(BigInt(outflowHistory.totalOutflow))}</b>
+          </div>
+          {outflowHistory.monthlyTotals.map((row) => (
+            <div key={row.month}>
+              <span><strong>{row.month}</strong><small>{row.transactionCount} transaction{row.transactionCount === 1 ? "" : "s"}</small></span>
+              <b>{formatHuf(BigInt(row.outflow))}</b>
+            </div>
+          ))}
+          {outflowHistory.categories.map((category) => (
+            <div key={category.categoryId ?? "uncategorized"}>
+              <span>
+                <strong>{category.groupName} / {category.categoryName}</strong>
+                <small>{outflowHistory.months.map((month, index) => `${month}: ${formatHuf(BigInt(category.amounts[index] ?? "0"))}`).join(" · ")} · Average {formatHuf(BigInt(category.average))}</small>
+              </span>
+              <b>{formatHuf(BigInt(category.total))}</b>
             </div>
           ))}
         </section>

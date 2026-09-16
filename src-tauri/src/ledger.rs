@@ -484,12 +484,64 @@ pub struct BalanceOverTimeReport {
     pub accounts: Vec<BalanceOverTimeAccountSeries>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutflowOverTimeInput {
+    pub from: CalendarDate,
+    pub to: CalendarDate,
+    pub account_ids: Vec<String>,
+    pub category_ids: Vec<Option<String>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutflowOverTimeMonth {
+    pub month: String,
+    pub outflow: Huf,
+    pub transaction_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutflowOverTimeCategorySeries {
+    pub group_id: Option<String>,
+    pub group_name: String,
+    pub category_id: Option<String>,
+    pub category_name: String,
+    pub amounts: Vec<Huf>,
+    pub total: Huf,
+    pub average: Huf,
+    pub transaction_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutflowOverTimeReport {
+    pub from: CalendarDate,
+    pub to: CalendarDate,
+    pub months: Vec<String>,
+    pub monthly_totals: Vec<OutflowOverTimeMonth>,
+    pub categories: Vec<OutflowOverTimeCategorySeries>,
+    pub total_outflow: Huf,
+    pub average_monthly_outflow: Huf,
+    pub transaction_count: usize,
+}
+
 struct IncomeExpenseCategoryAccum {
     group_id: Option<String>,
     group_name: String,
     category_id: Option<String>,
     category_name: String,
     amounts: Vec<i128>,
+}
+
+struct OutflowCategoryAccum {
+    group_id: Option<String>,
+    group_name: String,
+    category_id: Option<String>,
+    category_name: String,
+    amounts: Vec<i128>,
+    transaction_count: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -1264,6 +1316,149 @@ impl Database {
         })
     }
 
+    pub fn outflow_over_time(
+        &self,
+        input: &OutflowOverTimeInput,
+    ) -> LedgerResult<OutflowOverTimeReport> {
+        if input.from.as_str() > input.to.as_str() {
+            return Err(LedgerError::InvalidValue(
+                "Report start date must not be after its end date.",
+            ));
+        }
+        let requested_categories: std::collections::BTreeSet<_> =
+            input.category_ids.iter().cloned().collect();
+        for category_id in requested_categories.iter().flatten() {
+            let exists: bool = self.connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
+                [category_id],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(LedgerError::NotFound);
+            }
+        }
+        let months = report_months(&input.from, &input.to)?;
+        let mut sql = "SELECT t.category_id,g.id,g.name,c.name,substr(t.transaction_date,1,7),t.amount_huf FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN category_groups g ON g.id=c.group_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        if input.account_ids.is_empty() {
+            sql.push_str(" AND a.kind IN ('cash','credit')");
+        } else {
+            sql.push_str(" AND a.id IN (");
+            sql.push_str(
+                &std::iter::repeat_n("?", input.account_ids.len())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            sql.push(')');
+        }
+        if !requested_categories.is_empty() {
+            let category_ids: Vec<_> = requested_categories.iter().flatten().collect();
+            sql.push_str(" AND (");
+            if !category_ids.is_empty() {
+                sql.push_str("t.category_id IN (");
+                sql.push_str(
+                    &std::iter::repeat_n("?", category_ids.len())
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
+                sql.push(')');
+            }
+            if requested_categories.contains(&None) {
+                if !category_ids.is_empty() {
+                    sql.push_str(" OR ");
+                }
+                sql.push_str("t.category_id IS NULL");
+            }
+            sql.push(')');
+        }
+        sql.push_str(" ORDER BY CASE WHEN g.id IS NULL THEN 1 ELSE 0 END,g.sort_order,g.id,c.sort_order,c.id,t.transaction_date,t.id");
+        let mut values: Vec<rusqlite::types::Value> = vec![
+            input.from.as_str().to_owned().into(),
+            input.to.as_str().to_owned().into(),
+        ];
+        values.extend(input.account_ids.iter().cloned().map(Into::into));
+        values.extend(
+            requested_categories
+                .iter()
+                .flatten()
+                .cloned()
+                .map(Into::into),
+        );
+        let mut statement = self.connection.prepare(&sql)?;
+        let rows = statement
+            .query_map(rusqlite::params_from_iter(values), |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, i64>(5)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut categories = Vec::new();
+        let mut monthly_outflow = vec![0i128; months.len()];
+        let mut monthly_counts = vec![0usize; months.len()];
+        for (category_id, group_id, group_name, category_name, month, amount) in rows {
+            let month_index = months
+                .binary_search(&month)
+                .map_err(|_| LedgerError::InvalidValue("Invalid report month."))?;
+            let magnitude = -i128::from(amount);
+            let category = categories
+                .iter_mut()
+                .find(|category: &&mut OutflowCategoryAccum| category.category_id == category_id);
+            let category = match category {
+                Some(category) => category,
+                None => {
+                    categories.push(OutflowCategoryAccum {
+                        group_id,
+                        group_name: group_name.unwrap_or_else(|| "Uncategorized".into()),
+                        category_id,
+                        category_name: category_name.unwrap_or_else(|| "Uncategorized".into()),
+                        amounts: vec![0; months.len()],
+                        transaction_count: 0,
+                    });
+                    categories.last_mut().ok_or(LedgerError::NotFound)?
+                }
+            };
+            add(&mut category.amounts[month_index], magnitude)?;
+            category.transaction_count = category
+                .transaction_count
+                .checked_add(1)
+                .ok_or(LedgerError::AmountOverflow)?;
+            add(&mut monthly_outflow[month_index], magnitude)?;
+            monthly_counts[month_index] = monthly_counts[month_index]
+                .checked_add(1)
+                .ok_or(LedgerError::AmountOverflow)?;
+        }
+        let total_outflow = sum_amounts(&monthly_outflow)?;
+        let transaction_count = monthly_counts.iter().try_fold(0usize, |total, count| {
+            total.checked_add(*count).ok_or(LedgerError::AmountOverflow)
+        })?;
+        let month_count = i128::try_from(months.len()).map_err(|_| LedgerError::AmountOverflow)?;
+        let monthly_totals = months
+            .iter()
+            .zip(monthly_outflow.iter().zip(monthly_counts))
+            .map(|(month, (outflow, transaction_count))| {
+                Ok(OutflowOverTimeMonth {
+                    month: month.clone(),
+                    outflow: narrow(*outflow)?,
+                    transaction_count,
+                })
+            })
+            .collect::<LedgerResult<Vec<_>>>()?;
+        Ok(OutflowOverTimeReport {
+            from: input.from.clone(),
+            to: input.to.clone(),
+            categories: outflow_category_series(categories, month_count)?,
+            months,
+            monthly_totals,
+            total_outflow: narrow(total_outflow)?,
+            average_monthly_outflow: narrow(total_outflow / month_count)?,
+            transaction_count,
+        })
+    }
+
     pub fn create_monthly_schedule(&mut self, draft: &MonthlyScheduleDraft) -> LedgerResult<()> {
         if draft.amount.0 == 0
             || draft
@@ -1924,6 +2119,31 @@ fn income_expense_groups(
         }
     }
     Ok(groups)
+}
+fn outflow_category_series(
+    categories: Vec<OutflowCategoryAccum>,
+    month_count: i128,
+) -> LedgerResult<Vec<OutflowOverTimeCategorySeries>> {
+    categories
+        .into_iter()
+        .map(|category| {
+            let total = sum_amounts(&category.amounts)?;
+            Ok(OutflowOverTimeCategorySeries {
+                group_id: category.group_id,
+                group_name: category.group_name,
+                category_id: category.category_id,
+                category_name: category.category_name,
+                amounts: category
+                    .amounts
+                    .into_iter()
+                    .map(narrow)
+                    .collect::<LedgerResult<Vec<_>>>()?,
+                total: narrow(total)?,
+                average: narrow(total / month_count)?,
+                transaction_count: category.transaction_count,
+            })
+        })
+        .collect()
 }
 fn balance_point_dates(from: &CalendarDate, to: &CalendarDate) -> LedgerResult<Vec<CalendarDate>> {
     let mut dates = vec![from.clone()];

@@ -151,6 +151,13 @@ reports. Transfers remain included exactly as ledger movements, so a transfer
 between two selected accounts nets out while selecting one side changes that
 selected aggregate. Pending scheduled rows are excluded until posted.
 
+Outflow Over Time is a dense monthly gross-outflow series. It uses posted,
+non-transfer negative ordinary entries in the activity-report account scope,
+with positive refunds excluded rather than netted. Optional category selection
+matches stable category identities; choosing `Uncategorized` explicitly includes
+null-category history. Its category series preserve stored order and are aligned
+to every returned month, including zero-activity months.
+
 Net Worth is a separate as-of projection: it sums the signed posted working
 balances of every account kind, including closed, loan and tracking accounts.
 Transfers remain included there because their two legs net to zero across the

@@ -2,10 +2,10 @@ use crate::database::{BudgetInfo, Database};
 use crate::ledger::{
     AccountOverview, BalanceOverTimeInput, BalanceOverTimeReport, CalendarDate,
     IncomeExpenseReport, InflowOutflowReport, LedgerError, ManualTransactionDraft,
-    ManualTransferInput, MonthlyScheduleDraft, NetWorthReport, ReconciliationInput,
-    ReconciliationResult, ReconciliationReview, RegisterEntry, RegisterEntryEdit,
-    ScheduledOccurrence, SpendingCategoryTotal, SpendingPayeeTotal, SpendingReportInput,
-    TransactionFormOptions,
+    ManualTransferInput, MonthlyScheduleDraft, NetWorthReport, OutflowOverTimeInput,
+    OutflowOverTimeReport, ReconciliationInput, ReconciliationResult, ReconciliationReview,
+    RegisterEntry, RegisterEntryEdit, ScheduledOccurrence, SpendingCategoryTotal,
+    SpendingPayeeTotal, SpendingReportInput, TransactionFormOptions,
 };
 use crate::plan::{CategoryTargetDefinition, PlanMonth, PlanSnapshot};
 use serde::{Deserialize, Serialize};
@@ -242,6 +242,16 @@ fn get_balance_over_time(
     })
 }
 #[tauri::command]
+fn get_outflow_over_time(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: OutflowOverTimeInput,
+) -> Result<OutflowOverTimeReport, String> {
+    with_database(&app, &state, |database| {
+        database.outflow_over_time(&input).map_err(ledger_error)
+    })
+}
+#[tauri::command]
 fn get_net_worth_report(
     app: tauri::AppHandle,
     state: tauri::State<'_, BudgetState>,
@@ -457,6 +467,7 @@ pub fn run() {
             get_inflow_outflow_by_month,
             get_income_vs_expense,
             get_balance_over_time,
+            get_outflow_over_time,
             get_net_worth_report,
             create_monthly_schedule,
             post_scheduled_occurrence,

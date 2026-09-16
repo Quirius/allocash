@@ -208,7 +208,7 @@ export function App() {
           {startup.status === "ready" && <div className="workspace-tabs"><button className={view === "register" ? "active" : ""} onClick={() => setView("register")}>Register</button><button className={view === "plan" ? "active" : ""} onClick={() => setView("plan")}>Plan</button><button className={view === "schedules" ? "active" : ""} onClick={() => setView("schedules")}>Scheduled</button><button className={view === "reports" ? "active" : ""} onClick={() => setView("reports")}>Reports</button></div>}
           {startup.status === "ready" && view === "plan" && <PlanView />}
           {startup.status === "ready" && view === "schedules" && <ScheduleView accounts={accounts} options={startup.workspace.transactionOptions} />}
-          {startup.status === "ready" && view === "reports" && <ReportsView accounts={accounts} />}
+          {startup.status === "ready" && view === "reports" && <ReportsView accounts={accounts} categories={startup.workspace.transactionOptions.categories} />}
           {startup.status === "ready" && view === "register" && selectedAccount && (
             <AccountRegister
               key={selectedAccount.id}

@@ -574,6 +574,130 @@ fn balance_over_time_uses_signed_posted_balances_and_month_end_points() {
 }
 
 #[test]
+fn outflow_over_time_is_dense_and_filters_category_identity() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("card", AccountKind::Credit, 1))
+        .unwrap();
+    database
+        .create_account(&account("closed-card", AccountKind::Credit, 2))
+        .unwrap();
+    database
+        .create_account(&account("tracking", AccountKind::Tracking, 3))
+        .unwrap();
+    database
+        .create_category_group("living", "Living", 0)
+        .unwrap();
+    database
+        .create_category("groceries", "living", "Groceries", 0)
+        .unwrap();
+    database.create_category("car", "living", "Car", 1).unwrap();
+    let mut december_groceries = entry("december-groceries", "cash");
+    december_groceries.date = date("2026-12-31");
+    december_groceries.category_id = Some("groceries".into());
+    database
+        .create_transaction(&december_groceries, Huf(-10))
+        .unwrap();
+    let mut closed_groceries = entry("closed-groceries-outflow", "closed-card");
+    closed_groceries.date = date("2026-12-31");
+    closed_groceries.category_id = Some("groceries".into());
+    database
+        .create_transaction(&closed_groceries, Huf(-2))
+        .unwrap();
+    database.set_account_closed("closed-card", true).unwrap();
+    let mut january_groceries = entry("january-groceries", "cash");
+    january_groceries.date = date("2027-01-15");
+    january_groceries.category_id = Some("groceries".into());
+    database
+        .create_transaction(&january_groceries, Huf(-5))
+        .unwrap();
+    let mut january_car = entry("january-car", "card");
+    january_car.date = date("2027-01-31");
+    january_car.category_id = Some("car".into());
+    database.create_transaction(&january_car, Huf(-20)).unwrap();
+    let mut february_uncategorized = entry("february-uncategorized", "cash");
+    february_uncategorized.date = date("2027-02-01");
+    database
+        .create_transaction(&february_uncategorized, Huf(-7))
+        .unwrap();
+    let mut refund = entry("outflow-refund", "cash");
+    refund.date = date("2027-01-15");
+    refund.category_id = Some("groceries".into());
+    database.create_transaction(&refund, Huf(3)).unwrap();
+    let mut tracking = entry("tracking-outflow", "tracking");
+    tracking.date = date("2027-01-15");
+    tracking.category_id = Some("car".into());
+    database.create_transaction(&tracking, Huf(-99)).unwrap();
+    let scheduled = Entry::scheduled("outflow-scheduled", "cash", date("2027-01-15"), "legacy");
+    database.create_transaction(&scheduled, Huf(-50)).unwrap();
+    let mut transfer_out = entry("outflow-transfer-out", "cash");
+    transfer_out.date = date("2027-01-15");
+    let mut transfer_in = entry("outflow-transfer-in", "card");
+    transfer_in.date = date("2027-01-15");
+    database
+        .create_transfer(&TransferDraft::manual(
+            "outflow-transfer",
+            Huf(4),
+            transfer_out,
+            transfer_in,
+            Direction::Outflow,
+        ))
+        .unwrap();
+    let input = OutflowOverTimeInput {
+        from: date("2026-12-31"),
+        to: date("2027-02-01"),
+        account_ids: vec![],
+        category_ids: vec![],
+    };
+    let report = database.outflow_over_time(&input).unwrap();
+    assert_eq!(report.months, ["2026-12", "2027-01", "2027-02"]);
+    assert_eq!(report.monthly_totals[0].outflow, Huf(12));
+    assert_eq!(report.monthly_totals[1].outflow, Huf(25));
+    assert_eq!(report.monthly_totals[2].outflow, Huf(7));
+    assert_eq!(report.total_outflow, Huf(44));
+    assert_eq!(report.average_monthly_outflow, Huf(14));
+    assert_eq!(report.transaction_count, 5);
+    assert_eq!(report.categories[0].category_name, "Groceries");
+    assert_eq!(report.categories[0].amounts, [Huf(12), Huf(5), Huf(0)]);
+    assert_eq!(report.categories[1].category_name, "Car");
+    assert_eq!(report.categories[2].category_name, "Uncategorized");
+    let groceries = database
+        .outflow_over_time(&OutflowOverTimeInput {
+            category_ids: vec![Some("groceries".into())],
+            ..input
+        })
+        .unwrap();
+    assert_eq!(groceries.total_outflow, Huf(17));
+    let uncategorized = database
+        .outflow_over_time(&OutflowOverTimeInput {
+            account_ids: vec!["cash".into()],
+            category_ids: vec![None],
+            from: date("2026-12-31"),
+            to: date("2027-02-01"),
+        })
+        .unwrap();
+    assert_eq!(uncategorized.total_outflow, Huf(7));
+    let tracking_only = database
+        .outflow_over_time(&OutflowOverTimeInput {
+            account_ids: vec!["tracking".into()],
+            category_ids: vec![],
+            from: date("2026-12-31"),
+            to: date("2027-02-01"),
+        })
+        .unwrap();
+    assert_eq!(tracking_only.total_outflow, Huf(99));
+    assert!(matches!(
+        database.outflow_over_time(&OutflowOverTimeInput {
+            from: date("2027-02-02"),
+            to: date("2027-02-01"),
+            account_ids: vec![],
+            category_ids: vec![],
+        }),
+        Err(LedgerError::InvalidValue(_))
+    ));
+}
+
+#[test]
 fn net_worth_includes_all_account_kinds_and_excludes_scheduled_rows() {
     let (_directory, database) = database();
     for (id, kind) in [

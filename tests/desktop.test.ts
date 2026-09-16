@@ -9,6 +9,7 @@ import {
   loadBudgetInfo,
   loadIncomeVsExpense,
   loadInflowOutflowByMonth,
+  loadOutflowOverTime,
   loadPlanMonth,
   loadSpendingByPayee,
   movePlanMoney,
@@ -115,6 +116,15 @@ it("loads balance history with its selected-account scope", async () => {
   vi.mocked(invoke).mockResolvedValue(report);
   await expect(loadBalanceOverTime(input)).resolves.toEqual(report);
   expect(invoke).toHaveBeenCalledWith("get_balance_over_time", { input });
+});
+
+it("loads outflow history with account and category scope", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  const input = { from: "2026-09-01", to: "2026-09-14", accountIds: ["cash"], categoryIds: ["groceries", null] };
+  const report = { from: input.from, to: input.to, months: [], monthlyTotals: [], categories: [], totalOutflow: "0", averageMonthlyOutflow: "0", transactionCount: 0 };
+  vi.mocked(invoke).mockResolvedValue(report);
+  await expect(loadOutflowOverTime(input)).resolves.toEqual(report);
+  expect(invoke).toHaveBeenCalledWith("get_outflow_over_time", { input });
 });
 
 it("sends typed manual transaction and transfer inputs", async () => {

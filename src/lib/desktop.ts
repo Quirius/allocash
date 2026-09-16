@@ -108,6 +108,10 @@ export interface IncomeExpenseReport { from: string; to: string; months: string[
 export interface BalanceOverTimeInput { from: string; to: string; accountIds: string[]; }
 export interface BalanceOverTimeAccountSeries { accountId: string; accountName: string; kind: AccountKind; closed: boolean; sortOrder: number; balances: string[]; }
 export interface BalanceOverTimeReport { from: string; to: string; pointDates: string[]; totalBalances: string[]; accounts: BalanceOverTimeAccountSeries[]; }
+export interface OutflowOverTimeInput { from: string; to: string; accountIds: string[]; categoryIds: Array<string | null>; }
+export interface OutflowOverTimeMonth { month: string; outflow: string; transactionCount: number; }
+export interface OutflowOverTimeCategorySeries { groupId: string | null; groupName: string; categoryId: string | null; categoryName: string; amounts: string[]; total: string; average: string; transactionCount: number; }
+export interface OutflowOverTimeReport { from: string; to: string; months: string[]; monthlyTotals: OutflowOverTimeMonth[]; categories: OutflowOverTimeCategorySeries[]; totalOutflow: string; averageMonthlyOutflow: string; transactionCount: number; }
 export interface NetWorthReport { asOf: string; comparedTo: string | null; assets: string; debts: string; netWorth: string; change: string | null; }
 export interface ScheduledOccurrence { scheduleId: string; transactionId: string; accountName: string; date: string; payeeName: string | null; categoryName: string | null; memo: string; amount: string; }
 
@@ -174,6 +178,7 @@ export async function loadSpendingByPayee(input: SpendingReportInput): Promise<S
 export async function loadInflowOutflowByMonth(input: SpendingReportInput): Promise<InflowOutflowReport | null> { if (!isTauri()) return null; return invoke("get_inflow_outflow_by_month", { input }); }
 export async function loadIncomeVsExpense(input: SpendingReportInput): Promise<IncomeExpenseReport | null> { if (!isTauri()) return null; return invoke("get_income_vs_expense", { input }); }
 export async function loadBalanceOverTime(input: BalanceOverTimeInput): Promise<BalanceOverTimeReport | null> { if (!isTauri()) return null; return invoke("get_balance_over_time", { input }); }
+export async function loadOutflowOverTime(input: OutflowOverTimeInput): Promise<OutflowOverTimeReport | null> { if (!isTauri()) return null; return invoke("get_outflow_over_time", { input }); }
 export async function loadNetWorthReport(asOf: string, comparedTo: string | null): Promise<NetWorthReport | null> { if (!isTauri()) return null; return invoke("get_net_worth_report", { asOf, comparedTo }); }
 
 export async function updateRegisterEntry(edit: RegisterEntryEdit): Promise<void> {
