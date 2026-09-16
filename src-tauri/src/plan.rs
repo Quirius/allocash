@@ -593,4 +593,69 @@ mod tests {
             Huf(600)
         );
     }
+
+    #[test]
+    fn credit_allocation_caps_at_funded_money_and_carries_the_payment_forward() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "card".into(),
+                name: "Card".into(),
+                kind: AccountKind::Credit,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        database
+            .create_category("payment", "g", "Card payment", 1)
+            .unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &september, Huf(200))
+            .unwrap();
+        database
+            .set_credit_payment_category("card", Some("payment"))
+            .unwrap();
+        let mut purchase = Entry::manual(
+            "purchase",
+            "card",
+            CalendarDate::parse("2026-09-10").unwrap(),
+        );
+        purchase.category_id = Some("food".into());
+        database.create_transaction(&purchase, Huf(-600)).unwrap();
+        let september_plan = database.plan_month(&september).unwrap();
+        assert_eq!(
+            september_plan
+                .categories
+                .iter()
+                .find(|category| category.category_id == "food")
+                .unwrap()
+                .available,
+            Huf(-400)
+        );
+        assert_eq!(
+            september_plan
+                .categories
+                .iter()
+                .find(|category| category.category_id == "payment")
+                .unwrap()
+                .available,
+            Huf(200)
+        );
+        let october = database
+            .plan_month(&PlanMonth::parse("2026-10").unwrap())
+            .unwrap();
+        assert_eq!(
+            october
+                .categories
+                .iter()
+                .find(|category| category.category_id == "payment")
+                .unwrap()
+                .available,
+            Huf(200)
+        );
+    }
 }
