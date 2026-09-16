@@ -104,8 +104,12 @@ Memo-only edits are allowed without confirmation. Amount changes, clearing-state
 changes away from Reconciled and deletions require explicit confirmation for
 reconciled entries. Shared transfer changes check both legs, so the unreconciled
 side cannot bypass a reconciled counterpart's warning. Confirmation allows the
-change; history is not hard-locked. Date/account/category editing and the
-reconciliation UI are future operations and must apply the same rule.
+change; history is not hard-locked. Basic reconciliation reviews an account's
+cleared balance through an inclusive date, lets the owner match each eligible
+posted uncleared/cleared account leg, and then promotes only cleared rows to
+Reconciled. Future, scheduled and already reconciled rows remain unchanged.
+An adjustment is an explicit fallback for genuinely missing history, not the
+normal way to resolve unmatched transaction states.
 
 ## Monthly schedules
 

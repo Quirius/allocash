@@ -15,6 +15,8 @@ import {
   loadSpendingByPayee,
   movePlanMoney,
   loadWorkspace,
+  previewAccountReconciliation,
+  reconcileAccount,
   setPlanAssignment,
   setCreditPaymentCategory,
   setCategoryTarget,
@@ -135,6 +137,17 @@ it("loads income breakdown with the selected activity scope", async () => {
   vi.mocked(invoke).mockResolvedValue(report);
   await expect(loadIncomeBreakdown(input)).resolves.toEqual(report);
   expect(invoke).toHaveBeenCalledWith("get_income_breakdown", { input });
+});
+
+it("sends typed reconciliation review and completion inputs", async () => {
+  const input = { accountId: "cash", asOf: "2026-09-14", bankClearedBalance: "12500", expectedClearedBalance: null };
+  const review = { ...input, appClearedBalance: "12000", adjustmentAmount: "500", clearedEntryCount: 3 };
+  vi.mocked(invoke).mockResolvedValue(review);
+  await expect(previewAccountReconciliation(input)).resolves.toEqual(review);
+  expect(invoke).toHaveBeenCalledWith("preview_account_reconciliation", { input });
+  const completion = { ...input, expectedClearedBalance: "12000" };
+  await reconcileAccount(completion);
+  expect(invoke).toHaveBeenCalledWith("reconcile_account", { input: completion });
 });
 
 it("sends typed manual transaction and transfer inputs", async () => {

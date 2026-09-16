@@ -39,13 +39,14 @@ Transaction dates use validated `yyyy-mm-dd` calendar strings and display as
 `yyyy.mm.dd.`. A transaction date is not a UTC timestamp. Use timestamps only for
 audit metadata such as creation time.
 
-## Next implementation slice
+## Current release gate
 
-Build the basic reconciliation workflow on the now-validated register. A fresh
-owner export passed the reference gate with exact working balances for all 34
-accounts. Keyboard-friendly manual entry, paired transfers and safe register editing
-exercise the same ledger API through the desktop UI. The Plan engine follows the
-reconciliation slice.
+The basic reconciliation workflow is complete on the validated register. It reviews
+an account against a bank-cleared balance, lets the owner match real transaction
+states before committing, and only uses a reconciled adjustment as an explicit
+fallback. A fresh owner export passed the reference gate with exact working balances
+for all 34 accounts. The remaining v0.1 release gate is verification of a native
+Windows MSVC desktop build; the Plan engine follows that verified baseline.
 
 The complete scope and financial behavior are in the owner's project brief.
 

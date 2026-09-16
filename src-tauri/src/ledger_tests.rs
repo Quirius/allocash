@@ -901,6 +901,65 @@ fn reconciliation_promotes_eligible_entries_and_adds_only_the_reviewed_adjustmen
 }
 
 #[test]
+fn reconciliation_without_a_difference_creates_no_adjustment() {
+    let (_directory, mut database) = database();
+    database
+        .create_transaction(&entry("cleared-income", "cash"), Huf(1_000))
+        .unwrap();
+    let input = ReconciliationInput {
+        account_id: "cash".into(),
+        as_of: date("2026-09-10"),
+        bank_cleared_balance: Huf(1_000),
+        expected_cleared_balance: None,
+    };
+    let review = database.preview_account_reconciliation(&input).unwrap();
+    assert_eq!(review.adjustment_amount, Huf(0));
+    let result = database
+        .reconcile_account(&ReconciliationInput {
+            expected_cleared_balance: Some(review.app_cleared_balance),
+            ..input
+        })
+        .unwrap();
+    assert_eq!(result.reconciled_entry_count, 1);
+    assert_eq!(result.adjustment_transaction_id, None);
+    assert_eq!(database.entries("cash").unwrap().len(), 1);
+    assert_eq!(
+        database.entries("cash").unwrap()[0].entry.cleared_state,
+        ClearedState::Reconciled
+    );
+}
+
+#[test]
+fn reconciliation_rejects_an_outdated_review_without_partial_changes() {
+    let (_directory, mut database) = database();
+    database
+        .create_transaction(&entry("reviewed-income", "cash"), Huf(1_000))
+        .unwrap();
+    let input = ReconciliationInput {
+        account_id: "cash".into(),
+        as_of: date("2026-09-10"),
+        bank_cleared_balance: Huf(1_000),
+        expected_cleared_balance: None,
+    };
+    let review = database.preview_account_reconciliation(&input).unwrap();
+    database
+        .create_transaction(&entry("new-income", "cash"), Huf(1))
+        .unwrap();
+    assert!(matches!(
+        database.reconcile_account(&ReconciliationInput {
+            expected_cleared_balance: Some(review.app_cleared_balance),
+            ..input
+        }),
+        Err(LedgerError::ReconciliationOutOfDate)
+    ));
+    assert!(database
+        .entries("cash")
+        .unwrap()
+        .iter()
+        .all(|row| row.entry.cleared_state == ClearedState::Cleared));
+}
+
+#[test]
 fn cash_credit_loan_and_tracking_pairs_remain_balanced_after_edits_and_deletes() {
     for kind in [
         AccountKind::Cash,

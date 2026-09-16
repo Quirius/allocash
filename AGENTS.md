@@ -40,9 +40,9 @@ tests. A fresh owner export matched all 34 YNAB reference working balances exact
 
 four zero-value transfer rows remain preserved for review without affecting balances.
 
-The next phase is the basic reconciliation workflow before the Plan engine. Desktop
+The basic reconciliation workflow is complete. Desktop MSVC build verification
 
-MSVC build verification also remains outstanding.
+remains the v0.1 release gate.
 
 **### Git workflow**
 
@@ -1839,7 +1839,9 @@ Do not commit the owner's real financial export to a public repository.
 
 **## 40. Immediate next task**
 
-Continue **\*\*v0.1\*\*** with the basic reconciliation workflow before the Plan engine.
+Verify the native Windows MSVC desktop build for **\*\*v0.1\*\*** before considering
+
+the release milestone complete.
 
 Progress: the desktop scaffold, schema v2, ledger/import foundation and editable
 
@@ -1847,7 +1849,8 @@ account/register UI (steps 1–15) are implemented, including explicit account
 
 mapping, conservative transfer pairing, keyboard-friendly manual entry, reconciled
 
-edit safeguards and an auditable as-of validation summary. A fresh owner export
+edit safeguards, an auditable as-of validation summary and a basic reconciliation
+workflow that matches real transaction states before offering an adjustment. A fresh owner export
 
 matched all 34 YNAB Net Worth reference working balances exactly; four zero-value transfer
 
@@ -1887,9 +1890,9 @@ Completed implementation sequence:
 
 15\. Compare imported balances against YNAB reference values.
 
-Do not start the full Plan engine until basic reconciliation is implemented and the
+Do not consider v0.1 release verification complete until the native MSVC desktop build
 
-register/import layer remains validated.
+passes and the register/import layer remains validated.
 
 **---**
 

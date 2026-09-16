@@ -38,8 +38,9 @@ transfer pairs, and produces an exact as-of validation report without guessing
 ambiguous financial data. No financial data is seeded; the six specified flag
 definitions are initialized. A fresh owner export has completed the v0.1 validation
 gate with all 34 working balances matching YNAB exactly. Four zero-value transfer
-rows remain preserved for review and do not affect balances. The next milestone is
-the basic reconciliation workflow before the Plan engine. See [the architecture](docs/architecture.md).
+rows remain preserved for review and do not affect balances. The basic
+reconciliation workflow is complete; the remaining v0.1 release gate is a native
+Windows MSVC desktop-build verification. See [the architecture](docs/architecture.md).
 The backend accounting behavior is documented in [accounting rules](docs/accounting-rules.md).
 
 ## Windows development setup
