@@ -79,6 +79,20 @@ refunds reverse that movement. A posted cash-to-credit transfer reduces the
 mapped payment category without changing Ready to Assign. Scheduled, off-budget
 and ordinary transfer rows do not affect Plan activity.
 
+## Plan targets
+
+Monthly targets are advisory: they never automatically assign money or change
+Ready to Assign, Activity or Available. A target revision takes effect in its
+selected month, so future changes do not rewrite historical Plan guidance. An
+inactive revision clears a target from that month forward.
+
+`Set aside another` needs its full amount every month. `Refill up to` needs the
+difference between its amount and the category's nonnegative opening Available
+amount. Both report Funding and To Go from that month's positive assigned amount;
+current-month spending and refunds do not alter progress. The initial target
+slice supports monthly targets with a day-of-month or last-day due marker; it
+does not auto-assign, snooze, or support other frequencies.
+
 ## Reconciled edits
 
 Memo-only edits are allowed without confirmation. Amount changes, clearing-state

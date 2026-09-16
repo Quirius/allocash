@@ -4,7 +4,7 @@ use crate::ledger::{
     ReconciliationInput, ReconciliationResult, ReconciliationReview, RegisterEntry,
     RegisterEntryEdit, TransactionFormOptions,
 };
-use crate::plan::{PlanMonth, PlanSnapshot};
+use crate::plan::{CategoryTargetDefinition, PlanMonth, PlanSnapshot};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::Manager;
@@ -198,6 +198,13 @@ struct CreditPaymentCategoryInput {
     account_id: String,
     category_id: Option<String>,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CategoryTargetInput {
+    category_id: String,
+    effective_month: String,
+    target: Option<CategoryTargetDefinition>,
+}
 
 #[tauri::command]
 fn get_plan_month(
@@ -271,6 +278,20 @@ fn set_credit_payment_category(
     })
 }
 
+#[tauri::command]
+fn set_category_target(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: CategoryTargetInput,
+) -> Result<(), String> {
+    let effective_month = PlanMonth::parse(&input.effective_month).map_err(ledger_error)?;
+    with_database(&app, &state, |database| {
+        database
+            .set_category_target(&input.category_id, &effective_month, input.target.as_ref())
+            .map_err(ledger_error)
+    })
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(BudgetState(Mutex::new(None)))
@@ -287,7 +308,8 @@ pub fn run() {
             get_plan_month,
             set_plan_assignment,
             move_plan_money,
-            set_credit_payment_category
+            set_credit_payment_category,
+            set_category_target
         ])
         .run(tauri::generate_context!())
         .expect("Could not start the desktop application");

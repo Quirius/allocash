@@ -151,6 +151,22 @@ fn scheduled_entries_must_be_uncleared() {
 }
 
 #[test]
+fn category_target_revisions_require_complete_active_definitions() {
+    let connection = database();
+    connection
+        .execute_batch("INSERT INTO category_groups (id,name) VALUES ('g','Living'); INSERT INTO categories (id,group_id,name) VALUES ('c','g','Groceries');")
+        .unwrap();
+    connection.execute("INSERT INTO category_target_revisions (id,category_id,effective_month,active,behavior,amount_huf,due_kind,due_day) VALUES ('target','c','2026-09',1,'refill',20000,'day',15)", []).unwrap();
+    for sql in [
+        "INSERT INTO category_target_revisions (id,category_id,effective_month,active,behavior,amount_huf,due_kind,due_day) VALUES ('zero','c','2026-10',1,'refill',0,'day',15)",
+        "INSERT INTO category_target_revisions (id,category_id,effective_month,active,behavior,amount_huf,due_kind,due_day) VALUES ('bad-day','c','2026-10',1,'refill',1,'day',32)",
+        "INSERT INTO category_target_revisions (id,category_id,effective_month,active,behavior,amount_huf,due_kind,due_day) VALUES ('bad-tombstone','c','2026-10',0,'refill',1,'day',1)",
+    ] {
+        assert!(connection.execute(sql, []).is_err());
+    }
+}
+
+#[test]
 fn referenced_history_cannot_be_deleted_and_closing_preserves_type() {
     let connection = database();
     connection.execute_batch("

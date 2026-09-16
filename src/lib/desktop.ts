@@ -117,7 +117,9 @@ export interface ReconciliationReview {
 export interface ReconciliationResult {
   review: ReconciliationReview; reconciledEntryCount: number; adjustmentTransactionId: string | null;
 }
-export interface PlanCategory { groupId: string; groupName: string; categoryId: string; categoryName: string; assigned: string; activity: string; available: string; }
+export interface CategoryTargetDefinition { behavior: "set_aside" | "refill"; amount: string; dueKind: "day" | "last_day"; dueDay: number | null; }
+export interface CategoryTargetProgress extends CategoryTargetDefinition { neededThisMonth: string; funded: string; toGo: string; }
+export interface PlanCategory { groupId: string; groupName: string; categoryId: string; categoryName: string; assigned: string; activity: string; available: string; target: CategoryTargetProgress | null; }
 export interface CreditPaymentCategory { accountId: string; accountName: string; categoryId: string | null; }
 export interface PlanSnapshot { month: string; readyToAssign: string; categories: PlanCategory[]; creditPaymentCategories: CreditPaymentCategory[]; }
 
@@ -166,3 +168,4 @@ export async function loadPlanMonth(month: string): Promise<PlanSnapshot | null>
 export async function setPlanAssignment(categoryId: string, month: string, amount: string): Promise<void> { return invoke("set_plan_assignment", { input: { categoryId, month, amount } }); }
 export async function movePlanMoney(fromCategoryId: string, toCategoryId: string, month: string, amount: string): Promise<void> { return invoke("move_plan_money", { input: { fromCategoryId, toCategoryId, month, amount } }); }
 export async function setCreditPaymentCategory(accountId: string, categoryId: string | null): Promise<void> { return invoke("set_credit_payment_category", { input: { accountId, categoryId } }); }
+export async function setCategoryTarget(categoryId: string, effectiveMonth: string, target: CategoryTargetDefinition | null): Promise<void> { return invoke("set_category_target", { input: { categoryId, effectiveMonth, target } }); }

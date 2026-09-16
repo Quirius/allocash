@@ -3,7 +3,7 @@ use crate::{
     ledger::{Huf, LedgerError, LedgerResult},
 };
 use rusqlite::{params, OptionalExtension};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +60,7 @@ pub struct PlanCategory {
     pub assigned: Huf,
     pub activity: Huf,
     pub available: Huf,
+    pub target: Option<CategoryTargetProgress>,
 }
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,6 +76,25 @@ pub struct CreditPaymentCategory {
     pub account_id: String,
     pub account_name: String,
     pub category_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryTargetDefinition {
+    pub behavior: String,
+    pub amount: Huf,
+    pub due_kind: String,
+    pub due_day: Option<i64>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryTargetProgress {
+    #[serde(flatten)]
+    pub definition: CategoryTargetDefinition,
+    pub needed_this_month: Huf,
+    pub funded: Huf,
+    pub to_go: Huf,
 }
 
 #[derive(Default)]
@@ -96,6 +116,7 @@ struct PlanDerivation {
     assigned: BTreeMap<String, i128>,
     activity: BTreeMap<String, i128>,
     available: BTreeMap<String, i128>,
+    starting_available: BTreeMap<String, i128>,
     ready_to_assign: i128,
 }
 
@@ -138,6 +159,41 @@ impl Database {
             return Err(LedgerError::NotFound);
         }
         self.connection.execute("INSERT INTO credit_payment_categories (account_id,category_id) VALUES (?1,?2) ON CONFLICT(account_id) DO UPDATE SET category_id=excluded.category_id", params![account_id, category_id])?;
+        Ok(())
+    }
+
+    pub fn set_category_target(
+        &self,
+        category_id: &str,
+        effective_month: &PlanMonth,
+        definition: Option<&CategoryTargetDefinition>,
+    ) -> LedgerResult<()> {
+        let exists: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
+            [category_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(LedgerError::NotFound);
+        }
+        if let Some(definition) = definition {
+            validate_target_definition(definition)?;
+        }
+        let id: String = self.connection.query_row(
+            "SELECT 'category-target-' || lower(hex(randomblob(16)))",
+            [],
+            |row| row.get(0),
+        )?;
+        match definition {
+            Some(definition) => self.connection.execute(
+                "INSERT INTO category_target_revisions (id,category_id,effective_month,active,behavior,amount_huf,due_kind,due_day) VALUES (?1,?2,?3,1,?4,?5,?6,?7) ON CONFLICT(category_id,effective_month) DO UPDATE SET active=1,behavior=excluded.behavior,amount_huf=excluded.amount_huf,due_kind=excluded.due_kind,due_day=excluded.due_day,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')",
+                params![id, category_id, effective_month.as_str(), definition.behavior, definition.amount.0, definition.due_kind, definition.due_day],
+            )?,
+            None => self.connection.execute(
+                "INSERT INTO category_target_revisions (id,category_id,effective_month,active) VALUES (?1,?2,?3,0) ON CONFLICT(category_id,effective_month) DO UPDATE SET active=0,behavior=NULL,amount_huf=NULL,due_kind=NULL,due_day=NULL,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')",
+                params![id, category_id, effective_month.as_str()],
+            )?,
+        };
         Ok(())
     }
 
@@ -207,6 +263,7 @@ impl Database {
 
     pub fn plan_month(&self, month: &PlanMonth) -> LedgerResult<PlanSnapshot> {
         let derivation = derive_plan(&self.connection, month)?;
+        let target_definitions = target_definitions_for(&self.connection, month)?;
         let mut categories = Vec::new();
         let mut category_query = self.connection.prepare("SELECT g.id,g.name,c.id,c.name FROM category_groups g JOIN categories c ON c.group_id=g.id WHERE g.hidden=0 AND c.hidden=0 ORDER BY g.sort_order,c.sort_order,c.id")?;
         let mut rows = category_query.query([])?;
@@ -222,14 +279,29 @@ impl Database {
             .into_iter()
             .map(
                 |(group_id, group_name, category_id, category_name)| -> LedgerResult<_> {
+                    let assigned = *derivation.assigned.get(&category_id).unwrap_or(&0);
+                    let target = target_definitions
+                        .get(&category_id)
+                        .map(|definition| {
+                            target_progress(
+                                definition,
+                                *derivation
+                                    .starting_available
+                                    .get(&category_id)
+                                    .unwrap_or(&0),
+                                assigned,
+                            )
+                        })
+                        .transpose()?;
                     Ok(PlanCategory {
                         group_id,
                         group_name,
                         category_id: category_id.clone(),
                         category_name,
-                        assigned: narrow(*derivation.assigned.get(&category_id).unwrap_or(&0))?,
+                        assigned: narrow(assigned)?,
                         activity: narrow(*derivation.activity.get(&category_id).unwrap_or(&0))?,
                         available: narrow(*derivation.available.get(&category_id).unwrap_or(&0))?,
+                        target,
                     })
                 },
             )
@@ -342,6 +414,7 @@ fn derive_plan(
         .unwrap_or_else(|| target.as_str().to_owned());
     let mut current = PlanMonth::parse(&first_month)?;
     let mut available = BTreeMap::<String, i128>::new();
+    let mut starting_available = BTreeMap::<String, i128>::new();
     let mut target_assigned = BTreeMap::<String, i128>::new();
     let mut target_activity = BTreeMap::<String, i128>::new();
     let mut ready_income = 0i128;
@@ -349,6 +422,9 @@ fn derive_plan(
 
     loop {
         let is_target = current == *target;
+        if is_target {
+            starting_available = available.clone();
+        }
         let MonthActivity {
             categories: month_categories,
             mut payment_deltas,
@@ -443,6 +519,7 @@ fn derive_plan(
         assigned: target_assigned,
         activity: target_activity,
         available,
+        starting_available,
         ready_to_assign: checked_sub(
             checked_sub(ready_income, assignment_total)?,
             closed_cash_overspending,
@@ -456,6 +533,80 @@ fn checked_add(left: i128, right: i128) -> LedgerResult<i128> {
 
 fn checked_sub(left: i128, right: i128) -> LedgerResult<i128> {
     left.checked_sub(right).ok_or(LedgerError::AmountOverflow)
+}
+
+fn validate_target_definition(definition: &CategoryTargetDefinition) -> LedgerResult<()> {
+    let valid_due = match definition.due_kind.as_str() {
+        "day" => definition
+            .due_day
+            .is_some_and(|day| (1..=31).contains(&day)),
+        "last_day" => definition.due_day.is_none(),
+        _ => false,
+    };
+    if definition.amount.0 <= 0
+        || !matches!(definition.behavior.as_str(), "set_aside" | "refill")
+        || !valid_due
+    {
+        return Err(LedgerError::InvalidValue("Invalid category target."));
+    }
+    Ok(())
+}
+
+fn target_definitions_for(
+    connection: &rusqlite::Connection,
+    month: &PlanMonth,
+) -> LedgerResult<BTreeMap<String, CategoryTargetDefinition>> {
+    let mut statement = connection.prepare(
+        "SELECT revision.category_id,revision.active,revision.behavior,revision.amount_huf,revision.due_kind,revision.due_day
+         FROM category_target_revisions revision
+         JOIN (SELECT category_id,MAX(effective_month) effective_month FROM category_target_revisions WHERE effective_month<=?1 GROUP BY category_id) current
+           ON current.category_id=revision.category_id AND current.effective_month=revision.effective_month",
+    )?;
+    let mut definitions = BTreeMap::new();
+    for row in statement.query_map([month.as_str()], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, bool>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<i64>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, Option<i64>>(5)?,
+        ))
+    })? {
+        let (category_id, active, behavior, amount, due_kind, due_day) = row?;
+        if !active {
+            continue;
+        }
+        let definition = CategoryTargetDefinition {
+            behavior: behavior.ok_or(LedgerError::InvalidValue("Invalid category target."))?,
+            amount: Huf(amount.ok_or(LedgerError::InvalidValue("Invalid category target."))?),
+            due_kind: due_kind.ok_or(LedgerError::InvalidValue("Invalid category target."))?,
+            due_day,
+        };
+        validate_target_definition(&definition)?;
+        definitions.insert(category_id, definition);
+    }
+    Ok(definitions)
+}
+
+fn target_progress(
+    definition: &CategoryTargetDefinition,
+    starting_available: i128,
+    assigned: i128,
+) -> LedgerResult<CategoryTargetProgress> {
+    let amount = i128::from(definition.amount.0);
+    let needed = match definition.behavior.as_str() {
+        "set_aside" => amount,
+        "refill" => checked_sub(amount, starting_available.max(0))?.max(0),
+        _ => return Err(LedgerError::InvalidValue("Invalid category target.")),
+    };
+    let funded = assigned.max(0).min(needed);
+    Ok(CategoryTargetProgress {
+        definition: definition.clone(),
+        needed_this_month: narrow(needed)?,
+        funded: narrow(funded)?,
+        to_go: narrow(checked_sub(needed, funded)?)?,
+    })
 }
 
 fn category_available_for(
@@ -487,6 +638,19 @@ mod tests {
             .find(|category| category.category_id == category_id)
             .unwrap()
             .available
+    }
+
+    fn category_available_target<'a>(
+        plan: &'a PlanSnapshot,
+        category_id: &str,
+    ) -> &'a CategoryTargetProgress {
+        plan.categories
+            .iter()
+            .find(|category| category.category_id == category_id)
+            .unwrap()
+            .target
+            .as_ref()
+            .unwrap()
     }
     #[test]
     fn plan_uses_posted_on_budget_activity_and_rolls_available_forward() {
@@ -939,5 +1103,117 @@ mod tests {
         let after_payment = database.plan_month(&september).unwrap();
         assert_eq!(category_available(&after_payment, "payment"), Huf(0));
         assert_eq!(after_payment.ready_to_assign, Huf(-100));
+    }
+
+    #[test]
+    fn targets_are_effective_dated_and_keep_current_month_activity_out_of_progress() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "cash".into(),
+                name: "Cash".into(),
+                kind: AccountKind::Cash,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_category_target(
+                "food",
+                &september,
+                Some(&CategoryTargetDefinition {
+                    behavior: "set_aside".into(),
+                    amount: Huf(100),
+                    due_kind: "day".into(),
+                    due_day: Some(10),
+                }),
+            )
+            .unwrap();
+        database
+            .set_monthly_assignment("food", &september, Huf(30))
+            .unwrap();
+        let mut spending = Entry::manual(
+            "spending",
+            "cash",
+            CalendarDate::parse("2026-09-10").unwrap(),
+        );
+        spending.category_id = Some("food".into());
+        database.create_transaction(&spending, Huf(-10)).unwrap();
+        let september_plan = database.plan_month(&september).unwrap();
+        let september_target = category_available_target(&september_plan, "food");
+        assert_eq!(september_target.needed_this_month, Huf(100));
+        assert_eq!(september_target.funded, Huf(30));
+        assert_eq!(september_target.to_go, Huf(70));
+        let october = PlanMonth::parse("2026-10").unwrap();
+        database
+            .set_category_target(
+                "food",
+                &october,
+                Some(&CategoryTargetDefinition {
+                    behavior: "refill".into(),
+                    amount: Huf(100),
+                    due_kind: "last_day".into(),
+                    due_day: None,
+                }),
+            )
+            .unwrap();
+        let october_plan = database.plan_month(&october).unwrap();
+        let october_target = category_available_target(&october_plan, "food");
+        assert_eq!(october_target.needed_this_month, Huf(80));
+        assert_eq!(october_target.funded, Huf(0));
+        assert_eq!(october_target.to_go, Huf(80));
+        assert_eq!(
+            category_available_target(&database.plan_month(&september).unwrap(), "food")
+                .definition
+                .behavior,
+            "set_aside"
+        );
+        let november = PlanMonth::parse("2026-11").unwrap();
+        database
+            .set_category_target("food", &november, None)
+            .unwrap();
+        assert!(database
+            .plan_month(&november)
+            .unwrap()
+            .categories
+            .iter()
+            .find(|category| category.category_id == "food")
+            .unwrap()
+            .target
+            .is_none());
+    }
+
+    #[test]
+    fn refill_target_uses_settled_available_after_cash_overspending() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &september, Huf(-50))
+            .unwrap();
+        let october = PlanMonth::parse("2026-10").unwrap();
+        database
+            .set_category_target(
+                "food",
+                &october,
+                Some(&CategoryTargetDefinition {
+                    behavior: "refill".into(),
+                    amount: Huf(100),
+                    due_kind: "day".into(),
+                    due_day: Some(1),
+                }),
+            )
+            .unwrap();
+        assert_eq!(
+            category_available_target(&database.plan_month(&october).unwrap(), "food")
+                .needed_this_month,
+            Huf(100)
+        );
     }
 }
