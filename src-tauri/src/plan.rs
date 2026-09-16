@@ -203,24 +203,75 @@ impl Database {
             *assigned.entry(id).or_default() += i128::from(amount);
             assignment_total += i128::from(amount);
         }
-        let mut available_activity = BTreeMap::<String, i128>::new();
+        let payment_categories: BTreeMap<String, String> = self
+            .connection
+            .prepare("SELECT account_id,category_id FROM credit_payment_categories")?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        let mut assignments_by_month = BTreeMap::<String, Vec<(String, i128)>>::new();
+        let mut assignment_events = self.connection.prepare("SELECT month,category_id,amount_huf FROM category_month_assignments WHERE month<=?1 ORDER BY month,category_id")?;
+        for row in assignment_events.query_map([month.as_str()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })? {
+            let (assignment_month, category_id, amount) = row?;
+            assignments_by_month
+                .entry(assignment_month)
+                .or_default()
+                .push((category_id, i128::from(amount)));
+        }
+        let mut available = BTreeMap::<String, i128>::new();
         let mut activity = BTreeMap::<String, i128>::new();
         let mut ready_income = 0i128;
-        let mut entry_query = self.connection.prepare("SELECT t.category_id,t.amount_huf,t.transaction_date,a.kind,t.transfer_id FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.posting_state='posted' AND t.transaction_date<?1 AND a.kind IN ('cash','credit')")?;
+        let mut applied_through = String::new();
+        let mut entry_query = self.connection.prepare("SELECT t.category_id,t.amount_huf,t.transaction_date,a.kind,t.account_id,t.transfer_id FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.posting_state='posted' AND t.transaction_date<?1 AND a.kind IN ('cash','credit') ORDER BY t.transaction_date,t.id")?;
         let mut entries = entry_query.query([&next])?;
         while let Some(row) = entries.next()? {
             let category: Option<String> = row.get(0)?;
             let amount = i128::from(row.get::<_, i64>(1)?);
             let date: String = row.get(2)?;
             let kind: String = row.get(3)?;
-            let transfer_id: Option<String> = row.get(4)?;
+            let account_id: String = row.get(4)?;
+            let transfer_id: Option<String> = row.get(5)?;
+            let entry_month = &date[..7];
+            for (assignment_month, assignments) in assignments_by_month.range((
+                std::ops::Bound::Excluded(applied_through.clone()),
+                std::ops::Bound::Included(entry_month.to_owned()),
+            )) {
+                for (category_id, assignment) in assignments {
+                    *available.entry(category_id.clone()).or_default() += assignment;
+                }
+                applied_through = assignment_month.clone();
+            }
             if let Some(id) = category {
-                *available_activity.entry(id.clone()).or_default() += amount;
+                let before = *available.get(&id).unwrap_or(&0);
+                *available.entry(id.clone()).or_default() += amount;
                 if date >= start {
                     *activity.entry(id).or_default() += amount;
                 }
+                if kind == "credit" && amount < 0 {
+                    if let Some(payment_category_id) = payment_categories.get(&account_id) {
+                        let funded = before.max(0).min(-amount);
+                        *available.entry(payment_category_id.clone()).or_default() += funded;
+                        if date >= start {
+                            *activity.entry(payment_category_id.clone()).or_default() += funded;
+                        }
+                    }
+                }
             } else if kind == "cash" && transfer_id.is_none() {
                 ready_income += amount;
+            }
+        }
+        for (assignment_month, assignments) in assignments_by_month.range((
+            std::ops::Bound::Excluded(applied_through),
+            std::ops::Bound::Unbounded,
+        )) {
+            let _ = assignment_month;
+            for (category_id, assignment) in assignments {
+                *available.entry(category_id.clone()).or_default() += assignment;
             }
         }
         let categories = categories
@@ -228,7 +279,6 @@ impl Database {
             .map(
                 |(group_id, group_name, category_id, category_name)| -> LedgerResult<_> {
                     let a = *assigned.get(&category_id).unwrap_or(&0);
-                    let activity_total = *available_activity.get(&category_id).unwrap_or(&0);
                     Ok(PlanCategory {
                         group_id,
                         group_name,
@@ -238,7 +288,7 @@ impl Database {
                             a - assigned_before(&self.connection, &month.0, &category_id)?,
                         )?,
                         activity: narrow(*activity.get(&category_id).unwrap_or(&0))?,
-                        available: narrow(a + activity_total)?,
+                        available: narrow(*available.get(&category_id).unwrap_or(&0))?,
                     })
                 },
             )
@@ -491,5 +541,56 @@ mod tests {
         assert!(database
             .set_credit_payment_category("cash", Some("payment"))
             .is_err());
+    }
+
+    #[test]
+    fn funded_credit_spending_moves_only_available_money_to_the_payment_category() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "card".into(),
+                name: "Card".into(),
+                kind: AccountKind::Credit,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        database
+            .create_category("payment", "g", "Card payment", 1)
+            .unwrap();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &month, Huf(1_000))
+            .unwrap();
+        database
+            .set_credit_payment_category("card", Some("payment"))
+            .unwrap();
+        let mut purchase = Entry::manual(
+            "purchase",
+            "card",
+            CalendarDate::parse("2026-09-10").unwrap(),
+        );
+        purchase.category_id = Some("food".into());
+        database.create_transaction(&purchase, Huf(-600)).unwrap();
+        let plan = database.plan_month(&month).unwrap();
+        assert_eq!(
+            plan.categories
+                .iter()
+                .find(|category| category.category_id == "food")
+                .unwrap()
+                .available,
+            Huf(400)
+        );
+        assert_eq!(
+            plan.categories
+                .iter()
+                .find(|category| category.category_id == "payment")
+                .unwrap()
+                .available,
+            Huf(600)
+        );
     }
 }
