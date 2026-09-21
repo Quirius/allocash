@@ -1,14 +1,13 @@
 # Allocash project-local Codex defaults
 #
-# The main/coordinator session stays on Terra High. Model routing in AGENTS.md
-# is implemented by spawning subagents on Luna, Terra, or Sol as appropriate;
-# this file does not dynamically replace the main session's model mid-thread.
+# The main/coordinator session uses Astra light. Routine model routing uses Luna
+# light for straightforward subtasks.
 
-model = "gpt-5.6-terra"
-model_reasoning_effort = "high"
+model = "gpt-6-astra"
+model_reasoning_effort = "low"
 
 [agents]
 enabled = true
 max_concurrent_threads_per_session = 4
 default_subagent_model = "gpt-5.6-luna"
-default_subagent_reasoning_effort = "medium"
+default_subagent_reasoning_effort = "low"

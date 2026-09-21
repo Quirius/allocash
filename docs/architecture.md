@@ -1,4 +1,4 @@
-# Allocash foundation and next steps
+# Allocash architecture
 
 The project root is `allocash/`; local development tooling lives under its ignored
 `.tools/` directory. The desktop app is named Allocash and uses the identifier
@@ -51,16 +51,10 @@ Transaction dates use validated `yyyy-mm-dd` calendar strings and display as
 `yyyy.mm.dd.`. A transaction date is not a UTC timestamp. Use timestamps only for
 audit metadata such as creation time.
 
-## Current release gate
+## Status and requirements
 
-The basic reconciliation workflow is complete on the validated register. It reviews
-an account against a bank-cleared balance, lets the owner match real transaction
-states before committing, and only uses a reconciled adjustment as an explicit
-fallback. A fresh owner export passed the reference gate with exact working balances
-for all 34 accounts. The remaining v0.1 release gate is verification of a native
-Windows MSVC desktop build; the Plan engine follows that verified baseline.
-
-The complete scope and financial behavior are in the owner's project brief.
+See [status.md](status.md) for implemented slices and release evidence, and the
+[documentation map](README.md) for the owner's topic-specific requirements.
 
 ## Ledger schema decisions
 
@@ -79,7 +73,8 @@ history even when the dates or states differ. Pair operations must use SQL trans
 
 `posting_state` distinguishes scheduled instances from posted ledger activity;
 scheduled instances must be uncleared. `scheduled_origin_id` is opaque provenance
-until recurrence definitions arrive in a later migration. It is not a recurrence rule.
+and is not itself a recurrence rule. Monthly recurrence definitions and occurrence
+tracking are stored separately by migration 8.
 
 `import_batches` stores the original archive bytes and their SHA-256 hash;
 `import_rows` preserves every CSV/TSV row as its parsed cells with file/row coordinates.

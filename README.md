@@ -8,40 +8,16 @@ The repository and folder were renamed from `ynabclone` to `allocash` on
 All project development files live directly inside `allocash/`, including the
 ignored `.tools/` folder for portable Node.js, npm cache, browser checks and previews.
 
-## Current step
+## Project status and documentation
 
-The v0.1 import/register foundation is implemented:
+The app includes the import/register foundation plus monthly Plan, targets,
+schedules, reports, forecasting and verified local backup slices. See
+[implementation status](docs/status.md) for validation evidence, feature limits
+and the outstanding native Windows MSVC release gate.
 
-- Dark desktop shell with the Cash / Credit / Loans / Tracking / Closed groups.
-- Versioned SQLite migrations, persistent budget settings and verified backups before upgrades.
-- Ledger tables for accounts, category groups/categories, payees, flags and transactions.
-- Transfers with one shared amount and two linked entries, plus raw import staging tables.
-- Typed account/transaction operations, paired transfer edits/deletion and reconciled-edit confirmation.
-- Exact as-of balances with separate cleared, uncleared and reconciled totals.
-- Import validation with source/ledger counts, per-account balance buckets, unresolved
-  mappings and transfer rows, plus within-export and cross-export duplicate signals.
-- UTF-8-safe YNAB Net Worth comparison against materialized working balances.
-- Persisted account sidebar groups and an editable transaction register with resolved
-  payees, categories, flags, transfers and exact balance totals.
-- Keyboard-friendly manual entry with payee/category memory, paired account transfers,
-  exact HUF validation and cleared-by-default behavior.
-- Atomic register amount, memo and cleared-state edits, including paired transfer
-  updates/deletion and explicit confirmation when reconciled history is affected.
-- Visible database startup/error states and a browser-only layout preview.
-- Exact integer HUF formatting and timezone-free calendar date formatting.
-- Native Rust tests for migrations, backups, ledger invariants and preserved history,
-  plus frontend formatting and desktop-bridge tests.
-
-The YNAB importer preserves the original archive and every CSV/TSV row, requires
-explicit account mappings, materializes ordinary transactions and only provable
-transfer pairs, and produces an exact as-of validation report without guessing
-ambiguous financial data. No financial data is seeded; the six specified flag
-definitions are initialized. A fresh owner export has completed the v0.1 validation
-gate with all 34 working balances matching YNAB exactly. Four zero-value transfer
-rows remain preserved for review and do not affect balances. The basic
-reconciliation workflow is complete; the remaining v0.1 release gate is a native
-Windows MSVC desktop-build verification. See [the architecture](docs/architecture.md).
-The backend accounting behavior is documented in [accounting rules](docs/accounting-rules.md).
+The [documentation map](docs/README.md) routes to architecture, implemented
+accounting rules and topic-specific product requirements. Repository agents start
+with [AGENTS.md](AGENTS.md).
 
 ## Windows development setup
 
@@ -144,6 +120,5 @@ and automatic retention are still future work.
 After each completed, coherent edit, run the appropriate checks, create a focused
 Conventional Commit (`type(scope): imperative summary`), and push the current
 branch. Use annotated semantic-version tags for verified release milestones;
-ordinary edits do not need tags. The foundation is not tagged as a release while
-native build verification remains outstanding. See [AGENTS.md](AGENTS.md) for the
-standing workflow instructions.
+ordinary edits do not need tags. See [release status](docs/status.md) for outstanding gates and
+[AGENTS.md](AGENTS.md) for the standing workflow instructions.
