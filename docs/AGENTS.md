@@ -62,6 +62,9 @@ changing financial behavior. Update the owning document when its facts change.
 
 ## Models and delegation
 
+- Provider/application: **OpenAI models in Codex**. The project-root
+  `AGENTS.md` permission gate applies to overrides, assignment changes, and workers.
+
 - Default root: **GPT-6 Astra, low reasoning** (owner's "light"), configured in
   `../.codex/config.toml`. Config changes do not switch an already-running session.
   Preserve the selected setting; report a known mismatch once.
