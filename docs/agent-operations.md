@@ -1,0 +1,32 @@
+# Delegation and publication
+
+Load only the relevant section when delegating, publishing, or preparing a release.
+User instructions and the root AGENTS.md provider restriction take precedence.
+
+## Delegation
+
+- Delegate bounded work when useful: **Luna low** for searches/docs/mechanical work;
+  **Terra medium** for implementation/debugging; **Sol high or Astra** for difficult
+  architecture, accounting/schema/Plan logic or a concrete cheaper-model failure.
+  Use the lowest sufficient effort and disclose unavailable overrides/fallbacks.
+- Prefer one worker for small tasks. Use fresh context, explicit owned files,
+  relevant rules/skills and an acceptance check. Avoid overlapping edits, whole-chat
+  copies and recursive delegation. Workers return paths, checks and blockers briefly.
+- Seek an independent qualified review for consequential accounting, schema,
+  migration, transfer, reconciliation, credit-card or budget-engine changes when
+  practical. Review supplements deterministic tests; it does not replace them.
+- Recommend an exact different root setting only when the coordinator needs it
+  throughout the task; prefer a specialist for an isolated hard part. Never claim
+  an unverified model, reasoning level, capability or token saving.
+
+## Git and releases
+
+- Standing authorization: after each completed coherent edit, validate, create a
+  focused Conventional Commit (`type(scope): imperative summary`) and push the
+  current branch to its configured remote. Check remote changes and resolve
+  divergence without discarding others' work. Stage only task files; never
+  force-push or rewrite published history without explicit instruction.
+- For release work, create/push annotated semantic-version tags only
+  for completed, verified release/prerelease milestones. Ordinary edits stay
+  untagged; never move a published tag. Do not infer release readiness from package
+  version or implemented features alone.

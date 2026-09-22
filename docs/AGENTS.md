@@ -60,51 +60,20 @@ changing financial behavior. Update the owning document when its facts change.
   unused YNAB features or introduce premature abstractions. Ask before major scope
   changes; document ambiguity instead of making deep assumptions.
 
-## Models and delegation
+## Execution and completion
 
-- Provider/application: **OpenAI models in Codex**. The project-root
-  `AGENTS.md` permission gate applies to overrides, assignment changes, and workers.
-
-- Default root: **GPT-6 Astra, low reasoning** (owner's "light"), configured in
-  `../.codex/config.toml`. Config changes do not switch an already-running session.
-  Preserve the selected setting; report a known mismatch once.
-- Delegate bounded work when useful: **Luna low** for searches/docs/mechanical work;
-  **Terra medium** for implementation/debugging; **Sol high or Astra** for difficult
-  architecture, accounting/schema/Plan logic or a concrete cheaper-model failure.
-  Use the lowest sufficient effort and disclose unavailable overrides/fallbacks.
-- Prefer one worker for small tasks. Use fresh context, explicit owned files,
-  relevant rules/skills and an acceptance check. Avoid overlapping edits, whole-chat
-  copies and recursive delegation. Workers return paths, checks and blockers briefly.
-- Seek an independent qualified review for consequential accounting, schema,
-  migration, transfer, reconciliation, credit-card or budget-engine changes when
-  practical. Review supplements deterministic tests; it does not replace them.
-- Recommend an exact different root setting only when the coordinator needs it
-  throughout the task; prefer a specialist for an isolated hard part. Never claim
-  an unverified model, reasoning level, capability or token saving.
-
-## Verification and completion
-
-- Run targeted checks first, broaden for concrete regression risk or failures.
-  One agent owns each run; summarize failures without dumping passing logs. Do not
-  repeat passing checks absent a relevant change. Docs-only edits need link/content
-  and diff checks, not the application suite.
-- Frontend: `npm test`, `npm run build`. Native core: `npm run test:core`.
-  Desktop/native and toolchain setup: see the root README. A browser preview or
-  portable GNU core check does not verify the Windows MSVC desktop build.
-- Keep documentation focused: one home per fact, task routes instead of duplicated
-  specifications, no recurring progress transcripts. Report material context drivers
-  once; suggest a short handoff/fresh chat when useful. Do not claim prior context
-  has been removed or estimate actual token savings from file size alone.
-- Standing authorization: after each completed coherent edit, validate, create a
-  focused Conventional Commit (`type(scope): imperative summary`) and push the
-  current branch to its configured remote. Check remote changes and resolve
-  divergence without discarding others' work. Stage only task files; never
-  force-push or rewrite published history without explicit instruction.
-- Evaluate tags after each task: create/push annotated semantic-version tags only
-  for completed, verified release/prerelease milestones. Ordinary edits stay
-  untagged; never move a published tag. Do not infer release readiness from package
-  version or implemented features alone.
-- Final report: result and checks/limits, commit message/hash and pushed branch/result,
-  tag or why none, actual coordinator and worker model/effort/responsibility (say
-  when exact runtime settings are unknown), and whether a root-setting change is
-  needed. Do not omit required commit/push attempts or delegation decisions.
+- Default root: **GPT-6 Astra, low reasoning** (owner's "light"); preserve the
+  user's selected setting. Recommend changes only for a concrete need.
+- Handle small tasks directly. For delegation or consequential financial review,
+  load [agent-operations.md](agent-operations.md#delegation).
+- Use the narrowest relevant check from [checks.md](checks.md); broaden for
+  failures or concrete regression risk. Docs-only edits need links/content and
+  diff checks, not the application suite. Do not repeat unchanged passing checks.
+- Standing authorization to commit/push verified task changes remains in effect
+  unless the user says otherwise. When publishing or preparing a release, load
+  [agent-operations.md](agent-operations.md#git-and-releases).
+- Report result, checks and material limitations briefly; mention Git actions
+  when performed and model changes/fallbacks only when relevant.
+- When switching unrelated tasks or handing off a long session, retain only the
+  objective, relevant paths, decisions, checks and next step. Do not maintain a
+  running transcript or claim that old context has been removed.
