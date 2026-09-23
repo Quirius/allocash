@@ -5,8 +5,9 @@ User instructions and the root AGENTS.md provider restriction take precedence.
 
 ## Delegation
 
-- Delegate bounded work when useful: **Luna low** for searches/docs/mechanical work;
-  **Terra medium** for implementation/debugging; **Sol high or Astra** for difficult
+- Use **GPT-6 subagents only**; do not use GPT-5.6 subagents, including as fallbacks.
+- Delegate bounded work when useful: **GPT-6 Luna low** (`gpt-6-luna`) for searches/docs/mechanical work;
+  **GPT-6 Sol medium** (`gpt-6-sol`) for implementation/debugging; **GPT-6 Sol high or GPT-6 Astra** (`gpt-6-astra`) for difficult
   architecture, accounting/schema/Plan logic or a concrete cheaper-model failure.
   Use the lowest sufficient effort and disclose unavailable overrides/fallbacks.
 - Prefer one worker for small tasks. Use fresh context, explicit owned files,

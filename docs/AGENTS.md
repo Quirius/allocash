@@ -64,7 +64,8 @@ changing financial behavior. Update the owning document when its facts change.
 
 - Default root: **GPT-6 Astra, low reasoning** (owner's "light"); preserve the
   user's selected setting. Recommend changes only for a concrete need.
-- Handle small tasks directly. For delegation or consequential financial review,
+- Use **GPT-6 subagents only**; do not use GPT-5.6 subagents, including as fallbacks.
+  Handle small tasks directly. For delegation or consequential financial review,
   load [agent-operations.md](agent-operations.md#delegation).
 - Use the narrowest relevant check from [checks.md](checks.md); broaden for
   failures or concrete regression risk. Docs-only edits need links/content and
