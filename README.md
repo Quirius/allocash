@@ -13,7 +13,8 @@ ignored `.tools/` folder for portable Node.js, npm cache, browser checks and pre
 The app includes the import/register foundation plus monthly Plan, targets,
 schedules, reports, forecasting and verified local backup slices. See
 [implementation status](docs/status.md) for validation evidence, feature limits
-and the outstanding native Windows MSVC release gate.
+and the verified native Windows MSVC build gate. Owner-data validation remains
+required before tagging a release.
 
 The [documentation map](docs/README.md) routes to architecture, implemented
 accounting rules and topic-specific product requirements. Repository agents start
