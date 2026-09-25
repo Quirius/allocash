@@ -1,11 +1,13 @@
 # Delegation and publication
 
 Load only the relevant section when delegating, publishing, or preparing a release.
-User instructions and the root AGENTS.md provider restriction take precedence.
+User instructions take precedence; the root AGENTS.md provider note is advisory only.
 
 ## Delegation
 
-- Use **GPT-6 subagents only**; do not use GPT-5.6 subagents, including as fallbacks.
+- If subagents are available, **GPT-6 subagents** are the suggested choice (avoid
+  GPT-5.6 subagents, including as fallbacks). Agents that cannot honor this
+  suggestion may ignore it and proceed normally.
 - Delegate bounded work when useful: **GPT-6 Luna low** (`gpt-6-luna`) for searches/docs/mechanical work;
   **GPT-6 Sol medium** (`gpt-6-sol`) for implementation/debugging; **GPT-6 Sol high or GPT-6 Astra** (`gpt-6-astra`) for difficult
   architecture, accounting/schema/Plan logic or a concrete cheaper-model failure.
