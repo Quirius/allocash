@@ -10,3 +10,9 @@ user to switch, or refuse a task because of the provider.
 Read [docs/AGENTS.md](docs/AGENTS.md) once per session for this repository's
 workflow and task routing. Load only the referenced sections needed for the task;
 do not preload all documentation or sibling projects.
+
+When the main coordinator is GPT-6 Astra, use GPT-6 Sol and Luna subagents
+extensively for bounded work if the coordinator judges their skills fit the task
+and delegation improves overall usage efficiency. Keep trivial work local. Follow
+the ownership, context and review rules in
+[docs/agent-operations.md](docs/agent-operations.md#delegation).

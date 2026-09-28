@@ -63,12 +63,14 @@ changing financial behavior. Update the owning document when its facts change.
 ## Execution and completion
 
 - Suggested root: **GPT-6 Astra, low reasoning** (owner's "light"); treat as an
-  advisory hint, not a requirement. Handle small tasks directly. For delegation or
+  advisory hint, not a requirement. When Astra coordinates, use GPT-6 Sol and
+  Luna subagents extensively where their skills fit and delegation improves
+  overall usage efficiency; handle trivial work directly. For delegation or
   consequential financial review, load
   [agent-operations.md](agent-operations.md#delegation).
-- If subagents are available, **GPT-6 subagents** are the suggested choice (avoid
-  GPT-5.6 subagents, including as fallbacks). Agents that cannot honor this may
-  simply ignore it and proceed.
+- If subagents are available, prefer **GPT-6 subagents**. Do not substitute
+  GPT-5.6 merely as a fallback. If a requested override is unavailable, proceed
+  with the available model and report the limitation when relevant.
 - Use the narrowest relevant check from [checks.md](checks.md); broaden for
   failures or concrete regression risk. Docs-only edits need links/content and
   diff checks, not the application suite. Do not repeat unchanged passing checks.

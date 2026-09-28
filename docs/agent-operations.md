@@ -5,16 +5,22 @@ User instructions take precedence; the root AGENTS.md provider note is advisory 
 
 ## Delegation
 
-- If subagents are available, **GPT-6 subagents** are the suggested choice (avoid
-  GPT-5.6 subagents, including as fallbacks). Agents that cannot honor this
-  suggestion may ignore it and proceed normally.
-- Delegate bounded work when useful: **GPT-6 Luna low** (`gpt-6-luna`) for searches/docs/mechanical work;
-  **GPT-6 Sol medium** (`gpt-6-sol`) for implementation/debugging; **GPT-6 Sol high or GPT-6 Astra** (`gpt-6-astra`) for difficult
-  architecture, accounting/schema/Plan logic or a concrete cheaper-model failure.
-  Use the lowest sufficient effort and disclose unavailable overrides/fallbacks.
-- Prefer one worker for small tasks. Use fresh context, explicit owned files,
-  relevant rules/skills and an acceptance check. Avoid overlapping edits, whole-chat
-  copies and recursive delegation. Workers return paths, checks and blockers briefly.
+- When GPT-6 Astra coordinates, use GPT-6 Sol and Luna subagents extensively when
+  their skills fit and delegation improves overall usage efficiency. Delegate
+  parallel, independent work where useful; keep trivial tasks local when setup
+  and review would cost more than the work. Do not claim unmeasured savings.
+- Prefer **GPT-6 Luna low** (`gpt-6-luna`) for bounded searches, docs and
+  mechanical changes; **GPT-6 Sol medium** (`gpt-6-sol`) for implementation,
+  debugging and review. Reserve **GPT-6 Sol high or GPT-6 Astra**
+  (`gpt-6-astra`) for hard or ambiguous architecture, accounting, schema or Plan
+  logic, and for a concrete lower-model failure. Use the lowest sufficient effort.
+- Give each worker a bounded deliverable, fresh minimal context, explicit owned
+  files, relevant rules/skills and an acceptance check. Parallel workers must
+  have nonoverlapping edit scopes. Avoid whole-chat copies and recursive
+  delegation. Workers return paths, checks and blockers briefly.
+- Prefer GPT-6 subagents; do not substitute GPT-5.6 merely as a fallback. If a
+  requested override is unavailable, proceed with the available model and report
+  the limitation when relevant.
 - Seek an independent qualified review for consequential accounting, schema,
   migration, transfer, reconciliation, credit-card or budget-engine changes when
   practical. Review supplements deterministic tests; it does not replace them.
