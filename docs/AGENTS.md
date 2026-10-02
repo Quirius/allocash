@@ -42,6 +42,18 @@ Requirements describe intended behavior; accounting/architecture describe implem
 contracts; status records completion limits. Surface conflicts rather than silently
 changing financial behavior. Update the owning document when its facts change.
 
+## Project HQ reporting
+
+For substantive work, read the relevant [reporting contract](../.project/README.md)
+and `.project/` files. Preserve the owning documents above and summarize their
+published evidence on `main` when implementation, validation, release gates,
+plans, blockers, milestones, or decisions materially change. Keep stable IDs,
+schema version 1, manual plans, and unknown values. Do not infer completion from
+activity or report unpushed work as published progress. After a product push,
+refresh reporting in a separate commit under the Git rules below. A reporting-only
+commit needs no timestamp-only successor. Disclose stale snapshots and failed
+pushes; pushed files alone do not mean Project HQ synchronized.
+
 ## Non-negotiable safeguards
 
 - Accounting/import correctness precedes input speed, familiar workflow, backups

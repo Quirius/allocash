@@ -1,0 +1,37 @@
+schema_version: 1
+project_id: "allocash"
+name: "Allocash"
+repository: "Quirius/allocash"
+status: "In Progress"
+description: "Offline Windows desktop budgeting app for one local HUF budget."
+objective: "Reach a migration-ready local budgeting workflow that preserves YNAB history and reproduces balances, Plan values, and reports."
+phase: "Implementation and validation before release"
+progress:
+  percent: null
+  basis: "unknown"
+  rationale: "No explicit scoped human assessment of overall completion is documented."
+next_action: "Implement historical Plan import and materialization, then validate the resulting Plan values against owner reference data."
+updated_at: "2026-10-02T12:54:11Z"
+source:
+  branch: "main"
+  commit: "f19a28b118a220b32f4104d751df3cf97839284b"
+  verified_at: "2026-10-02T12:54:11Z"
+summary:
+  completed:
+    - "Ledger, register, reconciliation, YNAB transaction staging/materialization, monthly Plan, targets, schedules, reports, forecasting, and verified local backup slices are implemented."
+    - "A native Windows desktop build and the documented check sequence passed on 2026-09-23."
+  in_progress:
+    - "Historical Plan import, broader schedule/target coverage, restore, installer packaging, and migration validation remain open."
+  blockers: []
+  open_questions:
+    - "How closely do current Plan and report values match the owner's reference data? No such validation result is documented."
+evidence:
+  - path: "docs/status.md"
+    ref: "f19a28b118a220b32f4104d751df3cf97839284b"
+    note: "Implemented slices, dated desktop-build verification, remaining gates, and limits of owner-data validation."
+  - path: "docs/architecture.md"
+    ref: "f19a28b118a220b32f4104d751df3cf97839284b"
+    note: "Implemented import/storage boundaries and historical Plan materialization as the next importer phase."
+  - path: "docs/product-scope.md"
+    ref: "f19a28b118a220b32f4104d751df3cf97839284b"
+    note: "Migration objective, intended milestones, and final validation strategy."
