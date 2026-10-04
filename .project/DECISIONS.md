@@ -53,23 +53,23 @@ decisions:
         note: "Describes implemented verified snapshots and the separate restore work."
   - id: "allocash-decision-005"
     title: "Make Allocash the highest-priority active project until migration readiness"
-    context: "The owner needs to replace YNAB before cancelling the subscription and prefers the final week before 2026-10-30 to remain free unless critical recovery work is needed."
+    context: "Owner decision recorded 2026-10-04: replace YNAB before cancelling the subscription and keep the final week before 2026-10-30 free unless critical recovery work is needed."
     state: "resolved"
     resolution: "Prioritize Allocash above the other active projects until a safe migration-ready release is reached, targeting 2026-10-21. Treat 2026-10-22 through 2026-10-30 as contingency-only."
-    decided_at: "2026-10-04"
+    decided_at: null
     evidence: []
   - id: "allocash-decision-006"
     title: "Freeze pre-migration scope to migration essentials"
-    context: "The accounting and import core is already strongly validated, while restore, packaging, workflow rehearsal, and final migration checks remain. Expanding secondary features would increase deadline risk."
+    context: "Owner decision recorded 2026-10-04: the accounting and import core is already strongly validated, while restore, packaging, workflow rehearsal, and final migration checks remain. Expanding secondary features would increase deadline risk."
     state: "resolved"
     resolution: "Before 2026-10-21, prioritize only workflow gaps that block real use, restore/recovery, installer packaging, migration rehearsal, final data checks, and critical fixes. Defer non-blocking report completeness, forecasting polish, broader target/recurrence coverage, and other feature expansion until after migration."
-    decided_at: "2026-10-04"
+    decided_at: null
     evidence: []
 ---
 
 # Decision context
 
-Historical decision times were not recorded in the cited sources, so their `decided_at` values remain
-null. Owner deadline and prioritization decisions made on 2026-10-04 are recorded with that date. The architecture entry records an implemented contract; it does not claim
+Decision times are not recorded with a verified UTC timestamp, so `decided_at` remains
+null. The 2026-10-04 owner deadline and prioritization decisions record their date in context. The architecture entry records an implemented contract; it does not claim
 to reconstruct a historical design discussion. Detailed product intent remains
 in [product scope](../docs/product-scope.md) and [requirements](../docs/README.md).
