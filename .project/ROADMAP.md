@@ -275,7 +275,6 @@ milestones:
   - id: "allocash-milestone-007"
     title: "Owner migration target — 2026-10-21"
     state: "planned"
-    due_date: "2026-10-21"
     details: "Highest-priority project milestone: reach a safe, usable YNAB-replacement release before the owner's vacation. The following week is contingency-only."
     evidence: []
 ---
