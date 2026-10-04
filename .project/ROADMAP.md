@@ -75,15 +75,18 @@ plans:
     priority: "medium"
     due_date: null
     completed_at: null
-    details: "The October 2026 export matches all 34 Net Worth reference balances and all Assigned values. Its current Plan month matches; 18 historical rows in one card-payment category still differ, with Activity gaps in October 2024 and November 2025. Report values need independent comparison without publishing private data."
+    details: "The October 2026 export matches all 34 Net Worth reference balances and all 1,326 Assigned, Activity, and Available Plan rows across 51 months. Report values still need independent comparison without publishing private data."
     acceptance_criteria:
       - "Representative recent Plan months match verified reference values or discrepancies are resolved."
       - "Required historical report values match verified reference values or discrepancies are resolved."
     blocked_by: []
     evidence:
       - path: "docs/status.md"
+        ref: "7d80939c400efc8f788567dfe7b55109f52e9276"
+        note: "Records exact Plan and account-balance agreement after positive-card-balance funding correction; report validation remains open."
+      - path: "docs/status.md"
         ref: "37f5178ba88aac2717dbf9f971b62a07d7bfee28"
-        note: "Records 1,324 Activity and 1,308 Available matches after card funding corrections; two Activity months still differ."
+        note: "Records the earlier partial Plan comparison before the final funding correction."
       - path: "docs/status.md"
         ref: "dbf34207af49e55b23b221a53df50b3f273b8378"
         note: "Records the as-of Plan comparison and its remaining historical card-payment differences."
@@ -103,7 +106,7 @@ plans:
     priority: "medium"
     due_date: null
     completed_at: null
-    details: "The native desktop executable builds, but installer packaging and final owner-data migration checks are not complete; no release tag was documented at the evidence cutoff."
+    details: "The native desktop executable builds and the October export matches account balances and all Plan rows, but installer packaging, report validation, and final owner-data migration checks remain open; no release tag was documented at the evidence cutoff."
     acceptance_criteria:
       - "A Windows installer is built and verified."
       - "The final YNAB export imports with account balances, Plan months, and reports verified."
@@ -113,8 +116,11 @@ plans:
       - "allocash-plan-004"
     evidence:
       - path: "docs/status.md"
+        ref: "7d80939c400efc8f788567dfe7b55109f52e9276"
+        note: "Records exact account and Plan comparison, with report and release gates still open."
+      - path: "docs/status.md"
         ref: "45fc8606a57b83df66b2be16d04afd7b1a8a4827"
-        note: "The October export's balances match, while Plan discrepancies and report, restore, and installer gates remain."
+        note: "Records the earlier validation state before full Plan agreement."
       - path: "docs/status.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Desktop build passed, but installer and release gates remain."
@@ -151,8 +157,11 @@ milestones:
   - id: "allocash-milestone-002"
     title: "v0.2 Plan and Budget Engine"
     state: "planned"
-    details: "Monthly Plan exists, while imported historical Plan validation remains open."
+    details: "Monthly Plan exists and the October export matches all 1,326 historical Plan rows; milestone scope and release validation remain open."
     evidence:
+      - path: "docs/status.md"
+        ref: "7d80939c400efc8f788567dfe7b55109f52e9276"
+        note: "Records exact historical Plan comparison without asserting release completion."
       - path: "docs/product-scope.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Defines the v0.2 validation goal."

@@ -10,12 +10,12 @@ progress:
   percent: null
   basis: "unknown"
   rationale: "No explicit scoped human assessment of overall completion is documented."
-next_action: "Compare the two remaining card-payment Activity months with the owner's YNAB breakdown, then validate report values."
-updated_at: "2026-10-04T11:00:39Z"
+next_action: "Validate report values against owner reference data and resolve any differences."
+updated_at: "2026-10-04T18:03:28Z"
 source:
   branch: "main"
-  commit: "37f5178ba88aac2717dbf9f971b62a07d7bfee28"
-  verified_at: "2026-10-04T11:00:39Z"
+  commit: "7d80939c400efc8f788567dfe7b55109f52e9276"
+  verified_at: "2026-10-04T18:03:28Z"
 summary:
   completed:
     - "Ledger, register, reconciliation, YNAB transaction staging/materialization, monthly Plan, targets, schedules, reports, forecasting, and verified local backup slices are implemented."
@@ -24,15 +24,17 @@ summary:
     - "The matching Net Worth TSV confirmed all 34 account balances exactly for the 2026-10-04 export."
     - "The owner confirmed both credit payment mappings; imported Ready to Assign entries retain their category while Plan routes the cash activity into its separate balance."
     - "The as-of Plan cutoff resolves all six October 2026 differences against the owner's export."
-    - "Card purchases now fund payment categories in date order and account for spending covered by a positive card balance."
+    - "Card purchases fund payment categories in date order after cash and positive-card-balance spending receive category money."
+    - "The mapped as-of comparison matches all 1,326 Assigned, Activity, and Available Plan rows across 51 months; all 34 reference account balances also match."
   in_progress:
-    - "Historical Plan value discrepancies, broader schedule/target coverage, restore, installer packaging, and report validation remain open."
-    - "The mapped as-of comparison matched 1,324 of 1,326 Activity and 1,308 of 1,326 Available rows; the 18 remaining differences belong to one historical card-payment category."
+    - "Broader schedule/target coverage, restore, installer packaging, and independent report value validation remain open."
   blockers: []
   open_questions:
-    - "What explains the October 2024 and November 2025 card-payment Activity totals in YNAB? The export has totals but no breakdown."
     - "How closely do report values match the owner's reference data? No independent report comparison is documented."
 evidence:
+  - path: "docs/status.md"
+    ref: "7d80939c400efc8f788567dfe7b55109f52e9276"
+    note: "Records the exact 1,326-row Plan comparison, 34 reference balance matches, and the remaining report validation gate."
   - path: "docs/status.md"
     ref: "37f5178ba88aac2717dbf9f971b62a07d7bfee28"
     note: "Records date-ordered card funding, positive-balance handling, and the narrowed two-month Activity mismatch."
