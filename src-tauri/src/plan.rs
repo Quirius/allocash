@@ -103,7 +103,15 @@ struct CategoryMonthActivity {
     assignment: i128,
     cash_net: i128,
     credit_net: BTreeMap<String, i128>,
+    credit_spending: Vec<CreditSpend>,
+    positive_balance_spending: BTreeMap<String, i128>,
     normal_activity: i128,
+}
+
+struct CreditSpend {
+    account_id: String,
+    amount: i128,
+    positive_balance_portion: i128,
 }
 
 #[derive(Default)]
@@ -437,6 +445,7 @@ fn derive_plan(
         .query_map([], |row| row.get(0))?
         .collect::<Result<_, _>>()?;
     let mut months = BTreeMap::<String, MonthActivity>::new();
+    let mut credit_balances = BTreeMap::<String, i128>::new();
     let mut assignment_total = 0i128;
     let mut assignments = connection.prepare(
         "SELECT month,category_id,amount_huf FROM category_month_assignments WHERE month<=?1",
@@ -463,8 +472,9 @@ fn derive_plan(
         "SELECT t.category_id,t.amount_huf,t.transaction_date,a.kind,t.account_id,t.transfer_id,
                 (SELECT other_account.kind FROM ledger_entries other JOIN accounts other_account ON other_account.id=other.account_id WHERE other.transfer_id=t.transfer_id AND other.account_id<>t.account_id)
          FROM ledger_entries t JOIN accounts a ON a.id=t.account_id
+         LEFT JOIN import_rows source ON source.id=t.import_row_id
          WHERE t.posting_state='posted' AND t.transaction_date<?1 AND (?2 IS NULL OR t.transaction_date<=?2) AND a.kind IN ('cash','credit')
-         ORDER BY t.transaction_date,t.id",
+         ORDER BY t.transaction_date,source.source_file,source.row_number,t.id",
     )?;
     let mut rows = entries.query(params![
         target.next_start(),
@@ -478,6 +488,18 @@ fn derive_plan(
         let account_id: String = row.get(4)?;
         let transfer_id: Option<String> = row.get(5)?;
         let counterpart_kind: Option<String> = row.get(6)?;
+        let positive_balance_portion = if kind == "credit" {
+            let balance = credit_balances.entry(account_id.clone()).or_default();
+            let covered = if amount < 0 {
+                (-amount).min((*balance).max(0))
+            } else {
+                0
+            };
+            *balance = checked_add(*balance, amount)?;
+            covered
+        } else {
+            0
+        };
         let month = &date[..7];
         let month_activity = months.entry(month.to_owned()).or_default();
         if transfer_id.is_some() {
@@ -507,6 +529,18 @@ fn derive_plan(
             if kind == "cash" {
                 category.cash_net = checked_add(category.cash_net, amount)?;
             } else {
+                if amount < 0 {
+                    category.credit_spending.push(CreditSpend {
+                        account_id: account_id.clone(),
+                        amount: -amount,
+                        positive_balance_portion,
+                    });
+                    let covered = category
+                        .positive_balance_spending
+                        .entry(account_id.clone())
+                        .or_default();
+                    *covered = checked_add(*covered, positive_balance_portion)?;
+                }
                 let credit = category.credit_net.entry(account_id).or_default();
                 *credit = checked_add(*credit, amount)?;
             }
@@ -567,6 +601,7 @@ fn derive_plan(
             let mut total_credit_spend = 0i128;
             let mut credit_overspending = 0i128;
             if let Some(entry) = entry {
+                let mut eligible_remaining = BTreeMap::<String, i128>::new();
                 for account_id in &credit_accounts {
                     let net = *entry.credit_net.get(account_id).unwrap_or(&0);
                     if net > 0 {
@@ -581,11 +616,25 @@ fn derive_plan(
                     }
                     let spend = -net;
                     total_credit_spend = checked_add(total_credit_spend, spend)?;
-                    let funded = credit_capacity.min(spend);
+                    let covered = *entry
+                        .positive_balance_spending
+                        .get(account_id)
+                        .unwrap_or(&0);
+                    eligible_remaining
+                        .insert(account_id.clone(), checked_sub(spend, covered)?.max(0));
+                }
+                for purchase in &entry.credit_spending {
+                    let Some(remaining) = eligible_remaining.get_mut(&purchase.account_id) else {
+                        continue;
+                    };
+                    let eligible = checked_sub(purchase.amount, purchase.positive_balance_portion)?
+                        .min(*remaining);
+                    *remaining = checked_sub(*remaining, eligible)?;
+                    let funded = credit_capacity.min(eligible);
                     credit_capacity = checked_sub(credit_capacity, funded)?;
                     credit_overspending =
-                        checked_add(credit_overspending, checked_sub(spend, funded)?)?;
-                    if let Some(payment_category) = payment_categories.get(account_id) {
+                        checked_add(credit_overspending, checked_sub(eligible, funded)?)?;
+                    if let Some(payment_category) = payment_categories.get(&purchase.account_id) {
                         let delta = payment_deltas.entry(payment_category.clone()).or_default();
                         *delta = checked_add(*delta, funded)?;
                     }
@@ -1012,6 +1061,94 @@ mod tests {
         assert!(database
             .set_credit_payment_category("cash", Some("payment"))
             .is_err());
+    }
+
+    #[test]
+    fn card_balance_and_purchase_date_control_shared_category_funding() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        for (id, order) in [("first", 0), ("second", 1)] {
+            database
+                .create_account(&Account {
+                    id: id.into(),
+                    name: id.into(),
+                    kind: AccountKind::Credit,
+                    sort_order: order,
+                    closed: false,
+                })
+                .unwrap();
+        }
+        database
+            .create_category_group("spend", "Spending", 0)
+            .unwrap();
+        database
+            .create_category("food", "spend", "Food", 0)
+            .unwrap();
+        database
+            .create_category_group("payments", "Payments", 1)
+            .unwrap();
+        for (account, category, order) in [
+            ("first", "first_payment", 0),
+            ("second", "second_payment", 1),
+        ] {
+            database
+                .create_category(category, "payments", category, order)
+                .unwrap();
+            database
+                .set_credit_payment_category(account, Some(category))
+                .unwrap();
+        }
+        let month = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &month, Huf(60))
+            .unwrap();
+        database
+            .create_transaction(
+                &Entry::manual(
+                    "positive_balance",
+                    "first",
+                    CalendarDate::parse("2026-09-01").unwrap(),
+                ),
+                Huf(40),
+            )
+            .unwrap();
+        let mut second_purchase = Entry::manual(
+            "second_purchase",
+            "second",
+            CalendarDate::parse("2026-09-02").unwrap(),
+        );
+        second_purchase.category_id = Some("food".into());
+        database
+            .create_transaction(&second_purchase, Huf(-50))
+            .unwrap();
+        let mut first_purchase = Entry::manual(
+            "first_purchase",
+            "first",
+            CalendarDate::parse("2026-09-03").unwrap(),
+        );
+        first_purchase.category_id = Some("food".into());
+        database
+            .create_transaction(&first_purchase, Huf(-60))
+            .unwrap();
+
+        let plan = database.plan_month(&month).unwrap();
+        let activity = |id| {
+            plan.categories
+                .iter()
+                .find(|category| category.category_id == id)
+                .unwrap()
+                .activity
+        };
+        assert_eq!(activity("food"), Huf(-110));
+        assert_eq!(activity("second_payment"), Huf(50));
+        assert_eq!(activity("first_payment"), Huf(10));
+        assert_eq!(
+            database
+                .plan_month(&PlanMonth::parse("2026-10").unwrap())
+                .unwrap()
+                .ready_to_assign,
+            Huf(-100)
+        );
     }
 
     #[test]

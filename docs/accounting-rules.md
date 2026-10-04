@@ -88,8 +88,10 @@ categories.
 
 Within a category/month, cash spending has first claim on the category's
 available money. Remaining funded money moves to the mapped card-payment
-category for card spending, allocated in the account presentation order. Card
-refunds reverse that movement. A posted cash-to-credit transfer reduces the
+category for card purchases in date order. Purchases covered by a positive card
+balance do not fund a payment category; that portion behaves like cash spending
+when classifying overspending. Card refunds reverse the payment movement. A
+posted cash-to-credit transfer reduces the
 mapped payment category without changing Ready to Assign. Scheduled rows and
 transfers wholly within or outside the budget do not affect Plan activity.
 

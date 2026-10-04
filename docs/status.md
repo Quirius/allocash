@@ -45,11 +45,14 @@ identified 5 cash, 2 credit, 2 loan and 25 tracking accounts; 15 tracking accoun
 are closed. A disposable run using those types and two uniquely named credit
 payment category candidates matched all 1,326 `Assigned` values. The owner
 confirmed both card-payment mappings. Comparing Plan through the export's
-2026-10-04 as-of date excludes future-dated ledger entries and matches 1,309
-`Activity` and 1,270 `Available` values. All six current-month differences
-disappeared; the remaining 56 differing rows are in the two card-payment
-categories, starting in 2023-12 and 2024-08 respectively. They are retained in
-a private local diagnostic file.
+2026-10-04 as-of date excludes future-dated ledger entries. Card-payment
+funding now follows purchase dates and accounts for spending covered by a
+positive card balance. The mapped disposable comparison matches 1,324
+`Activity` and 1,308 `Available` values. Both card mappings and the current
+Plan month match; the remaining 18 differing rows are in one card-payment
+category. Only October 2024 and November 2025 differ in Activity, while the
+Available differences carry forward from those months. The detail stays in a
+private local diagnostic file.
 Imported Ready to Assign rows now retain their category in the register while
 Plan routes their cash activity to its separate Ready to Assign balance; the
 34-account and Assigned comparisons stayed unchanged after this correction.
