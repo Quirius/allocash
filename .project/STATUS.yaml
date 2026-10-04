@@ -4,13 +4,21 @@ name: "Allocash"
 repository: "Quirius/allocash"
 status: "In Progress"
 description: "Offline Windows desktop budgeting app for one local HUF budget."
-objective: "Reach a migration-ready local budgeting workflow that preserves YNAB history and reproduces balances, Plan values, and reports."
-phase: "Implementation and validation before release"
+objective: "Reach a migration-ready local budgeting workflow by 2026-10-21, before the owner's vacation, while preserving YNAB history and reproducing balances, Plan values, and migration-critical reports."
+phase: "Deadline focus: YNAB migration readiness by 2026-10-21"
+priority:
+  level: "highest"
+  rank: 1
+  rationale: "Owner-designated priority project until migration readiness is achieved; other projects should yield when they compete for development time."
+deadline:
+  target_date: "2026-10-21"
+  hard_stop_date: "2026-10-30"
+  buffer_policy: "2026-10-22 through 2026-10-30 is contingency-only; use it only for critical issues that block safe migration."
 progress:
   percent: null
   basis: "unknown"
   rationale: "No explicit scoped human assessment of overall completion is documented."
-next_action: "Validate Spending by Payee, remaining report filters, and forecast values against owner references."
+next_action: "Close migration-critical daily workflow gaps first, then complete restore/recovery, installer packaging, and a full migration rehearsal on the path to the 2026-10-21 release candidate."
 updated_at: "2026-10-04T19:51:34Z"
 source:
   branch: "main"
@@ -29,10 +37,11 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
-    - "Spending by Payee, other report filters, forecast values, broader schedule/target coverage, restore, and installer packaging remain unvalidated or unfinished."
+    - "Deadline plan is now focused on migration-critical workflow gaps, restore/recovery, installer packaging, and a full migration rehearsal before 2026-10-21."
+    - "Spending by Payee, other report filters, forecast values, and broader schedule/target coverage remain secondary unless they block the owner's real migration workflow."
   blockers: []
   open_questions:
-    - "How closely do Spending by Payee, other report filters, and forecast values match owner references?"
+    - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
   - path: "docs/status.md"
     ref: "7868acb046a922e8a9399b87f4d66af19bb6331c"
