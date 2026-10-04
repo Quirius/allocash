@@ -138,8 +138,12 @@ are rejected. Reopening an up-to-date database does not repeat the migration or
 backup. A local backup helps recover from mistakes or corruption, but it remains on
 the same disk: copy it to another private drive or storage location for disk-loss
 protection. Deleting a register entry or canceling a schedule first creates a
-verified safety snapshot; if that snapshot fails, Allocash makes no change. Restore
-and automatic retention are still future work.
+verified safety snapshot; if that snapshot fails, Allocash makes no change. When
+the budget opens normally, the desktop app can restore a selected file from its
+local `backups/` folder. It validates the selected copy and saves the current
+budget before replacing it. Keep an external copy of an important backup;
+startup recovery from an unreadable live database and automatic retention are
+still future work.
 
 ## Git convention
 

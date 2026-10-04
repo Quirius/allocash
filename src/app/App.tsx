@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   createNativeBackup,
+  listNativeBackups,
   loadAccountRegister,
   loadWorkspace,
+  restoreNativeBackup,
   type AccountKind,
   type AccountOverview,
   type RegisterEntry,
@@ -86,6 +88,11 @@ export function App() {
   const [backup, setBackup] = useState<
     { status: "idle" } | { status: "saving" } | { status: "ready"; path: string } | { status: "error" }
   >({ status: "idle" });
+  const [backups, setBackups] = useState<string[]>([]);
+  const [selectedBackup, setSelectedBackup] = useState("");
+  const [restore, setRestore] = useState<
+    { status: "idle" } | { status: "restoring" } | { status: "ready"; safetyPath: string } | { status: "error"; message: string }
+  >({ status: "idle" });
 
   useEffect(() => {
     let active = true;
@@ -134,6 +141,15 @@ export function App() {
     };
   }, [selectedAccountId, registerAttempt, startup.status]);
 
+  useEffect(() => {
+    if (startup.status === "ready") {
+      listNativeBackups().then((names) => {
+        setBackups(names);
+        setSelectedBackup((current) => names.includes(current) ? current : "");
+      }).catch(() => setRestore({ status: "error", message: "Could not list local backups." }));
+    }
+  }, [startup.status, startupAttempt]);
+
   const accounts = startup.status === "ready" ? startup.workspace.accounts : [];
   const selectedAccount = useMemo(
     () => accounts.find((account) => account.id === selectedAccountId) ?? null,
@@ -154,6 +170,27 @@ export function App() {
       setBackup({ status: "ready", path: receipt.path });
     } catch {
       setBackup({ status: "error" });
+    }
+  }
+
+  async function refreshBackups() {
+    const names = await listNativeBackups();
+    setBackups(names);
+    setSelectedBackup((current) => names.includes(current) ? current : "");
+  }
+
+  async function restoreSelectedBackup() {
+    if (!selectedBackup || restore.status === "restoring") return;
+    if (!window.confirm(`Restore ${selectedBackup}? This replaces the current budget. Allocash will save a verified safety backup first.`)) return;
+    setRestore({ status: "restoring" });
+    try {
+      const receipt = await restoreNativeBackup(selectedBackup);
+      setRestore({ status: "ready", safetyPath: receipt.safetyBackupPath });
+      setView("register");
+      setSelectedAccountId(null);
+      setStartupAttempt((value) => value + 1);
+    } catch (error) {
+      setRestore({ status: "error", message: String(error) });
     }
   }
 
@@ -250,12 +287,26 @@ export function App() {
               <p className="database-path">{startup.workspace.budget.databasePath}</p>
             </details>}
             {startup.status === "ready" && <div className="backup-controls">
-              <button onClick={saveNativeBackup} disabled={backup.status === "saving"}>
+              <button onClick={saveNativeBackup} disabled={backup.status === "saving" || restore.status === "restoring"}>
                 {backup.status === "saving" ? "Creating verified backup…" : "Create verified backup"}
               </button>
               <p>A full local SQLite copy is saved beside your budget. Copy it to another drive or private storage to protect against disk loss.</p>
               {backup.status === "ready" && <p className="backup-success" role="status">Verified backup created: <span>{backup.path}</span></p>}
               {backup.status === "error" && <p className="backup-error" role="alert">The backup could not be created. Your live budget was not changed.</p>}
+              <div className="restore-controls">
+                <p>Restore replaces the current budget after saving a safety copy. Only backups in the local backups folder appear here.</p>
+                <button onClick={() => refreshBackups().catch(() => setRestore({ status: "error", message: "Could not list local backups." }))} disabled={restore.status === "restoring"}>Find local backups</button>
+                {backups.length > 0 && <>
+                  <label htmlFor="restore-backup">Backup to restore</label>
+                  <select id="restore-backup" value={selectedBackup} onChange={(event) => setSelectedBackup(event.target.value)} disabled={restore.status === "restoring"}>
+                    <option value="">Choose a backup</option>
+                    {backups.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                  <button onClick={restoreSelectedBackup} disabled={!selectedBackup || restore.status === "restoring"}>{restore.status === "restoring" ? "Restoring…" : "Restore selected backup"}</button>
+                </>}
+                {restore.status === "ready" && <p className="backup-success" role="status">Budget restored. The previous budget was saved at <span>{restore.safetyPath}</span></p>}
+                {restore.status === "error" && <p className="backup-error" role="alert">{restore.message}</p>}
+              </div>
             </div>}
           </section>
         </div>

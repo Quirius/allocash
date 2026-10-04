@@ -33,8 +33,12 @@ the database. A failed backup prevents an upgrade; a failed migration rolls back
 while retaining the verified backup. Backups are intentionally never deleted or
 overwritten. They protect against local mistakes or corruption, not disk loss, so
 the owner should copy an important backup elsewhere. Initialization refuses populated
-unversioned databases and unsupported versions. Restore is deliberately separate:
-it needs connection handoff, a pre-restore snapshot, validation and recovery UX.
+unversioned databases and unsupported versions. An open budget can restore a
+selected local backup through SQLite's online restore API. Restore validates the
+candidate's integrity, foreign keys, schema version and HUF budget identity,
+creates a verified snapshot of the current budget, then verifies the restored
+database. On failure it attempts to recover from the snapshot. A database that
+cannot be opened at startup still needs a separate recovery route.
 The desktop command layer also creates a required safety snapshot immediately before
 register deletion (including both transfer legs) and schedule deactivation, which
 removes a pending occurrence. It validates the action before snapshotting to avoid

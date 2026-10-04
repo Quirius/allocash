@@ -1,4 +1,4 @@
-use crate::database::{BudgetInfo, Database, NativeBackupReceipt};
+use crate::database::{BudgetInfo, Database, NativeBackupReceipt, NativeRestoreReceipt};
 use crate::ledger::{
     AccountOverview, BalanceOverTimeInput, BalanceOverTimeReport, CalendarDate, ForecastInput,
     ForecastReport, IncomeBreakdownInput, IncomeBreakdownReport, IncomeExpenseReport,
@@ -91,6 +91,31 @@ fn create_native_backup(
         database
             .create_native_backup()
             .map_err(|_| "Could not create a verified local backup.".to_owned())
+    })
+}
+
+#[tauri::command]
+fn list_native_backups(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+) -> Result<Vec<String>, String> {
+    with_database(&app, &state, |database| {
+        database
+            .list_native_backups()
+            .map_err(|_| "Could not list local backups.".to_owned())
+    })
+}
+
+#[tauri::command]
+fn restore_native_backup(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    name: String,
+) -> Result<NativeRestoreReceipt, String> {
+    with_database(&app, &state, |database| {
+        database
+            .restore_native_backup(&name)
+            .map_err(|error| error.to_string())
     })
 }
 
@@ -518,6 +543,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_budget_info,
             create_native_backup,
+            list_native_backups,
+            restore_native_backup,
             get_workspace,
             get_account_register,
             get_scheduled_occurrences,

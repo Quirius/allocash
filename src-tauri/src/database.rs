@@ -33,6 +33,12 @@ pub struct NativeBackupReceipt {
     pub schema_version: i64,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeRestoreReceipt {
+    pub safety_backup_path: String,
+}
+
 impl Database {
     pub fn open(path: &Path) -> DatabaseResult<Self> {
         let mut connection = Connection::open(path)?;
@@ -69,6 +75,105 @@ impl Database {
 
     pub fn create_safety_backup(&self) -> DatabaseResult<NativeBackupReceipt> {
         self.create_backup("safety")
+    }
+
+    pub fn list_native_backups(&self) -> DatabaseResult<Vec<String>> {
+        let directory = self.backup_directory()?;
+        if !directory.exists() {
+            return Ok(Vec::new());
+        }
+        let mut names = Vec::new();
+        for entry in std::fs::read_dir(directory)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name.starts_with("allocash-") && name.ends_with(".sqlite3") {
+                    names.push(name);
+                }
+            }
+        }
+        names.sort();
+        Ok(names)
+    }
+
+    pub fn restore_native_backup(&mut self, name: &str) -> DatabaseResult<NativeRestoreReceipt> {
+        // Names, rather than paths supplied by the webview, confine restore to
+        // the application's own backups folder and exclude symlinks.
+        if !name.starts_with("allocash-")
+            || !name.ends_with(".sqlite3")
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte))
+        {
+            return Err("Invalid backup name.".into());
+        }
+        let candidate = self.backup_directory()?.join(name);
+        if !std::fs::symlink_metadata(&candidate)?.file_type().is_file() {
+            return Err("The selected backup is not a regular file.".into());
+        }
+        Self::verify_restore_candidate(&candidate)?;
+        let safety = self.create_backup("before-restore")?;
+        let result =
+            self.connection
+                .restore("main", &candidate, None::<fn(rusqlite::backup::Progress)>);
+        if result.is_ok() && Self::verify_connection(&self.connection).is_ok() {
+            return Ok(NativeRestoreReceipt {
+                safety_backup_path: safety.path,
+            });
+        }
+        // SQLite's backup API rolls back an incomplete restore. Still restore
+        // our verified snapshot explicitly before allowing another operation.
+        if self
+            .connection
+            .restore("main", &safety.path, None::<fn(rusqlite::backup::Progress)>)
+            .is_err()
+            || Self::verify_connection(&self.connection).is_err()
+        {
+            return Err(format!(
+                "Restore failed and automatic recovery could not be verified. The safety backup remains at {}. Stop using this budget until it is recovered.",
+                safety.path
+            ).into());
+        }
+        Err("Restore failed; the original budget was recovered from its safety backup.".into())
+    }
+
+    fn backup_directory(&self) -> DatabaseResult<PathBuf> {
+        Ok(self
+            .path
+            .parent()
+            .ok_or("Database has no parent directory.")?
+            .join("backups"))
+    }
+
+    fn verify_restore_candidate(path: &Path) -> DatabaseResult<()> {
+        let connection =
+            Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        Self::verify_connection(&connection)
+    }
+
+    fn verify_connection(connection: &Connection) -> DatabaseResult<()> {
+        let integrity: String = connection.query_row("PRAGMA quick_check", [], |row| row.get(0))?;
+        let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if integrity != "ok" || version != SCHEMA_VERSION {
+            return Err("The backup has invalid data or an unsupported schema version.".into());
+        }
+        if connection
+            .prepare("PRAGMA foreign_key_check")?
+            .query([])?
+            .next()?
+            .is_some()
+        {
+            return Err("The backup failed foreign key validation.".into());
+        }
+        let (count, currency): (i64, String) = connection.query_row(
+            "SELECT COUNT(*), COALESCE(MAX(currency), '') FROM budget_settings WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if count != 1 || currency != "HUF" {
+            return Err("The backup is not an Allocash HUF budget.".into());
+        }
+        Ok(())
     }
 
     fn create_backup(&self, purpose: &str) -> DatabaseResult<NativeBackupReceipt> {
@@ -355,5 +460,69 @@ mod tests {
             1
         );
         assert!(database.scheduled_occurrences().unwrap().is_empty());
+    }
+
+    #[test]
+    fn restores_a_verified_backup_and_preserves_the_replaced_budget() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("budget.sqlite3");
+        let mut database = Database::open(&path).unwrap();
+        database
+            .connection
+            .pragma_update(None, "journal_mode", "WAL")
+            .unwrap();
+        database
+            .connection
+            .execute("UPDATE budget_settings SET name = 'Saved state'", [])
+            .unwrap();
+        let saved = database.create_native_backup().unwrap();
+        database
+            .connection
+            .execute("UPDATE budget_settings SET name = 'Current state'", [])
+            .unwrap();
+        let name = Path::new(&saved.path)
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap();
+
+        let receipt = database.restore_native_backup(name).unwrap();
+        assert_eq!(database.info().unwrap().name, "Saved state");
+        let safety = Connection::open(&receipt.safety_backup_path).unwrap();
+        assert_eq!(
+            safety
+                .query_row::<String, _, _>("SELECT name FROM budget_settings", [], |row| row.get(0))
+                .unwrap(),
+            "Current state"
+        );
+        drop(database);
+        assert_eq!(
+            Database::open(&path).unwrap().info().unwrap().name,
+            "Saved state"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_restore_sources_without_touching_the_budget() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("budget.sqlite3");
+        let mut database = Database::open(&path).unwrap();
+        database
+            .connection
+            .execute("UPDATE budget_settings SET name = 'Keep me'", [])
+            .unwrap();
+        let backups = directory.path().join("backups");
+        std::fs::create_dir_all(&backups).unwrap();
+        std::fs::write(backups.join("allocash-invalid.sqlite3"), b"not sqlite").unwrap();
+        assert!(database
+            .restore_native_backup("allocash-invalid.sqlite3")
+            .is_err());
+        assert!(database.restore_native_backup("../budget.sqlite3").is_err());
+        assert_eq!(database.info().unwrap().name, "Keep me");
+        assert_eq!(
+            database.list_native_backups().unwrap(),
+            vec!["allocash-invalid.sqlite3"]
+        );
+        assert_eq!(std::fs::read_dir(backups).unwrap().count(), 1);
     }
 }

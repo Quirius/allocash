@@ -18,6 +18,8 @@ or owner-data validation run.
   time and net-worth reports, plus deterministic historical-month forecasting.
 - Verified standalone SQLite backups before migrations, on demand, and before
   register deletion or schedule deactivation.
+- Local native backup restore for an open budget, with source validation, a
+  verified pre-restore safety copy, and post-restore validation/recovery.
 
 On 2026-10-04, register editing gained account, date, payee, category, flag and
 ordinary inflow/outflow direction corrections without replacing transaction
@@ -26,6 +28,14 @@ confirmation, transfer dates remain per-leg, and category/date corrections feed
 financial views. The correction path passed 94 Rust core tests, 58 frontend tests,
 and the frontend build. This is automated validation, not an owner workflow
 rehearsal or a new native desktop build.
+
+On 2026-10-04, local backup restore was added for a budget that opens normally.
+The selected backup is validated before use, a verified copy of the current
+budget is saved, and the restored database is checked before the app refreshes
+its workspace. A failed restore attempts to recover the prior budget from that
+copy. The restore tests cover a WAL-backed round trip and invalid sources; the
+96 Rust tests and frontend build passed. Recovery when the live database cannot
+open at startup and a full owner workflow rehearsal remain separate gates.
 
 See [accounting-rules.md](accounting-rules.md) for implemented semantics and
 [architecture.md](architecture.md) for storage/import boundaries. These slices do
@@ -90,9 +100,9 @@ has proceeded, so older instructions to start that work only after v0.1 are
 sequencing intent, not an accurate description of today's implementation. No
 release tag existed at this review; tag only after owner-data validation.
 
-Full target frequencies, recurring transfers, backup restore/retention, remaining
-report value validation and installer packaging remain outside the implemented
-slices documented here. Consult topic requirements before choosing next work;
+Full target frequencies, recurring transfers, startup recovery, automatic backup
+retention, remaining report value validation and installer packaging remain outside
+the implemented slices documented here. Consult topic requirements before choosing next work;
 do not treat this list as an exhaustive backlog.
 
 Update this file with dated evidence when a gate changes. Keep test counts and

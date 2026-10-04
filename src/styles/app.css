@@ -68,6 +68,11 @@ details { border-top: 1px solid #323d49; padding-top: 16px; margin-top: 20px; fo
 .backup-controls .backup-success { color: #a9e4bf; }
 .backup-success span { display: block; overflow-wrap: anywhere; margin-top: 3px; color: #b9c7d2; font-family: Consolas, monospace; }
 .backup-controls .backup-error { color: #f0b8b0; }
+.restore-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; border-top: 1px solid #323d49; margin-top: 16px; padding-top: 16px; }
+.restore-controls > p { flex-basis: 100%; margin: 0; color: #9baab4; font-size: 11px; line-height: 1.55; }
+.restore-controls label { color: #c2ced8; font-size: 11px; }
+.restore-controls select { max-width: 280px; min-width: 160px; background: #202c37; border: 1px solid #4b6070; border-radius: 5px; color: #e4ecf2; padding: 7px; }
+.restore-controls .backup-success, .restore-controls .backup-error { flex-basis: 100%; }
 .register { min-width: 0; }
 .workspace-tabs { display: flex; gap: 5px; margin-bottom: 16px; }
 .workspace-tabs button { background: transparent; color: #9ba8b4; border-color: #3a4652; }
