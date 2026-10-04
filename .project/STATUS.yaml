@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Rehearse the owner's daily budgeting and backup/recovery workflow on a disposable desktop budget, then verify installer packaging and the full migration before the 2026-10-21 release candidate."
-updated_at: "2026-10-04T20:50:00Z"
+next_action: "Generate a candidate from a current owner export and rehearse daily budgeting plus backup/recovery in the isolated desktop profile, then verify installer packaging and the final migration before 2026-10-21."
+updated_at: "2026-10-04T21:05:51Z"
 source:
   branch: "main"
-  commit: "e7c17374a6b6ffab33daabeae32149e76370bae9"
-  verified_at: "2026-10-04T20:51:40Z"
+  commit: "c872f44c20a63db5c68d5138e18b2f07adcfda4c"
+  verified_at: "2026-10-04T21:05:51Z"
 summary:
   completed:
+    - "The YNAB verifier can produce a non-overwriting native rehearsal candidate after explicit mappings and matching references. An anonymized end-to-end import produced a candidate; a mismatched reference produced none. The isolated Windows rehearsal build launched under its own data folder without creating the normal app folder."
     - "Startup recovery can install a verified local backup while preserving an unreadable database and WAL sidecars; healthy databases are refused. Disposable corruption and schema tests passed within 99 desktop Rust tests, alongside 58 frontend tests and the frontend build."
     - "An open budget can restore a validated local backup after saving a verified copy of its current state; a WAL-backed round trip and invalid-source tests passed within 96 Rust tests, alongside 58 frontend tests and the frontend build."
     - "Register corrections cover account, date, payee, category, flag, and ordinary transaction direction while preserving identity and requiring confirmation for reconciled changes; 94 Rust core tests, 58 frontend tests, and the frontend build passed."
@@ -34,11 +35,15 @@ summary:
   in_progress:
     - "The complete owner daily budgeting workflow still needs rehearsal."
     - "The backup/recovery desktop workflow, installer packaging, and a full migration rehearsal still need verification before 2026-10-21."
+    - "The one-time desktop import handoff currently uses the verifier and a manual candidate copy into the rehearsal backup folder; no in-app YNAB import flow has been rehearsed."
     - "Spending by Payee, other report filters, forecast values, and broader schedule/target coverage remain secondary unless they block the owner's real migration workflow."
   blockers: []
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "c872f44c20a63db5c68d5138e18b2f07adcfda4c"
+    note: "Records the checked rehearsal candidate output, isolated Windows desktop build and launch, and unchanged 76/100 migration-readiness assessment."
   - path: "docs/status.md"
     ref: "e7c17374a6b6ffab33daabeae32149e76370bae9"
     note: "Records startup recovery, preservation of unreadable SQLite files, passing tests, and the desktop rehearsal limit."

@@ -187,7 +187,7 @@ plans:
     priority: "high"
     due_date: "2026-10-19"
     completed_at: null
-    details: "Perform a clean rehearsal from a fresh YNAB export into a disposable or new Allocash budget, verify balances, recent Plan state, migration-critical reports, and native backup/restore behavior, then record every blocking discrepancy."
+    details: "A checked candidate output and isolated desktop identity now provide a safe handoff from the verifier to a rehearsal budget. Perform the clean rehearsal from a fresh YNAB export, verify balances, recent Plan state, migration-critical reports, and native backup/restore behavior in the desktop app, then record every blocking discrepancy. No owner-data desktop rehearsal is complete yet."
     acceptance_criteria:
       - "A fresh export imports without unresolved migration-blocking errors."
       - "Current account balances and recent Plan values match the verified source."
@@ -196,7 +196,10 @@ plans:
     blocked_by:
       - "allocash-plan-003"
       - "allocash-plan-007"
-    evidence: []
+    evidence:
+      - path: "docs/status.md"
+        ref: "c872f44c20a63db5c68d5138e18b2f07adcfda4c"
+        note: "Records the checked candidate handoff and isolated build; owner-data rehearsal and UI workflow checks remain open."
   - id: "allocash-plan-009"
     title: "Use post-vacation week only as emergency contingency"
     state: "planned"
