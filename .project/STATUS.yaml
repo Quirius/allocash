@@ -10,27 +10,30 @@ progress:
   percent: null
   basis: "unknown"
   rationale: "No explicit scoped human assessment of overall completion is documented."
-next_action: "Investigate the remaining credit-payment and current-month Plan differences, confirm the two payment-category mappings, and compare report values."
-updated_at: "2026-10-04T10:14:45Z"
+next_action: "Investigate the remaining credit-payment and current-month Plan differences, then compare report values."
+updated_at: "2026-10-04T10:28:46Z"
 source:
   branch: "main"
-  commit: "45fc8606a57b83df66b2be16d04afd7b1a8a4827"
-  verified_at: "2026-10-04T10:14:45Z"
+  commit: "2bb31400fb6eb74257a4f712dfc8d8a2fee9522a"
+  verified_at: "2026-10-04T10:28:46Z"
 summary:
   completed:
     - "Ledger, register, reconciliation, YNAB transaction staging/materialization, monthly Plan, targets, schedules, reports, forecasting, and verified local backup slices are implemented."
     - "A native Windows desktop build and the documented check sequence passed on 2026-09-23."
     - "Historical YNAB Assigned values can be imported atomically; all 1,326 assignments in the 2026-10-04 export materialized in a disposable database."
     - "The matching Net Worth TSV confirmed all 34 account balances exactly for the 2026-10-04 export."
+    - "The owner confirmed both credit payment mappings; imported Ready to Assign entries retain their category while Plan routes the cash activity into its separate balance."
   in_progress:
     - "Historical Plan value discrepancies, broader schedule/target coverage, restore, installer packaging, and report validation remain open."
     - "A mapped disposable run matched 1,303 of 1,326 Activity and 1,264 of 1,326 Available rows; two card payment categories account for most differences."
   blockers: []
   open_questions:
     - "What causes the remaining card payment and current-month Plan differences?"
-    - "Do the two uniquely named credit payment categories match the owner's intended card mappings?"
     - "How closely do report values match the owner's reference data? No independent report comparison is documented."
 evidence:
+  - path: "docs/status.md"
+    ref: "2bb31400fb6eb74257a4f712dfc8d8a2fee9522a"
+    note: "Records owner-confirmed card mappings, Ready to Assign import behavior, and unchanged private-data comparison counts."
   - path: "docs/status.md"
     ref: "45fc8606a57b83df66b2be16d04afd7b1a8a4827"
     note: "Records the exact 34-account reference match, mapped Plan comparison limits, and Capital Gains source behavior without private values."

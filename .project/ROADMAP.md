@@ -4,17 +4,20 @@ project_id: "allocash"
 plans:
   - id: "allocash-plan-001"
     title: "Materialize historical Plan data from YNAB imports"
-    state: "planned"
+    state: "completed"
     window: "Backlog"
     priority: "medium"
     due_date: null
-    completed_at: null
-    details: "Historical Assigned values now materialize from staged Budget rows without overwriting edits. Activity and Available remain staged until explicit account and credit-payment mappings support comparison."
+    completed_at: "2026-10-04T10:28:46Z"
+    details: "Historical Assigned values materialize from staged Budget rows without overwriting edits. Owner-confirmed account and credit-payment mappings support comparison of staged Activity and Available values; remaining discrepancies belong to validation."
     acceptance_criteria:
       - "Historical assignments are imported and source Activity/Available values remain available for comparison without discarding source data."
       - "Imported Plan values can be compared with owner reference months."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "2bb31400fb6eb74257a4f712dfc8d8a2fee9522a"
+        note: "Records 1,326 imported assignments and mapped comparison results, with the payment mappings confirmed by the owner."
       - path: "docs/status.md"
         ref: "45fc8606a57b83df66b2be16d04afd7b1a8a4827"
         note: "Mapped Plan comparison is implemented; credit payment and current-month differences remain."
@@ -76,8 +79,7 @@ plans:
     acceptance_criteria:
       - "Representative recent Plan months match verified reference values or discrepancies are resolved."
       - "Required historical report values match verified reference values or discrepancies are resolved."
-    blocked_by:
-      - "allocash-plan-001"
+    blocked_by: []
     evidence:
       - path: "docs/status.md"
         ref: "45fc8606a57b83df66b2be16d04afd7b1a8a4827"
