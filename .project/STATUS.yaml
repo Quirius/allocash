@@ -10,25 +10,30 @@ progress:
   percent: null
   basis: "unknown"
   rationale: "No explicit scoped human assessment of overall completion is documented."
-next_action: "Map account kinds and credit payments explicitly, then compare derived Plan Activity and Available with the staged YNAB values."
-updated_at: "2026-10-04T09:42:24Z"
+next_action: "Investigate the remaining credit-payment and current-month Plan differences, confirm the two payment-category mappings, and compare report values."
+updated_at: "2026-10-04T10:14:45Z"
 source:
   branch: "main"
-  commit: "3902144436aadfad38a458340d725e51fdd59cb1"
-  verified_at: "2026-10-04T09:42:24Z"
+  commit: "45fc8606a57b83df66b2be16d04afd7b1a8a4827"
+  verified_at: "2026-10-04T10:14:45Z"
 summary:
   completed:
     - "Ledger, register, reconciliation, YNAB transaction staging/materialization, monthly Plan, targets, schedules, reports, forecasting, and verified local backup slices are implemented."
     - "A native Windows desktop build and the documented check sequence passed on 2026-09-23."
     - "Historical YNAB Assigned values can be imported atomically; all 1,326 assignments in the 2026-10-04 export materialized in a disposable database."
+    - "The matching Net Worth TSV confirmed all 34 account balances exactly for the 2026-10-04 export."
   in_progress:
-    - "Historical Plan Activity/Available comparison, broader schedule/target coverage, restore, installer packaging, and migration validation remain open."
-    - "The 2026-10-04 owner export staged and materialized in a disposable database; exact balances and Plan/report values await independent comparison."
+    - "Historical Plan value discrepancies, broader schedule/target coverage, restore, installer packaging, and report validation remain open."
+    - "A mapped disposable run matched 1,303 of 1,326 Activity and 1,264 of 1,326 Available rows; two card payment categories account for most differences."
   blockers: []
   open_questions:
-    - "How closely do current Plan and report values match the owner's reference data? No such validation result is documented."
-    - "Will a matching 2026-10 Net Worth TSV confirm all 34 imported account balances?"
+    - "What causes the remaining card payment and current-month Plan differences?"
+    - "Do the two uniquely named credit payment categories match the owner's intended card mappings?"
+    - "How closely do report values match the owner's reference data? No independent report comparison is documented."
 evidence:
+  - path: "docs/status.md"
+    ref: "45fc8606a57b83df66b2be16d04afd7b1a8a4827"
+    note: "Records the exact 34-account reference match, mapped Plan comparison limits, and Capital Gains source behavior without private values."
   - path: "docs/status.md"
     ref: "3902144436aadfad38a458340d725e51fdd59cb1"
     note: "Records all 1,326 historical Assigned values materialized in a disposable run and the remaining Plan comparison limits."

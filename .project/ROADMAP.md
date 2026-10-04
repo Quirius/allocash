@@ -16,6 +16,9 @@ plans:
     blocked_by: []
     evidence:
       - path: "docs/status.md"
+        ref: "45fc8606a57b83df66b2be16d04afd7b1a8a4827"
+        note: "Mapped Plan comparison is implemented; credit payment and current-month differences remain."
+      - path: "docs/status.md"
         ref: "3902144436aadfad38a458340d725e51fdd59cb1"
         note: "All 1,326 Assigned values from the new export materialized in a disposable database; Activity/Available validation remains open."
       - path: "docs/architecture.md"
@@ -69,7 +72,7 @@ plans:
     priority: "medium"
     due_date: null
     completed_at: null
-    details: "A historical account-balance comparison exists; it does not establish Plan or report correctness. Validation needs reference values without publishing private data."
+    details: "The October 2026 export matches all 34 Net Worth reference balances. Assigned matches fully, while Activity and Available have documented differences; report values still need independent comparison without publishing private data."
     acceptance_criteria:
       - "Representative recent Plan months match verified reference values or discrepancies are resolved."
       - "Required historical report values match verified reference values or discrepancies are resolved."
@@ -77,8 +80,11 @@ plans:
       - "allocash-plan-001"
     evidence:
       - path: "docs/status.md"
+        ref: "45fc8606a57b83df66b2be16d04afd7b1a8a4827"
+        note: "Records exact account balances and quantified Plan differences while report validation remains open."
+      - path: "docs/status.md"
         ref: "7db87e1bcd62a68111ad94049ec10dd6954506fc"
-        note: "Limits the new owner-export result to disposable import validation; exact balances and Plan/report values remain unverified."
+        note: "Earlier disposable import check before independent reference data was available."
       - path: "docs/product-scope.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Lists Plan and report verification in final migration."
@@ -98,6 +104,9 @@ plans:
       - "allocash-plan-003"
       - "allocash-plan-004"
     evidence:
+      - path: "docs/status.md"
+        ref: "45fc8606a57b83df66b2be16d04afd7b1a8a4827"
+        note: "The October export's balances match, while Plan discrepancies and report, restore, and installer gates remain."
       - path: "docs/status.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Desktop build passed, but installer and release gates remain."
