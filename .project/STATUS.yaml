@@ -10,14 +10,15 @@ progress:
   percent: null
   basis: "unknown"
   rationale: "No explicit scoped human assessment of overall completion is documented."
-next_action: "Close migration-critical daily workflow gaps first, then complete restore/recovery, installer packaging, and a full migration rehearsal on the path to the 2026-10-21 release candidate."
-updated_at: "2026-10-04T20:31:56Z"
+next_action: "Rehearse the owner's daily workflow and complete startup recovery for unreadable budgets, then verify installer packaging and the full migration before the 2026-10-21 release candidate."
+updated_at: "2026-10-04T20:41:18Z"
 source:
   branch: "main"
-  commit: "60c4bce819244818e6619fb7f74cf6e47312d4d3"
-  verified_at: "2026-10-04T20:31:56Z"
+  commit: "4fbf5971cb79a73b8a09b66fff80d6a198f932db"
+  verified_at: "2026-10-04T20:40:40Z"
 summary:
   completed:
+    - "An open budget can restore a validated local backup after saving a verified copy of its current state; a WAL-backed round trip and invalid-source tests passed within 96 Rust tests, alongside 58 frontend tests and the frontend build."
     - "Register corrections cover account, date, payee, category, flag, and ordinary transaction direction while preserving identity and requiring confirmation for reconciled changes; 94 Rust core tests, 58 frontend tests, and the frontend build passed."
     - "Ledger, register, reconciliation, YNAB transaction staging/materialization, monthly Plan, targets, schedules, reports, forecasting, and verified local backup slices are implemented."
     - "A native Windows desktop build and the documented check sequence passed on 2026-09-23."
@@ -31,12 +32,15 @@ summary:
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
     - "The complete owner daily budgeting workflow still needs rehearsal."
-    - "Deadline plan is now focused on migration-critical workflow gaps, restore/recovery, installer packaging, and a full migration rehearsal before 2026-10-21."
+    - "Restore from an unreadable live database at startup remains open; installer packaging and a full migration rehearsal are still needed before 2026-10-21."
     - "Spending by Payee, other report filters, forecast values, and broader schedule/target coverage remain secondary unless they block the owner's real migration workflow."
   blockers: []
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "4fbf5971cb79a73b8a09b66fff80d6a198f932db"
+    note: "Records validated local backup restore, the WAL-backed round trip, passing checks, and the startup-recovery limit."
   - path: "docs/status.md"
     ref: "60c4bce819244818e6619fb7f74cf6e47312d4d3"
     note: "Records account and direction corrections, safe reconciled editing, and passing automated checks."
