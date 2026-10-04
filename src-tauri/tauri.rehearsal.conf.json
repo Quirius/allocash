@@ -1,0 +1,17 @@
+{
+  "productName": "Allocash Rehearsal",
+  "identifier": "com.quirius.allocash.rehearsal",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Allocash Rehearsal",
+        "width": 1180,
+        "height": 800,
+        "minWidth": 760,
+        "minHeight": 600,
+        "backgroundColor": "#151b22"
+      }
+    ]
+  }
+}

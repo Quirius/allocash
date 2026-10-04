@@ -102,10 +102,30 @@ averages, and the related report totals without printing private amounts:
 cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --example verify_ynab_export -- "path/to/export.zip" "path/to/net-worth.tsv" yyyy-mm-dd "private-data/mappings.json" "private-data/plan-differences.json" "path/to/income-expense.tsv"
 ```
 
+To create a native candidate for a desktop migration rehearsal, append
+`--candidate` and a new `.sqlite3` path to the command above. This requires
+explicit account and card-payment mappings, an exact Net Worth reference, an
+exact staged Plan comparison, and no unknown categories, unknown flags or
+unmaterialized ordinary rows. Supplied report references must also match. The
+candidate is written only after those checks pass and never replaces an existing
+file. Ambiguous transfer rows remain staged and still need review.
+
+```powershell
+cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --example verify_ynab_export -- "path/to/export.zip" "path/to/net-worth.tsv" yyyy-mm-dd "private-data/mappings.json" "private-data/plan-differences.json" "path/to/income-expense.tsv" --candidate "private-data/allocash-rehearsal-v8.sqlite3"
+```
+
+Run `npm run rehearse:desktop` to open a desktop build with the distinct
+`com.quirius.allocash.rehearsal` identity. Its budget is under
+`%LOCALAPPDATA%\com.quirius.allocash.rehearsal\`, separate from the normal
+Allocash budget. Copy the candidate into that app's `backups/` folder, select
+**Find local backups**, then restore it. Keep its `allocash-*.sqlite3` name so
+it appears in the selector. Use the rehearsal budget for workflow
+checks; this candidate is not a final migration approval.
+
 Rust checks require a Rust toolchain; the desktop build also requires the Windows
-build prerequisites. Installer
-packaging is deferred; this step builds a desktop executable only. Frontend
-integration follows [Tauri's Vite guide](https://v2.tauri.app/start/frontend/vite/).
+build prerequisites. Installer packaging is deferred; this step builds a desktop
+executable only. Frontend integration follows
+[Tauri's Vite guide](https://v2.tauri.app/start/frontend/vite/).
 
 The database/ledger tests can run without Tauri or a webview using `npm run test:core`.
 The default Cargo `desktop` feature still builds the normal Tauri app. A portable

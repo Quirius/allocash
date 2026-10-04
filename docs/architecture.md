@@ -133,6 +133,13 @@ the exact account-name/value sets. The `verify_ynab_export` example runs staging
 all materialization passes and this comparison in a disposable database while
 reporting counts only. The 2026-09-14 owner reference matched 34 of 34 accounts;
 four zero-value transfer rows remain staged without affecting balances.
+With `--candidate`, the verifier can write a non-overwriting native SQLite
+rehearsal candidate after explicit mappings, matching balance/Plan references,
+no unknown categories or flags, no unmaterialized ordinary rows, and matching
+supplied report references. The candidate is copied from a verified backup of
+the disposable import database; the normal app database is never opened by the
+verifier. Tauri's rehearsal configuration uses a separate application identifier
+and local data directory for desktop workflow checks.
 
 ## Core API
 

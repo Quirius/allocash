@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:core": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib",
+    "rehearse:desktop": "tauri dev --config src-tauri/tauri.rehearsal.conf.json",
     "tauri": "tauri"
   },
   "dependencies": {

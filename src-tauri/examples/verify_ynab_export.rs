@@ -11,7 +11,14 @@ use allocash_lib::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use std::{collections::HashSet, env, error::Error, ffi::OsString, fs, io, path::PathBuf};
+use std::{
+    collections::HashSet,
+    env,
+    error::Error,
+    ffi::OsString,
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 type AnyError = Box<dyn Error + Send + Sync>;
 
@@ -491,8 +498,53 @@ fn required_argument(
     })
 }
 
+fn write_rehearsal_candidate(database: &Database, destination: &Path) -> Result<(), AnyError> {
+    if destination.extension().and_then(|value| value.to_str()) != Some("sqlite3") {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "The candidate must have a .sqlite3 extension.",
+        )
+        .into());
+    }
+    let parent = destination
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let saved = database.create_native_backup()?;
+    let mut pending = tempfile::Builder::new()
+        .prefix(".allocash-rehearsal-")
+        .suffix(".partial")
+        .tempfile_in(parent)?;
+    let mut source = fs::File::open(saved.path)?;
+    io::copy(&mut source, pending.as_file_mut())?;
+    pending.as_file().sync_all()?;
+    // The saved copy is verified at creation; reopen the delivered bytes too.
+    let copy = Database::open(pending.path())?;
+    drop(copy);
+    pending.persist_noclobber(destination)?;
+    Ok(())
+}
+
 fn main() -> Result<(), AnyError> {
-    let mut arguments = env::args_os().skip(1);
+    let mut inputs = env::args_os().skip(1).collect::<Vec<_>>();
+    let candidate_path = if let Some(index) = inputs
+        .iter()
+        .position(|item| item.to_str() == Some("--candidate"))
+    {
+        if index + 2 != inputs.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Use --candidate as the final option followed by a .sqlite3 path.",
+            )
+            .into());
+        }
+        let destination = PathBuf::from(inputs.pop().unwrap());
+        inputs.pop();
+        Some(destination)
+    } else {
+        None
+    };
+    let mut arguments = inputs.into_iter();
     let export_path = PathBuf::from(required_argument(&mut arguments, "YNAB export ZIP")?);
     let second = required_argument(&mut arguments, "as-of date or YNAB Net Worth TSV reference")?;
     let third = arguments.next();
@@ -520,6 +572,13 @@ fn main() -> Result<(), AnyError> {
         .transpose()?
         .map(|bytes| serde_json::from_slice(&bytes))
         .transpose()?;
+    if candidate_path.is_some() && (owner_mappings.is_none() || reference_bytes.is_none()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "A rehearsal candidate requires explicit account mappings and a Net Worth reference.",
+        )
+        .into());
+    }
     let source_name = export_path
         .file_name()
         .and_then(|name| name.to_str())
@@ -682,5 +741,48 @@ fn main() -> Result<(), AnyError> {
     if !reports_exact {
         return Err(io::Error::other("Imported reports do not match the YNAB references.").into());
     }
+    if let Some(path) = candidate_path {
+        if plan_comparison
+            .as_ref()
+            .is_none_or(|value| !value.differences.is_empty())
+            || validation.unmaterialized_ordinary_row_count != 0
+            || !validation.unknown_category_names.is_empty()
+            || !validation.unknown_flag_names.is_empty()
+        {
+            return Err(io::Error::other("The import has unresolved Plan or ordinary-row validation differences; no rehearsal candidate was written.").into());
+        }
+        write_rehearsal_candidate(&database, &path)?;
+        println!("{{\"rehearsalCandidateCreated\":true}}");
+    }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn writes_a_restorable_candidate_without_replacing_an_existing_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("source.sqlite3")).unwrap();
+        let destination = directory.path().join("rehearsal.sqlite3");
+        write_rehearsal_candidate(&database, &destination).unwrap();
+        assert_eq!(
+            Database::open(&destination)
+                .unwrap()
+                .info()
+                .unwrap()
+                .currency,
+            "HUF"
+        );
+        assert!(write_rehearsal_candidate(&database, &destination).is_err());
+        assert_eq!(
+            Database::open(&destination)
+                .unwrap()
+                .info()
+                .unwrap()
+                .currency,
+            "HUF"
+        );
+    }
 }

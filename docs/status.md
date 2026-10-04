@@ -47,6 +47,17 @@ file preservation and invalid inputs; 99 desktop Rust tests, 58 frontend
 tests and frontend build passed. The backup and recovery UI still needs a
 desktop workflow rehearsal before the migration gate closes.
 
+On 2026-10-04, the YNAB verifier gained an explicit native rehearsal-candidate
+output. It requires owner account mappings and exact Net Worth/Plan comparisons,
+rejects unresolved ordinary rows and unknown categories/flags, checks supplied
+reports, and never overwrites a candidate path. An anonymized end-to-end fixture
+produced a restorable SQLite candidate; a mismatched Net Worth reference wrote
+none. The candidate writer test passed. A Windows rehearsal build with the
+distinct `com.quirius.allocash.rehearsal` identifier launched and created its
+own data folder without creating the normal app folder. This establishes a safe
+handoff for desktop checks, not a completed owner workflow or clean migration
+rehearsal. The 76/100 owner migration-readiness estimate is unchanged.
+
 See [accounting-rules.md](accounting-rules.md) for implemented semantics and
 [architecture.md](architecture.md) for storage/import boundaries. These slices do
 not establish completion of every feature in the product requirements.
