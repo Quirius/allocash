@@ -5,15 +5,7 @@ repository: "Quirius/allocash"
 status: "In Progress"
 description: "Offline Windows desktop budgeting app for one local HUF budget."
 objective: "Reach a migration-ready local budgeting workflow by 2026-10-21, before the owner's vacation, while preserving YNAB history and reproducing balances, Plan values, and migration-critical reports."
-phase: "Deadline focus: YNAB migration readiness by 2026-10-21"
-priority:
-  level: "highest"
-  rank: 1
-  rationale: "Owner-designated priority project until migration readiness is achieved; other projects should yield when they compete for development time."
-deadline:
-  target_date: "2026-10-21"
-  hard_stop_date: "2026-10-30"
-  buffer_policy: "2026-10-22 through 2026-10-30 is contingency-only; use it only for critical issues that block safe migration."
+phase: "Priority #1 — migration readiness by 2026-10-21"
 progress:
   percent: null
   basis: "unknown"
