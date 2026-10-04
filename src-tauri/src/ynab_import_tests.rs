@@ -177,12 +177,31 @@ fn imported_ready_income_and_tracking_transfers_flow_into_plan() {
         .unwrap();
     assert_eq!(groceries.activity, Huf(-200));
     assert_eq!(groceries.available, Huf(-200));
-    let ready = plan
+    assert!(!plan
         .categories
         .iter()
-        .find(|category| category.category_name == "Ready to Assign")
+        .any(|category| category.group_name == "Inflow"
+            && category.category_name == "Ready to Assign"));
+    let categorized_ready_rows: i64 = database
+        .connection
+        .query_row(
+            "SELECT COUNT(*) FROM ledger_entries t JOIN categories c ON c.id=t.category_id JOIN category_groups g ON g.id=c.group_id WHERE g.name='Inflow' AND c.name='Ready to Assign'",
+            [],
+            |row| row.get(0),
+        )
         .unwrap();
-    assert_eq!(ready.activity, Huf(0));
+    assert_eq!(categorized_ready_rows, 2);
+    database
+        .set_monthly_assignment(
+            &groceries.category_id,
+            &PlanMonth::parse("2026-09").unwrap(),
+            Huf(100),
+        )
+        .unwrap();
+    let assigned_plan = database
+        .plan_month(&PlanMonth::parse("2026-09").unwrap())
+        .unwrap();
+    assert_eq!(assigned_plan.ready_to_assign, Huf(1400));
 }
 
 #[test]

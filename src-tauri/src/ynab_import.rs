@@ -748,15 +748,13 @@ impl Database {
             };
             let group = get("category group");
             let category = get("category");
-            let category_id =
-                (!group.is_empty() && !category.is_empty() && !is_ready_to_assign(group, category))
-                    .then(|| {
-                        import_id(
-                            &summary.batch_id,
-                            "category",
-                            &format!("{group}:{category}"),
-                        )
-                    });
+            let category_id = (!group.is_empty() && !category.is_empty()).then(|| {
+                import_id(
+                    &summary.batch_id,
+                    "category",
+                    &format!("{group}:{category}"),
+                )
+            });
             let payee_id =
                 (!payee.is_empty()).then(|| import_id(&summary.batch_id, "payee", payee));
             let flag_id = source_flag_color(get("flag")).map(|color| format!("flag-{color}"));
@@ -1615,10 +1613,6 @@ fn is_transfer_like(payee: &str, combined_category: &str) -> bool {
     transfer_target(payee).is_some() || category == "category not needed"
 }
 
-fn is_ready_to_assign(group: &str, category: &str) -> bool {
-    group.eq_ignore_ascii_case("Inflow") && category.eq_ignore_ascii_case("Ready to Assign")
-}
-
 fn transfer_target(payee: &str) -> Option<&str> {
     let (prefix, target) = payee.split_once(':')?;
     let prefix = prefix.trim().to_ascii_lowercase();
@@ -1827,16 +1821,14 @@ fn insert_import_transfer_leg(
     direction: &str,
 ) -> ImportResult<()> {
     let flag_id = source_flag_color(&candidate.flag).map(|color| format!("flag-{color}"));
-    let category_id = (!candidate.category_group.is_empty()
-        && !candidate.category.is_empty()
-        && !is_ready_to_assign(&candidate.category_group, &candidate.category))
-    .then(|| {
-        import_id(
-            &summary.batch_id,
-            "category",
-            &format!("{}:{}", candidate.category_group, candidate.category),
-        )
-    });
+    let category_id = (!candidate.category_group.is_empty() && !candidate.category.is_empty())
+        .then(|| {
+            import_id(
+                &summary.batch_id,
+                "category",
+                &format!("{}:{}", candidate.category_group, candidate.category),
+            )
+        });
     transaction.execute(
         "INSERT INTO transactions (id,account_id,transaction_date,payee_id,category_id,memo,flag_id,cleared_state,posting_state,origin,import_row_id,transfer_id,transfer_direction) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,'posted','import',?9,?10,?11)",
         params![id, import_id(&summary.batch_id, "account", &candidate.account), candidate.date.as_str(), import_id(&summary.batch_id, "payee", &candidate.payee), category_id, candidate.memo, flag_id, candidate.cleared, candidate.row_id, transfer_id, direction],

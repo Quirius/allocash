@@ -297,16 +297,21 @@ impl Database {
 
     pub fn plan_month(&self, month: &PlanMonth) -> LedgerResult<PlanSnapshot> {
         let derivation = derive_plan(&self.connection, month)?;
+        let ready_category_ids = ready_to_assign_category_ids(&self.connection)?;
         let target_definitions = target_definitions_for(&self.connection, month)?;
         let target_snoozes = target_snoozes_for(&self.connection, month)?;
         let mut categories = Vec::new();
         let mut category_query = self.connection.prepare("SELECT g.id,g.name,c.id,c.name FROM category_groups g JOIN categories c ON c.group_id=g.id WHERE g.hidden=0 AND c.hidden=0 ORDER BY g.sort_order,c.sort_order,c.id")?;
         let mut rows = category_query.query([])?;
         while let Some(row) = rows.next()? {
+            let category_id: String = row.get(2)?;
+            if ready_category_ids.contains(&category_id) {
+                continue;
+            }
             categories.push((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
+                category_id,
                 row.get::<_, String>(3)?,
             ));
         }
@@ -361,6 +366,15 @@ impl Database {
     }
 }
 
+fn ready_to_assign_category_ids(
+    connection: &rusqlite::Connection,
+) -> LedgerResult<BTreeSet<String>> {
+    Ok(connection
+        .prepare("SELECT c.id FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE lower(trim(g.name))='inflow' AND lower(trim(c.name))='ready to assign'")?
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?)
+}
+
 /// Replays the budget one calendar month at a time. A closed month carries only
 /// positive category money forward; cash overspending reduces Ready to Assign
 /// in the following month, while credit overspending remains card debt.
@@ -368,6 +382,7 @@ fn derive_plan(
     connection: &rusqlite::Connection,
     target: &PlanMonth,
 ) -> LedgerResult<PlanDerivation> {
+    let ready_category_ids = ready_to_assign_category_ids(connection)?;
     let payment_categories: BTreeMap<String, String> = connection
         .prepare("SELECT account_id,category_id FROM credit_payment_categories")?
         .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
@@ -431,7 +446,14 @@ fn derive_plan(
                 continue;
             }
         }
-        if let Some(category_id) = category_id {
+        if category_id
+            .as_ref()
+            .is_some_and(|id| ready_category_ids.contains(id))
+        {
+            if kind == "cash" {
+                month_activity.ready_income = checked_add(month_activity.ready_income, amount)?;
+            }
+        } else if let Some(category_id) = category_id {
             let category = month_activity.categories.entry(category_id).or_default();
             category.normal_activity = checked_add(category.normal_activity, amount)?;
             if kind == "cash" {

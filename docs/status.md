@@ -47,8 +47,12 @@ payment category candidates matched all 1,326 `Assigned`, 1,303 `Activity`, and
 1,264 `Available` source values. The 62 rows with Plan differences are retained
 in a private local diagnostic file; 58 Available differences and 19 Activity
 differences concern the two credit payment categories, while four other rows
-differ in the current month. The Capital Gains tracking route now appears as one
-Income Breakdown source when it crosses into an on-budget account. No independent
+differ in the current month. The owner confirmed both card-payment mappings.
+Imported Ready to Assign rows now retain their category in the register while
+Plan routes their cash activity to its separate Ready to Assign balance; the
+34-account and 1,326-row comparisons stayed unchanged after this correction.
+The Capital Gains tracking route now appears as one Income Breakdown source
+when it crosses into an on-budget account. No independent
 report-value comparison has been completed. These runs used temporary databases
 and did not modify the owner's live budget.
 
