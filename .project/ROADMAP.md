@@ -57,13 +57,16 @@ plans:
     priority: "high"
     due_date: "2026-10-16"
     completed_at: null
-    details: "An open budget can now restore a validated local backup after saving a verified pre-restore copy, with a tested WAL-backed round trip. Startup recovery when the live database is unreadable and a desktop restore check on a disposable budget remain before this plan can close; automatic retention polish may move after migration if safe recovery is maintained."
+    details: "An open budget can restore a validated local backup after saving a verified pre-restore copy. Startup recovery can preserve unreadable SQLite files and install a verified replacement. Both paths have disposable core tests; a desktop restore/recovery workflow check on disposable data remains before this plan can close. Automatic retention polish may move after migration if safe recovery is maintained."
     acceptance_criteria:
       - "A backup can be restored with validation and a recoverable failure path."
       - "Restore is tested against a disposable copy before the migration rehearsal."
       - "No pre-migration retention work is required beyond what is necessary to avoid deleting the only known-good copy."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "e7c17374a6b6ffab33daabeae32149e76370bae9"
+        note: "Records the startup recovery path, preserved damaged files, tests, and remaining desktop rehearsal."
       - path: "docs/status.md"
         ref: "4fbf5971cb79a73b8a09b66fff80d6a198f932db"
         note: "Records the working local restore path, safety copy and validation, tests, and remaining startup-recovery gate."
