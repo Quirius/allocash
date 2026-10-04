@@ -70,8 +70,14 @@ cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 npm run tauri build -- --no-bundle
 ```
 
-To validate a private YNAB export against a matching Net Worth TSV without
-retaining a test database or printing account names and balances:
+To stage and validate a private YNAB export without retaining a test database or
+printing account names and balances:
+
+```powershell
+cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --example verify_ynab_export -- "path/to/export.zip" yyyy-mm-dd
+```
+
+For an independent exact balance check, provide a matching Net Worth TSV:
 
 ```powershell
 cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --example verify_ynab_export -- "path/to/export.zip" "path/to/net-worth.tsv" yyyy-mm-dd

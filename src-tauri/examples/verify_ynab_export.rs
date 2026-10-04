@@ -24,11 +24,13 @@ fn required_argument(
 fn main() -> Result<(), AnyError> {
     let mut arguments = env::args_os().skip(1);
     let export_path = PathBuf::from(required_argument(&mut arguments, "YNAB export ZIP")?);
-    let reference_path = PathBuf::from(required_argument(
-        &mut arguments,
-        "YNAB Net Worth TSV reference",
-    )?);
-    let as_of_text = required_argument(&mut arguments, "as-of date (yyyy-mm-dd)")?
+    let second = required_argument(&mut arguments, "as-of date or YNAB Net Worth TSV reference")?;
+    let third = arguments.next();
+    let (reference_path, as_of_argument) = match third {
+        Some(date) => (Some(PathBuf::from(second)), date),
+        None => (None, second),
+    };
+    let as_of_text = as_of_argument
         .into_string()
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "The as-of date is not UTF-8."))?;
     if arguments.next().is_some() {
@@ -37,7 +39,7 @@ fn main() -> Result<(), AnyError> {
 
     let as_of = CalendarDate::parse(&as_of_text)?;
     let export_bytes = fs::read(&export_path)?;
-    let reference_bytes = fs::read(&reference_path)?;
+    let reference_bytes = reference_path.as_ref().map(fs::read).transpose()?;
     let source_name = export_path
         .file_name()
         .and_then(|name| name.to_str())
@@ -65,8 +67,10 @@ fn main() -> Result<(), AnyError> {
     let ordinary = database.materialize_ordinary_transactions(&staged)?;
     let transfers = database.materialize_transfers(&staged)?;
     let validation = database.validate_materialized_import(&staged, &as_of)?;
-    let comparison =
-        compare_ynab_net_worth(&validation.account_balances, &reference_bytes, &as_of)?;
+    let comparison = reference_bytes
+        .as_ref()
+        .map(|bytes| compare_ynab_net_worth(&validation.account_balances, bytes, &as_of))
+        .transpose()?;
 
     let result = json!({
         "asOfDate": validation.as_of_date,
@@ -84,17 +88,20 @@ fn main() -> Result<(), AnyError> {
         "unknownCategoryCount": validation.unknown_category_names.len(),
         "unknownFlagCount": validation.unknown_flag_names.len(),
         "validationWarningCount": validation.warnings.len(),
-        "referenceMonth": comparison.reference_month,
-        "referenceAccountCount": comparison.reference_account_count,
-        "exactReferenceBalanceMatches": comparison.exact_match_count,
-        "referenceBalanceDifferenceCount": comparison.differences.len(),
-        "missingReferenceAccountCount": comparison.missing_reference_accounts.len(),
-        "unexpectedReferenceAccountCount": comparison.unexpected_reference_accounts.len(),
-        "referenceBalancesExact": comparison.is_exact_match(),
+        "referenceMonth": comparison.as_ref().map(|value| &value.reference_month),
+        "referenceAccountCount": comparison.as_ref().map(|value| value.reference_account_count),
+        "exactReferenceBalanceMatches": comparison.as_ref().map(|value| value.exact_match_count),
+        "referenceBalanceDifferenceCount": comparison.as_ref().map(|value| value.differences.len()),
+        "missingReferenceAccountCount": comparison.as_ref().map(|value| value.missing_reference_accounts.len()),
+        "unexpectedReferenceAccountCount": comparison.as_ref().map(|value| value.unexpected_reference_accounts.len()),
+        "referenceBalancesExact": comparison.as_ref().map(|value| value.is_exact_match()),
     });
     println!("{}", serde_json::to_string_pretty(&result)?);
 
-    if !comparison.is_exact_match() {
+    if comparison
+        .as_ref()
+        .is_some_and(|value| !value.is_exact_match())
+    {
         return Err(io::Error::other("Imported balances do not match the YNAB reference.").into());
     }
     Ok(())

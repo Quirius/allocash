@@ -29,6 +29,17 @@ The existing project record reports that the 2026-09-14 owner export matched all
 preserved in staging without affecting balances. This is historical evidence,
 not a claim that a new export or all Plan/report values have been validated.
 
+On 2026-10-04, the owner's new YNAB ZIP was staged and materialized in a disposable
+database as of 2026-10-04. It contained 34 accounts, 27 categories, and 6,341
+register rows. The importer materialized 5,053 ordinary rows and 642 transfer
+pairs (1,284 rows), with no unmaterialized ordinary rows, unknown categories, or
+unknown flags. Four zero-value transfer-like rows remain staged; 43 repeated row
+signatures were flagged for review, not removed. The ZIP also contains 1,326
+historical Plan rows across 51 months (2022-08 through 2026-10), which the app
+does not yet materialize. No matching Net Worth TSV was supplied, so exact
+account-balance comparison and Plan/report value validation remain open. This
+run used a temporary database and did not modify the owner's live budget.
+
 The native Windows MSVC desktop-build gate was verified on 2026-09-23. On a
 Windows 11 machine with Node.js 24.19.0, Rust 1.98.1 (`stable-x86_64-pc-windows-msvc`)
 and Visual Studio Build Tools 2022 (C++ x64 tools), the full check sequence passed:
