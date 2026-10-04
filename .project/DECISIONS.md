@@ -65,6 +65,16 @@ decisions:
     resolution: "Before 2026-10-21, prioritize only workflow gaps that block real use, restore/recovery, installer packaging, migration rehearsal, final data checks, and critical fixes. Defer non-blocking report completeness, forecasting polish, broader target/recurrence coverage, and other feature expansion until after migration."
     decided_at: null
     evidence: []
+  - id: "allocash-decision-007"
+    title: "Track migration readiness with a weighted manual percentage"
+    context: "The owner wants a single dashboard percentage that reflects how close Allocash is to safely replacing YNAB, without confusing general feature completeness with migration readiness."
+    state: "resolved"
+    resolution: "Use a 100-point migration-readiness score: accounting and YNAB import correctness 30; Plan and credit-card correctness 20; historical reports and data integrity 10; daily budgeting workflow usability 15; backup and tested restore 10; Windows installer/release 5; full clean migration rehearsal 10. Update STATUS.yaml progress.percent only when evidence materially changes one of these gates. The initial score recorded on 2026-10-04 is 76/100."
+    decided_at: null
+    evidence:
+      - path: "docs/status.md"
+        ref: "e7c17374a6b6ffab33daabeae32149e76370bae9"
+        note: "Current implementation evidence for import, Plan, reports, register workflow, backup/restore, and remaining desktop rehearsal/release gates."
 ---
 
 # Decision context
