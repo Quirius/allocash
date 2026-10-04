@@ -75,12 +75,15 @@ plans:
     priority: "medium"
     due_date: null
     completed_at: null
-    details: "The October 2026 export matches all 34 Net Worth reference balances and all Assigned values. Its current Plan month matches after the as-of cutoff; 56 historical rows in two card-payment categories still differ, and report values need independent comparison without publishing private data."
+    details: "The October 2026 export matches all 34 Net Worth reference balances and all Assigned values. Its current Plan month matches; 18 historical rows in one card-payment category still differ, with Activity gaps in October 2024 and November 2025. Report values need independent comparison without publishing private data."
     acceptance_criteria:
       - "Representative recent Plan months match verified reference values or discrepancies are resolved."
       - "Required historical report values match verified reference values or discrepancies are resolved."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "37f5178ba88aac2717dbf9f971b62a07d7bfee28"
+        note: "Records 1,324 Activity and 1,308 Available matches after card funding corrections; two Activity months still differ."
       - path: "docs/status.md"
         ref: "dbf34207af49e55b23b221a53df50b3f273b8378"
         note: "Records the as-of Plan comparison and its remaining historical card-payment differences."
