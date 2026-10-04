@@ -8,8 +8,12 @@ provides context, not a second task list. Schema version 1 and stable IDs must b
 preserved when editing existing records; never reuse an ID.
 
 `STATUS.yaml` uses `schema_version`, `project_id`, `name`, `repository`, `status`,
-`description`, `objective`, `phase`, `progress`, `next_action`, `updated_at`,
-`source`, `summary`, and `evidence`. Status is `Active`, `Planning`, `In Progress`,
+`description`, `objective`, `phase`, optional `priority` and `deadline`, `progress`,
+`next_action`, `updated_at`, `source`, `summary`, and `evidence`. `priority.rank`
+is a cross-project sort hint where lower numbers mean higher owner priority;
+`priority.level` is a human-readable label. `deadline.target_date` is the preferred
+completion date, `hard_stop_date` is the external latest date when one exists, and
+`buffer_policy` describes whether intervening time is normal work or contingency. Status is `Active`, `Planning`, `In Progress`,
 `Review`, `Archived`, or null. `progress.percent` is null unless an explicit
 scoped human assessment exists, in which case it is a number from 0 to 100;
 `progress.basis` is `manual` or `unknown`, with scope in `rationale`.
