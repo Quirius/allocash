@@ -166,7 +166,10 @@ plans:
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
       - "Non-essential feature expansion is deferred until after migration."
     blocked_by: []
-    evidence: []
+    evidence:
+      - path: "docs/status.md"
+        ref: "40125486a7e360f5bcbb1553fd6504abdd949b9b"
+        note: "Register corrections are implemented and checked; the complete owner workflow still needs rehearsal."
   - id: "allocash-plan-008"
     title: "Run a full owner-data migration rehearsal"
     state: "planned"
