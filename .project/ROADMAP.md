@@ -168,6 +168,9 @@ plans:
     blocked_by: []
     evidence:
       - path: "docs/status.md"
+        ref: "60c4bce819244818e6619fb7f74cf6e47312d4d3"
+        note: "Ordinary transaction account and direction corrections are implemented; owner workflow rehearsal remains open."
+      - path: "docs/status.md"
         ref: "40125486a7e360f5bcbb1553fd6504abdd949b9b"
         note: "Register corrections are implemented and checked; the complete owner workflow still needs rehearsal."
   - id: "allocash-plan-008"

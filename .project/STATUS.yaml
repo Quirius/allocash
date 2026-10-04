@@ -11,14 +11,14 @@ progress:
   basis: "unknown"
   rationale: "No explicit scoped human assessment of overall completion is documented."
 next_action: "Close migration-critical daily workflow gaps first, then complete restore/recovery, installer packaging, and a full migration rehearsal on the path to the 2026-10-21 release candidate."
-updated_at: "2026-10-04T20:28:29Z"
+updated_at: "2026-10-04T20:31:56Z"
 source:
   branch: "main"
-  commit: "40125486a7e360f5bcbb1553fd6504abdd949b9b"
-  verified_at: "2026-10-04T20:28:29Z"
+  commit: "60c4bce819244818e6619fb7f74cf6e47312d4d3"
+  verified_at: "2026-10-04T20:31:56Z"
 summary:
   completed:
-    - "Register date, payee, category, and flag corrections preserve transaction identity and require confirmation for reconciled metadata changes; 94 Rust core tests, 58 frontend tests, and the frontend build passed."
+    - "Register corrections cover account, date, payee, category, flag, and ordinary transaction direction while preserving identity and requiring confirmation for reconciled changes; 94 Rust core tests, 58 frontend tests, and the frontend build passed."
     - "Ledger, register, reconciliation, YNAB transaction staging/materialization, monthly Plan, targets, schedules, reports, forecasting, and verified local backup slices are implemented."
     - "A native Windows desktop build and the documented check sequence passed on 2026-09-23."
     - "Historical YNAB Assigned values can be imported atomically; all 1,326 assignments in the 2026-10-04 export materialized in a disposable database."
@@ -37,6 +37,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "60c4bce819244818e6619fb7f74cf6e47312d4d3"
+    note: "Records account and direction corrections, safe reconciled editing, and passing automated checks."
   - path: "docs/status.md"
     ref: "40125486a7e360f5bcbb1553fd6504abdd949b9b"
     note: "Records register corrections, reconciliation safeguards, 94 Rust and 58 frontend passing tests, and the owner rehearsal limit."
