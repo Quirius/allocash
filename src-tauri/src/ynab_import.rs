@@ -1,9 +1,7 @@
 //! Lossless staging for YNAB ZIP exports.
 //!
-//! This module deliberately does not create ledger records. A YNAB export can
-//! contain ambiguous account types, transfers, scheduled instances, and Plan
-//! history; those need an explicit mapping step. Until then, the archive and
-//! every CSV or TSV record are retained for a later, auditable import.
+//! YNAB source files are staged losslessly before explicit account mapping and
+//! conservative ledger and Plan materialization. Ambiguous rows stay in staging.
 use crate::{
     database::Database,
     ledger::{AccountKind, CalendarDate, Huf, LedgerError},
@@ -137,6 +135,13 @@ pub struct TransactionMaterializationSummary {
 pub struct TransferMaterializationSummary {
     pub paired_transfer_count: usize,
     pub unresolved_row_count: usize,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanAssignmentMaterializationSummary {
+    pub assignment_count: usize,
+    pub month_count: usize,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -507,6 +512,112 @@ impl Database {
         }
         transaction.commit()?;
         Ok(())
+    }
+
+    /// Imports the source's monthly Assigned values without replacing any
+    /// existing Plan edits. Activity and Available remain in the raw rows for
+    /// comparison after account kinds and credit payments have been mapped.
+    pub fn materialize_historical_plan_assignments(
+        &mut self,
+        summary: &ImportValidationSummary,
+    ) -> ImportResult<PlanAssignmentMaterializationSummary> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let exists: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM import_batches WHERE id=?1)",
+            [&summary.batch_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(ImportError::InvalidValue(
+                "The staged import batch was not found.",
+            ));
+        }
+        let staged = load_staged_rows(&transaction, &summary.batch_id)?;
+        let mut headers: HashMap<String, Vec<String>> = HashMap::new();
+        let mut seen = HashSet::new();
+        let mut months = BTreeSet::new();
+        for (_row_id, source_file, row_number, raw_data) in staged {
+            let raw: RawCsvRow = serde_json::from_str(&raw_data)?;
+            if row_number == 1 {
+                headers.insert(
+                    source_file,
+                    raw.cells
+                        .iter()
+                        .map(|value| normalize_header(value))
+                        .collect(),
+                );
+                continue;
+            }
+            let header = headers.get(&source_file).ok_or(ImportError::InvalidValue(
+                "A staged source file has no header row.",
+            ))?;
+            if classify(header) != SourceFileKind::Budget {
+                continue;
+            }
+            let required = |name| {
+                field(header, name)
+                    .and_then(|index| raw.cells.get(index))
+                    .map(String::as_str)
+                    .ok_or(ImportError::InvalidValue(
+                        "A budget source column is missing.",
+                    ))
+            };
+            let month = parse_budget_month(required("month")?).ok_or(ImportError::InvalidValue(
+                "An imported Plan month is invalid.",
+            ))?;
+            let group = required("category group")?.trim();
+            let category = required("category")?.trim();
+            if group.is_empty() || category.is_empty() {
+                return Err(ImportError::InvalidValue(
+                    "An imported Plan category is missing.",
+                ));
+            }
+            let assigned = parse_huf(required("assigned")?)?;
+            parse_huf(required("activity")?)?;
+            parse_huf(required("available")?)?;
+            let category_id = import_id(
+                &summary.batch_id,
+                "category",
+                &format!("{group}:{category}"),
+            );
+            if !seen.insert((category_id.clone(), month.clone())) {
+                return Err(ImportError::InvalidValue(
+                    "The export repeats a Plan category and month.",
+                ));
+            }
+            let category_exists: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
+                [&category_id],
+                |row| row.get(0),
+            )?;
+            if !category_exists {
+                return Err(ImportError::InvalidValue(
+                    "An imported Plan category has not been materialized.",
+                ));
+            }
+            let assignment_exists: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM category_month_assignments WHERE category_id=?1 AND month=?2)",
+                params![category_id, month],
+                |row| row.get(0),
+            )?;
+            if assignment_exists {
+                return Err(ImportError::InvalidValue(
+                    "An existing Plan assignment would be overwritten.",
+                ));
+            }
+            transaction.execute(
+                "INSERT INTO category_month_assignments (category_id,month,amount_huf) VALUES (?1,?2,?3)",
+                params![category_id, month, assigned],
+            )?;
+            months.insert(month);
+        }
+        transaction.commit()?;
+        Ok(PlanAssignmentMaterializationSummary {
+            assignment_count: seen.len(),
+            month_count: months.len(),
+        })
     }
 
     /// Imports only ordinary register rows. Transfer-like rows remain staged so
@@ -1339,13 +1450,25 @@ fn classify(headers: &[String]) -> SourceFileKind {
         SourceFileKind::Register
     } else if (has("account") || has("name")) && has("type") {
         SourceFileKind::Accounts
-    } else if has("category") && has("category group") {
-        SourceFileKind::Categories
     } else if has("month") && has("category") {
         SourceFileKind::Budget
+    } else if has("category") && has("category group") {
+        SourceFileKind::Categories
     } else {
         SourceFileKind::Unknown
     }
+}
+
+fn parse_budget_month(value: &str) -> Option<String> {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let (name, year) = value.trim().split_once(' ')?;
+    if year.len() != 4 || !year.bytes().all(|byte| byte.is_ascii_digit()) || year == "0000" {
+        return None;
+    }
+    let month = MONTHS.iter().position(|month| *month == name)? + 1;
+    Some(format!("{year}-{month:02}"))
 }
 
 fn field(headers: &[String], expected: &str) -> Option<usize> {

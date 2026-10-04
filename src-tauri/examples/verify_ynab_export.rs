@@ -64,6 +64,7 @@ fn main() -> Result<(), AnyError> {
         .collect::<Vec<_>>();
     database.materialize_import_accounts(&staged.batch_id, &staged.account_names, &mappings)?;
     database.materialize_import_references(&staged)?;
+    let plan = database.materialize_historical_plan_assignments(&staged)?;
     let ordinary = database.materialize_ordinary_transactions(&staged)?;
     let transfers = database.materialize_transfers(&staged)?;
     let validation = database.validate_materialized_import(&staged, &as_of)?;
@@ -83,6 +84,8 @@ fn main() -> Result<(), AnyError> {
         "unmaterializedOrdinaryRowCount": validation.unmaterialized_ordinary_row_count,
         "accountCount": validation.account_count,
         "categoryCount": validation.category_count,
+        "historicalPlanAssignmentCount": plan.assignment_count,
+        "historicalPlanMonthCount": plan.month_count,
         "futureTransactionCount": validation.future_transaction_count,
         "duplicateTransactionCount": validation.duplicate_transaction_count,
         "unknownCategoryCount": validation.unknown_category_names.len(),

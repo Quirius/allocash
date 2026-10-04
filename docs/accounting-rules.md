@@ -66,8 +66,12 @@ income/spending; implemented report and Plan semantics are described below.
 
 ## Plan cash and credit spending
 
-The Plan replays posted on-budget activity one calendar month at a time. Each
-closed month carries positive category money forward and resets a negative
+The Plan replays posted on-budget activity one calendar month at a time. An
+imported YNAB Budget row's `Assigned` amount can populate the matching
+category/month assignment without replacing an existing edit. The importer keeps
+source `Activity` and `Available` values for later comparison; Plan activity and
+balances continue to be derived from posted ledger entries and account mappings.
+Each closed month carries positive category money forward and resets a negative
 category balance. Cash overspending reduces Ready to Assign in the next month;
 credit overspending is card debt and does not reduce Ready to Assign.
 

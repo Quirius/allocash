@@ -71,7 +71,8 @@ npm run tauri build -- --no-bundle
 ```
 
 To stage and validate a private YNAB export without retaining a test database or
-printing account names and balances:
+printing account names and balances (including importing historical `Assigned`
+amounts into the disposable database):
 
 ```powershell
 cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --example verify_ynab_export -- "path/to/export.zip" yyyy-mm-dd

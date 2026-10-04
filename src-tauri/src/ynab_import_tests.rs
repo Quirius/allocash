@@ -1,6 +1,7 @@
 use crate::{
     database::Database,
     ledger::{CalendarDate, Huf},
+    plan::PlanMonth,
     ynab_import::{
         compare_ynab_net_worth, parse_huf, validate_account_mappings, AccountImportMapping,
         ImportError, ImportedAccountBalance, SourceFileKind,
@@ -27,6 +28,90 @@ fn database() -> (tempfile::TempDir, Database) {
     let directory = tempfile::tempdir().unwrap();
     let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
     (directory, database)
+}
+
+#[test]
+fn imports_budget_assignments_without_overwriting_plan_edits() {
+    let (_directory, mut database) = database();
+    let archive = fixture_zip(&[(
+        "Fixture/Budget.tsv",
+        "Month\tCategory Group/Category\tCategory Group\tCategory\tAssigned\tActivity\tAvailable\nSep 2026\tLiving/Groceries\tLiving\tGroceries\t1 000 Ft\t-200 Ft\t800 Ft\nOct 2026\tLiving/Groceries\tLiving\tGroceries\t-100 Ft\t0 Ft\t700 Ft\n",
+    )]);
+    let summary = database
+        .stage_ynab_zip("fixture.zip", &archive, &date("2026-10-04"))
+        .unwrap();
+    assert_eq!(summary.files[0].kind, SourceFileKind::Budget);
+    database.materialize_import_references(&summary).unwrap();
+
+    let result = database
+        .materialize_historical_plan_assignments(&summary)
+        .unwrap();
+    assert_eq!(result.assignment_count, 2);
+    assert_eq!(result.month_count, 2);
+    let assignments: Vec<(String, i64)> = database
+        .connection
+        .prepare("SELECT month,amount_huf FROM category_month_assignments ORDER BY month")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        assignments,
+        [("2026-09".into(), 1000), ("2026-10".into(), -100)]
+    );
+    let september = database
+        .plan_month(&PlanMonth::parse("2026-09").unwrap())
+        .unwrap();
+    let october = database
+        .plan_month(&PlanMonth::parse("2026-10").unwrap())
+        .unwrap();
+    assert_eq!(september.categories[0].assigned, Huf(1000));
+    assert_eq!(october.categories[0].assigned, Huf(-100));
+    assert!(matches!(
+        database.materialize_historical_plan_assignments(&summary),
+        Err(ImportError::InvalidValue(
+            "An existing Plan assignment would be overwritten."
+        ))
+    ));
+    assert_eq!(
+        database
+            .connection
+            .query_row::<i64, _, _>(
+                "SELECT COUNT(*) FROM category_month_assignments",
+                [],
+                |row| row.get(0)
+            )
+            .unwrap(),
+        2
+    );
+}
+
+#[test]
+fn invalid_budget_amount_rolls_back_all_assignments() {
+    let (_directory, mut database) = database();
+    let archive = fixture_zip(&[(
+        "Fixture/Budget.tsv",
+        "Month\tCategory Group\tCategory\tAssigned\tActivity\tAvailable\nSep 2026\tLiving\tGroceries\t1 000 Ft\t0 Ft\t1 000 Ft\nOct 2026\tLiving\tGroceries\tinvalid\t0 Ft\t1 000 Ft\n",
+    )]);
+    let summary = database
+        .stage_ynab_zip("fixture.zip", &archive, &date("2026-10-04"))
+        .unwrap();
+    database.materialize_import_references(&summary).unwrap();
+    assert!(database
+        .materialize_historical_plan_assignments(&summary)
+        .is_err());
+    assert_eq!(
+        database
+            .connection
+            .query_row::<i64, _, _>(
+                "SELECT COUNT(*) FROM category_month_assignments",
+                [],
+                |row| row.get(0)
+            )
+            .unwrap(),
+        0
+    );
 }
 
 #[test]

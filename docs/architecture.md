@@ -82,7 +82,12 @@ A transaction can link to its source row, with duplicate use of that row rejecte
 The staging parser rejects malformed CSV atomically, detects exact duplicate
 archives, and reports source-level account/category/payee/flag/date counts and
 warnings. Ledger mapping and cross-export transaction duplicate detection are
-implemented; historical Plan materialization belongs to the next importer phase.
+implemented. Historical Plan `Assigned` values can now be materialized atomically
+from staged Budget rows after categories exist. The pass validates month, category
+and integer-HUF fields, rejects duplicate category/month rows, and refuses to
+overwrite existing assignments. Source `Activity` and `Available` remain preserved
+in staging for comparison after account kinds and credit payments are explicitly
+mapped; they are not written as mutable category balances.
 No account types are inferred. Before ledger mapping begins, every staged account
 must have exactly one explicit kind/closed-state mapping.
 Mapped category groups, categories and payees use deterministic source-derived

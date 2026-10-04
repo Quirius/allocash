@@ -9,7 +9,8 @@ or owner-data validation run.
 - Schema migrations through version 8; typed integer-HUF ledger, linked transfers,
   editable register and basic reconciliation.
 - YNAB raw archive/row staging, explicit account mapping, conservative transfer
-  pairing, duplicate signals and exact as-of reference comparison.
+  pairing, duplicate signals and exact as-of reference comparison. Historical
+  `Assigned` amounts from Budget rows can be imported by the core importer.
 - Monthly Plan assignments, category money moves, cash/credit handling and mapped
   card-payment categories; monthly targets and month-specific target snoozes.
 - Monthly ordinary income/expense schedules with post, skip and deactivate actions.
@@ -35,8 +36,10 @@ register rows. The importer materialized 5,053 ordinary rows and 642 transfer
 pairs (1,284 rows), with no unmaterialized ordinary rows, unknown categories, or
 unknown flags. Four zero-value transfer-like rows remain staged; 43 repeated row
 signatures were flagged for review, not removed. The ZIP also contains 1,326
-historical Plan rows across 51 months (2022-08 through 2026-10), which the app
-does not yet materialize. No matching Net Worth TSV was supplied, so exact
+historical Plan rows across 51 months (2022-08 through 2026-10). A follow-up
+disposable run materialized all 1,326 `Assigned` values without error. Source
+`Activity` and `Available` remain staged for comparison after explicit account
+kind and credit-payment mapping. No matching Net Worth TSV was supplied, so exact
 account-balance comparison and Plan/report value validation remain open. This
 run used a temporary database and did not modify the owner's live budget.
 
@@ -52,7 +55,7 @@ has proceeded, so older instructions to start that work only after v0.1 are
 sequencing intent, not an accurate description of today's implementation. No
 release tag existed at this review; tag only after owner-data validation.
 
-Historical Plan import/materialization, full target frequencies, recurring
+Historical Plan Activity/Available validation, full target frequencies, recurring
 transfers, backup restore/retention and installer packaging remain outside the
 implemented slices documented here. Consult topic requirements before choosing
 next work; do not treat this list as an exhaustive backlog.
