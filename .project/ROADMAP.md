@@ -15,6 +15,9 @@ plans:
       - "Imported Plan values can be compared with owner reference months."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "7db87e1bcd62a68111ad94049ec10dd6954506fc"
+        note: "The new export contains 51 months of Plan rows, preserved in staging but not materialized."
       - path: "docs/architecture.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Identifies historical Plan materialization as the next importer phase."
@@ -74,8 +77,8 @@ plans:
       - "allocash-plan-001"
     evidence:
       - path: "docs/status.md"
-        ref: "f19a28b118a220b32f4104d751df3cf97839284b"
-        note: "Limits the existing owner-data result to account balances."
+        ref: "7db87e1bcd62a68111ad94049ec10dd6954506fc"
+        note: "Limits the new owner-export result to disposable import validation; exact balances and Plan/report values remain unverified."
       - path: "docs/product-scope.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Lists Plan and report verification in final migration."

@@ -11,21 +11,26 @@ progress:
   basis: "unknown"
   rationale: "No explicit scoped human assessment of overall completion is documented."
 next_action: "Implement historical Plan import and materialization, then validate the resulting Plan values against owner reference data."
-updated_at: "2026-10-02T12:54:11Z"
+updated_at: "2026-10-04T09:30:04Z"
 source:
   branch: "main"
-  commit: "f19a28b118a220b32f4104d751df3cf97839284b"
-  verified_at: "2026-10-02T12:54:11Z"
+  commit: "7db87e1bcd62a68111ad94049ec10dd6954506fc"
+  verified_at: "2026-10-04T09:30:04Z"
 summary:
   completed:
     - "Ledger, register, reconciliation, YNAB transaction staging/materialization, monthly Plan, targets, schedules, reports, forecasting, and verified local backup slices are implemented."
     - "A native Windows desktop build and the documented check sequence passed on 2026-09-23."
   in_progress:
     - "Historical Plan import, broader schedule/target coverage, restore, installer packaging, and migration validation remain open."
+    - "The 2026-10-04 owner export staged and materialized in a disposable database; exact balances and Plan/report values await independent comparison."
   blockers: []
   open_questions:
     - "How closely do current Plan and report values match the owner's reference data? No such validation result is documented."
+    - "Will a matching 2026-10 Net Worth TSV confirm all 34 imported account balances?"
 evidence:
+  - path: "docs/status.md"
+    ref: "7db87e1bcd62a68111ad94049ec10dd6954506fc"
+    note: "Records the 2026-10-04 disposable import validation and its remaining independent comparison gates without private financial values."
   - path: "docs/status.md"
     ref: "f19a28b118a220b32f4104d751df3cf97839284b"
     note: "Implemented slices, dated desktop-build verification, remaining gates, and limits of owner-data validation."
