@@ -9,15 +9,15 @@ plans:
     priority: "medium"
     due_date: null
     completed_at: null
-    details: "Transaction history is materialized, but historical Plan values are not. Preserve source rows and apply explicit, validated mappings."
+    details: "Historical Assigned values now materialize from staged Budget rows without overwriting edits. Activity and Available remain staged until explicit account and credit-payment mappings support comparison."
     acceptance_criteria:
-      - "Historical assignments and available values can be imported without discarding source data."
+      - "Historical assignments are imported and source Activity/Available values remain available for comparison without discarding source data."
       - "Imported Plan values can be compared with owner reference months."
     blocked_by: []
     evidence:
       - path: "docs/status.md"
-        ref: "7db87e1bcd62a68111ad94049ec10dd6954506fc"
-        note: "The new export contains 51 months of Plan rows, preserved in staging but not materialized."
+        ref: "3902144436aadfad38a458340d725e51fdd59cb1"
+        note: "All 1,326 Assigned values from the new export materialized in a disposable database; Activity/Available validation remains open."
       - path: "docs/architecture.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Identifies historical Plan materialization as the next importer phase."
