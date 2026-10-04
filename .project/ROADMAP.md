@@ -50,16 +50,18 @@ plans:
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Describes intended schedule and target behavior."
   - id: "allocash-plan-003"
-    title: "Add native backup restore and retention"
+    title: "Add native backup restore and safe recovery"
     state: "planned"
-    window: "Backlog"
-    priority: "medium"
-    due_date: null
+    window: "Next week"
+    window_as_of: "2026-10-04"
+    priority: "high"
+    due_date: "2026-10-16"
     completed_at: null
-    details: "Verified standalone backups exist, but restore and automatic retention are future work."
+    details: "Verified standalone backups already exist. Restore and recoverable failure handling are migration-critical; automatic retention polish may move after migration if it does not block safe recovery."
     acceptance_criteria:
       - "A backup can be restored with validation and a recoverable failure path."
-      - "Retention behavior is documented and tested without deleting the only known-good copy."
+      - "Restore is tested against a disposable copy before the migration rehearsal."
+      - "No pre-migration retention work is required beyond what is necessary to avoid deleting the only known-good copy."
     blocked_by: []
     evidence:
       - path: "docs/architecture.md"
@@ -69,13 +71,14 @@ plans:
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Lists restore and retention outside implemented slices."
   - id: "allocash-plan-004"
-    title: "Validate Plan and report values with owner data"
+    title: "Validate migration-critical Plan and report values with owner data"
     state: "planned"
-    window: "Backlog"
+    window: "Later"
+    window_as_of: "2026-10-04"
     priority: "medium"
-    due_date: null
+    due_date: "2026-10-19"
     completed_at: null
-    details: "The October 2026 export matches all 34 current account balances and all 1,326 Plan rows. Historical Net Worth account/total values and January–October 2026 Income v Expense values also match owner references. Spending by Payee, remaining filters, and forecast values still need comparison without publishing private data."
+    details: "The October 2026 export already matches all 34 current account balances and all 1,326 Plan rows. Historical Net Worth and January–October 2026 Income v Expense references also match. Before migration, validate only additional report/filter/forecast behavior that is actually used by the owner or that the migration rehearsal reveals as blocking; non-critical completeness moves after migration."
     acceptance_criteria:
       - "Representative recent Plan months match verified reference values or discrepancies are resolved."
       - "Required historical report values match verified reference values or discrepancies are resolved."
@@ -103,13 +106,14 @@ plans:
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Lists Plan and report verification in final migration."
   - id: "allocash-plan-005"
-    title: "Package and verify a migration-ready Windows release"
+    title: "Package and verify the 2026-10-21 migration-ready Windows release"
     state: "planned"
-    window: "Backlog"
-    priority: "medium"
-    due_date: null
+    window: "Later"
+    window_as_of: "2026-10-04"
+    priority: "high"
+    due_date: "2026-10-21"
     completed_at: null
-    details: "The native desktop executable builds, and the October export matches account balances, Plan rows, and the supplied Net Worth and Income v Expense report references. Installer packaging, remaining report validation, restore, and final owner-data migration checks remain open; no release tag was documented at the evidence cutoff."
+    details: "The native desktop executable builds and the October export matches account balances, Plan rows, and supplied report references. The owner targets a migration-ready release by 2026-10-21, before vacation. Installer packaging, restore, migration rehearsal, and final owner-data checks are the critical gates; 2026-10-22 through 2026-10-30 is emergency-only contingency."
     acceptance_criteria:
       - "A Windows installer is built and verified."
       - "The final YNAB export imports with account balances, Plan months, and reports verified."
@@ -148,6 +152,53 @@ plans:
       - path: "docs/status.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Records the dated check sequence and successful native desktop build."
+  - id: "allocash-plan-007"
+    title: "Close migration-critical daily workflow gaps"
+    state: "planned"
+    window: "This week"
+    window_as_of: "2026-10-04"
+    priority: "high"
+    due_date: "2026-10-08"
+    completed_at: null
+    details: "Exercise the owner's normal day-to-day budgeting workflow and fix only gaps that would prevent replacing YNAB: manual entry, account/register use, Plan work, transfers, reconciliation, targets/schedules actually relied on, and obvious user-facing failures."
+    acceptance_criteria:
+      - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
+      - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
+      - "Non-essential feature expansion is deferred until after migration."
+    blocked_by: []
+    evidence: []
+  - id: "allocash-plan-008"
+    title: "Run a full owner-data migration rehearsal"
+    state: "planned"
+    window: "Later"
+    window_as_of: "2026-10-04"
+    priority: "high"
+    due_date: "2026-10-19"
+    completed_at: null
+    details: "Perform a clean rehearsal from a fresh YNAB export into a disposable or new Allocash budget, verify balances, recent Plan state, migration-critical reports, and native backup/restore behavior, then record every blocking discrepancy."
+    acceptance_criteria:
+      - "A fresh export imports without unresolved migration-blocking errors."
+      - "Current account balances and recent Plan values match the verified source."
+      - "A native backup is created and successfully restored."
+      - "All blocking discrepancies are either fixed or explicitly escalated before the release candidate."
+    blocked_by:
+      - "allocash-plan-003"
+      - "allocash-plan-007"
+    evidence: []
+  - id: "allocash-plan-009"
+    title: "Use post-vacation week only as emergency contingency"
+    state: "planned"
+    window: "Later"
+    window_as_of: "2026-10-04"
+    priority: "low"
+    due_date: "2026-10-30"
+    completed_at: null
+    details: "The preferred migration-ready date is 2026-10-21. Do not schedule normal feature work for 2026-10-22 through 2026-10-30; use that period only if a critical defect or safety issue prevents migration."
+    acceptance_criteria:
+      - "No routine scope is intentionally pushed into the contingency period."
+      - "Any use of the contingency period is tied to a documented migration blocker."
+    blocked_by: []
+    evidence: []
 milestones:
   - id: "allocash-milestone-001"
     title: "v0.1 Import, Accounts, and Register"
@@ -221,6 +272,12 @@ milestones:
       - path: "docs/status.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Documents current release limits."
+  - id: "allocash-milestone-007"
+    title: "Owner migration target — 2026-10-21"
+    state: "planned"
+    due_date: "2026-10-21"
+    details: "Highest-priority project milestone: reach a safe, usable YNAB-replacement release before the owner's vacation. The following week is contingency-only."
+    evidence: []
 ---
 
 # Roadmap context
@@ -233,4 +290,4 @@ labels above are scope milestones; their historical sequence does not assert tha
 later implementation waited for an earlier release.
 
 The completed build gate has no verified completion time, so `completed_at` is
-null. Backlog and medium are reporting defaults, not owner deadlines or priorities.
+null. Backlog and medium are reporting defaults only where the owner has not supplied a deadline or priority. The 2026-10-21 migration target, highest-project priority, and emergency-only contingency window are explicit owner plans as of 2026-10-04.
