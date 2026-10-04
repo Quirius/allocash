@@ -645,6 +645,7 @@ pub struct ManualTransferInput {
 #[serde(rename_all = "camelCase")]
 pub struct RegisterEntryEdit {
     pub id: String,
+    pub account_id: Option<String>,
     pub date: CalendarDate,
     pub payee_name: Option<String>,
     pub category_id: Option<String>,
@@ -2055,7 +2056,7 @@ impl Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current = transaction
             .query_row(
-                "SELECT le.transfer_id,le.transfer_direction,le.cleared_state,le.memo,le.amount_huf,le.posting_state,le.transaction_date,le.payee_id,p.name,le.category_id,le.flag_id FROM ledger_entries le LEFT JOIN payees p ON p.id=le.payee_id WHERE le.id=?1",
+                "SELECT le.transfer_id,le.transfer_direction,le.cleared_state,le.memo,le.amount_huf,le.posting_state,le.transaction_date,le.payee_id,p.name,le.category_id,le.flag_id,le.account_id FROM ledger_entries le LEFT JOIN payees p ON p.id=le.payee_id WHERE le.id=?1",
                 [&edit.id],
                 |row| {
                     Ok((
@@ -2070,6 +2071,7 @@ impl Database {
                         row.get::<_, Option<String>>(8)?,
                         row.get::<_, Option<String>>(9)?,
                         row.get::<_, Option<String>>(10)?,
+                        row.get::<_, String>(11)?,
                     ))
                 },
             )
@@ -2083,13 +2085,26 @@ impl Database {
         let amount_changed = current.4 != edit.amount.0;
         let state_changed = current.2 != edit.cleared_state;
         let is_transfer = current.0.is_some();
+        let account_changed = edit
+            .account_id
+            .as_deref()
+            .is_some_and(|id| id != current.11.as_str());
+        if account_changed {
+            if is_transfer {
+                return Err(LedgerError::InvalidValue(
+                    "A linked transfer account cannot be changed here.",
+                ));
+            }
+            ensure_open_account(&transaction, edit.account_id.as_deref().unwrap())?;
+        }
         let payee_name = edit
             .payee_name
             .as_deref()
             .map(str::trim)
             .filter(|name| !name.is_empty());
         let payee_changed = !is_transfer && payee_name != current.8.as_deref();
-        let detail_changed = current.6 != edit.date.as_str()
+        let detail_changed = account_changed
+            || current.6 != edit.date.as_str()
             || payee_changed
             || current.9 != edit.category_id
             || current.10 != edit.flag_id;
@@ -2146,8 +2161,8 @@ impl Database {
         }
         if current.3 != edit.memo || state_changed || detail_changed {
             transaction.execute(
-                "UPDATE transactions SET transaction_date=?2,payee_id=?3,category_id=?4,memo=?5,flag_id=?6,cleared_state=?7 WHERE id=?1",
-                params![edit.id, edit.date.as_str(), payee_id, edit.category_id, edit.memo.trim(), edit.flag_id, edit.cleared_state],
+                "UPDATE transactions SET account_id=?2,transaction_date=?3,payee_id=?4,category_id=?5,memo=?6,flag_id=?7,cleared_state=?8 WHERE id=?1",
+                params![edit.id, edit.account_id.as_deref().unwrap_or(&current.11), edit.date.as_str(), payee_id, edit.category_id, edit.memo.trim(), edit.flag_id, edit.cleared_state],
             )?;
         }
         if let Some(payee_id) = payee_id.filter(|_| {

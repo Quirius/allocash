@@ -344,6 +344,8 @@ function AccountRegister({
         <RegisterEntryEditor
           key={editor.id}
           entry={editor}
+          account={account}
+          accounts={accounts}
           options={options}
           onSaved={onChanged}
           onCancel={() => setEditor(null)}

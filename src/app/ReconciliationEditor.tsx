@@ -57,7 +57,7 @@ export function ReconciliationEditor({ account, onSaved, onCancel }: {
     if (!review) return;
     try {
       setSaving(true); setError(null);
-      await updateRegisterEntry({ id: entry.id, date: entry.date, payeeName: entry.payeeName, categoryId: entry.categoryId, memo: entry.memo, flagId: entry.flagId, amount: entry.amount, clearedState: entry.clearedState === "cleared" ? "uncleared" : "cleared", confirmed: false });
+      await updateRegisterEntry({ id: entry.id, accountId: null, date: entry.date, payeeName: entry.payeeName, categoryId: entry.categoryId, memo: entry.memo, flagId: entry.flagId, amount: entry.amount, clearedState: entry.clearedState === "cleared" ? "uncleared" : "cleared", confirmed: false });
       await loadEntries();
       setReview(await previewAccountReconciliation({ accountId: account.id, asOf, bankClearedBalance: review.bankClearedBalance, expectedClearedBalance: null }));
       await onSaved();

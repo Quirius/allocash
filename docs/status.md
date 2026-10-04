@@ -19,8 +19,9 @@ or owner-data validation run.
 - Verified standalone SQLite backups before migrations, on demand, and before
   register deletion or schedule deactivation.
 
-On 2026-10-04, register editing gained date, payee, category and flag corrections
-without replacing transaction identities. Reconciled metadata changes require
+On 2026-10-04, register editing gained account, date, payee, category, flag and
+ordinary inflow/outflow direction corrections without replacing transaction
+identities. Reconciled metadata changes require
 confirmation, transfer dates remain per-leg, and category/date corrections feed
 financial views. The correction path passed 94 Rust core tests, 58 frontend tests,
 and the frontend build. This is automated validation, not an owner workflow

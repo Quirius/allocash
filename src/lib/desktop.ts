@@ -132,6 +132,7 @@ export interface ScheduledOccurrence { scheduleId: string; transactionId: string
 
 export interface RegisterEntryEdit {
   id: string;
+  accountId: string | null;
   date: string;
   payeeName: string | null;
   categoryId: string | null;

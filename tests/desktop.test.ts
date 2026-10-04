@@ -197,6 +197,7 @@ it("sends atomic register edits and confirmed deletions", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
   const edit = {
     id: "transaction",
+    accountId: "cash",
     date: "2026-09-10",
     payeeName: "Market",
     categoryId: "groceries",

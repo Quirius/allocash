@@ -1531,6 +1531,7 @@ fn manual_transfer_and_register_edit_preserve_pair_and_confirmation_rules() {
 
     let edit = RegisterEntryEdit {
         id: entered_id.clone(),
+        account_id: None,
         date: date("2026-09-11"),
         payee_name: None,
         category_id: None,
@@ -1573,6 +1574,9 @@ fn manual_transfer_and_register_edit_preserve_pair_and_confirmation_rules() {
 fn register_correction_preserves_identity_and_updates_financial_views() {
     let (_directory, mut database) = database();
     database
+        .create_account(&account("other", AccountKind::Cash, 1))
+        .unwrap();
+    database
         .create_category_group("living", "Living", 0)
         .unwrap();
     database
@@ -1597,6 +1601,7 @@ fn register_correction_preserves_identity_and_updates_financial_views() {
         .unwrap();
     let edit = RegisterEntryEdit {
         id: id.clone(),
+        account_id: None,
         date: date("2026-10-02"),
         payee_name: Some("New payee".into()),
         category_id: Some("travel".into()),
@@ -1652,6 +1657,55 @@ fn register_correction_preserves_identity_and_updates_financial_views() {
         .unwrap();
     assert_eq!(spending.len(), 1);
     assert_eq!(spending[0].category_id.as_deref(), Some("travel"));
+
+    let moved = RegisterEntryEdit {
+        id: id.clone(),
+        account_id: Some("other".into()),
+        date: date("2026-10-02"),
+        payee_name: Some("New payee".into()),
+        category_id: Some("travel".into()),
+        memo: "Original".into(),
+        flag_id: Some("flag-blue".into()),
+        amount: Huf(2500),
+        cleared_state: ClearedState::Reconciled,
+        confirmed: false,
+    };
+    assert!(matches!(
+        database.update_register_entry(&moved),
+        Err(LedgerError::ReconciledConfirmationRequired)
+    ));
+    assert_eq!(database.register_entries("cash").unwrap()[0].id, id);
+    assert!(database.register_entries("other").unwrap().is_empty());
+    database
+        .update_register_entry(&RegisterEntryEdit {
+            confirmed: true,
+            ..moved
+        })
+        .unwrap();
+    assert!(database.register_entries("cash").unwrap().is_empty());
+    assert_eq!(database.register_entries("other").unwrap()[0].id, id);
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-10-02"))
+            .unwrap()
+            .working,
+        Huf(0)
+    );
+    assert_eq!(
+        database
+            .account_balance("other", &date("2026-10-02"))
+            .unwrap()
+            .working,
+        Huf(2500)
+    );
+    assert!(database
+        .spending_by_category(&SpendingReportInput {
+            from: date("2026-10-01"),
+            to: date("2026-10-31"),
+            account_ids: vec![],
+        })
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

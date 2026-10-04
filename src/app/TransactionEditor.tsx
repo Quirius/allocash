@@ -169,18 +169,23 @@ export function TransactionComposer({
 
 export function RegisterEntryEditor({
   entry,
+  account,
+  accounts,
   options,
   onSaved,
   onCancel,
 }: {
   entry: RegisterEntry;
+  account: AccountOverview;
+  accounts: AccountOverview[];
   options: TransactionFormOptions;
   onSaved: () => Promise<void>;
   onCancel: () => void;
 }) {
   const initialAmount = BigInt(entry.amount);
-  const direction = initialAmount < 0n ? "outflow" : "inflow";
+  const [direction, setDirection] = useState<"outflow" | "inflow">(initialAmount < 0n ? "outflow" : "inflow");
   const [amount, setAmount] = useState((initialAmount < 0n ? -initialAmount : initialAmount).toString());
+  const [accountId, setAccountId] = useState(account.id);
   const [date, setDate] = useState(entry.date);
   const [payee, setPayee] = useState(entry.payeeName || "");
   const [categoryId, setCategoryId] = useState(entry.categoryId || "");
@@ -197,6 +202,7 @@ export function RegisterEntryEditor({
       const positive = parseHufInput(amount);
       await updateRegisterEntry({
         id: entry.id,
+        accountId: entry.transferId ? null : accountId,
         date,
         payeeName: entry.transferId ? null : payee.trim() || null,
         categoryId: categoryId || null,
@@ -260,7 +266,13 @@ export function RegisterEntryEditor({
         {entry.transferId && <span className="paired-badge">Paired transfer</span>}
       </div>
       <div className="editor-fields edit-fields">
-        <label>Date<input autoFocus required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
+        {!entry.transferId && <label>Account
+          <select autoFocus value={accountId} onChange={(event) => setAccountId(event.target.value)}>
+            {accounts.filter((option) => !option.closed || option.id === account.id).map((option) =>
+              <option key={option.id} value={option.id}>{option.name}{option.closed ? " (closed)" : ""}</option>)}
+          </select>
+        </label>}
+        <label>Date<input autoFocus={!!entry.transferId} required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
         {!entry.transferId && <label>Payee
           <input list={`edit-payees-${entry.id}`} value={payee} onChange={(event) => setPayee(event.target.value)} />
           <datalist id={`edit-payees-${entry.id}`}>
@@ -275,7 +287,12 @@ export function RegisterEntryEditor({
             {options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}
           </select>
         </label>
-        <label>{direction === "outflow" ? "Outflow" : "Inflow"}<input required inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
+        {!entry.transferId && <label>Direction
+          <select value={direction} onChange={(event) => setDirection(event.target.value as "outflow" | "inflow")}>
+            <option value="outflow">Outflow</option><option value="inflow">Inflow</option>
+          </select>
+        </label>}
+        <label>Amount<input required inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
         <label>Cleared state
           <select value={clearedState} onChange={(event) => setClearedState(event.target.value as RegisterEntry["clearedState"])}>
             <option value="uncleared">Uncleared</option>
