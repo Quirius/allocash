@@ -1531,7 +1531,11 @@ fn manual_transfer_and_register_edit_preserve_pair_and_confirmation_rules() {
 
     let edit = RegisterEntryEdit {
         id: entered_id.clone(),
+        date: date("2026-09-11"),
+        payee_name: None,
+        category_id: None,
         memo: "Changed".into(),
+        flag_id: Some("flag-blue".into()),
         amount: Huf(-2000),
         cleared_state: ClearedState::Uncleared,
         confirmed: false,
@@ -1550,11 +1554,104 @@ fn manual_transfer_and_register_edit_preserve_pair_and_confirmation_rules() {
         .unwrap();
     assert_eq!(database.entries("cash").unwrap()[0].amount, Huf(-2000));
     assert_eq!(database.entries("other").unwrap()[0].amount, Huf(2000));
+    assert_eq!(
+        database.entries("cash").unwrap()[0].entry.date,
+        date("2026-09-11")
+    );
+    assert_eq!(
+        database.entries("other").unwrap()[0].entry.date,
+        date("2026-09-10")
+    );
     assert_eq!(database.entries("cash").unwrap()[0].entry.memo, "Changed");
     assert_eq!(
         database.entries("cash").unwrap()[0].entry.cleared_state,
         ClearedState::Uncleared
     );
+}
+
+#[test]
+fn register_correction_preserves_identity_and_updates_financial_views() {
+    let (_directory, mut database) = database();
+    database
+        .create_category_group("living", "Living", 0)
+        .unwrap();
+    database
+        .create_category("food", "living", "Food", 0)
+        .unwrap();
+    database
+        .create_category("travel", "living", "Travel", 1)
+        .unwrap();
+    let id = database
+        .create_manual_transaction(&ManualTransactionDraft {
+            account_id: "cash".into(),
+            date: date("2026-09-10"),
+            payee_name: Some("Old payee".into()),
+            category_id: Some("food".into()),
+            memo: "Original".into(),
+            flag_id: None,
+            amount: Huf(-2500),
+        })
+        .unwrap();
+    database
+        .set_cleared_state(&id, ClearedState::Reconciled, false)
+        .unwrap();
+    let edit = RegisterEntryEdit {
+        id: id.clone(),
+        date: date("2026-10-02"),
+        payee_name: Some("New payee".into()),
+        category_id: Some("travel".into()),
+        memo: "Original".into(),
+        flag_id: Some("flag-blue".into()),
+        amount: Huf(-2500),
+        cleared_state: ClearedState::Reconciled,
+        confirmed: false,
+    };
+    assert!(matches!(
+        database.update_register_entry(&edit),
+        Err(LedgerError::ReconciledConfirmationRequired)
+    ));
+    assert_eq!(
+        database.register_entries("cash").unwrap()[0]
+            .category_id
+            .as_deref(),
+        Some("food")
+    );
+    database
+        .update_register_entry(&RegisterEntryEdit {
+            confirmed: true,
+            ..edit
+        })
+        .unwrap();
+    let register = database.register_entries("cash").unwrap();
+    assert_eq!(register.len(), 1);
+    assert_eq!(register[0].id, id);
+    assert_eq!(register[0].date, date("2026-10-02"));
+    assert_eq!(register[0].payee_name.as_deref(), Some("New payee"));
+    assert_eq!(register[0].category_id.as_deref(), Some("travel"));
+    assert_eq!(register[0].flag_id.as_deref(), Some("flag-blue"));
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-09-30"))
+            .unwrap()
+            .working,
+        Huf(0)
+    );
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-10-02"))
+            .unwrap()
+            .working,
+        Huf(-2500)
+    );
+    let spending = database
+        .spending_by_category(&SpendingReportInput {
+            from: date("2026-10-01"),
+            to: date("2026-10-31"),
+            account_ids: vec![],
+        })
+        .unwrap();
+    assert_eq!(spending.len(), 1);
+    assert_eq!(spending[0].category_id.as_deref(), Some("travel"));
 }
 
 #[test]

@@ -197,7 +197,11 @@ it("sends atomic register edits and confirmed deletions", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);
   const edit = {
     id: "transaction",
+    date: "2026-09-10",
+    payeeName: "Market",
+    categoryId: "groceries",
     memo: "Updated",
+    flagId: null,
     amount: "-5000",
     clearedState: "reconciled" as const,
     confirmed: true,

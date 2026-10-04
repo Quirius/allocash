@@ -38,9 +38,11 @@ export interface RegisterEntry {
   id: string;
   date: string;
   payeeName: string | null;
+  categoryId: string | null;
   categoryGroupName: string | null;
   categoryName: string | null;
   memo: string;
+  flagId: string | null;
   flagName: string | null;
   flagColor: string | null;
   clearedState: ClearedState;
@@ -130,7 +132,11 @@ export interface ScheduledOccurrence { scheduleId: string; transactionId: string
 
 export interface RegisterEntryEdit {
   id: string;
+  date: string;
+  payeeName: string | null;
+  categoryId: string | null;
   memo: string;
+  flagId: string | null;
   amount: string;
   clearedState: ClearedState;
   confirmed: boolean;

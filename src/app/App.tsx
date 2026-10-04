@@ -342,7 +342,9 @@ function AccountRegister({
       )}
       {editor && editor !== "new" && editor !== "reconcile" && (
         <RegisterEntryEditor
+          key={editor.id}
           entry={editor}
+          options={options}
           onSaved={onChanged}
           onCancel={() => setEditor(null)}
         />

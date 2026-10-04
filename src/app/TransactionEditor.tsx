@@ -169,17 +169,23 @@ export function TransactionComposer({
 
 export function RegisterEntryEditor({
   entry,
+  options,
   onSaved,
   onCancel,
 }: {
   entry: RegisterEntry;
+  options: TransactionFormOptions;
   onSaved: () => Promise<void>;
   onCancel: () => void;
 }) {
   const initialAmount = BigInt(entry.amount);
   const direction = initialAmount < 0n ? "outflow" : "inflow";
   const [amount, setAmount] = useState((initialAmount < 0n ? -initialAmount : initialAmount).toString());
+  const [date, setDate] = useState(entry.date);
+  const [payee, setPayee] = useState(entry.payeeName || "");
+  const [categoryId, setCategoryId] = useState(entry.categoryId || "");
   const [memo, setMemo] = useState(entry.memo);
+  const [flagId, setFlagId] = useState(entry.flagId || "");
   const [clearedState, setClearedState] = useState(entry.clearedState);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -191,7 +197,11 @@ export function RegisterEntryEditor({
       const positive = parseHufInput(amount);
       await updateRegisterEntry({
         id: entry.id,
+        date,
+        payeeName: entry.transferId ? null : payee.trim() || null,
+        categoryId: categoryId || null,
         memo,
+        flagId: flagId || null,
         amount: (direction === "outflow" ? -positive : positive).toString(),
         clearedState,
         confirmed,
@@ -250,7 +260,22 @@ export function RegisterEntryEditor({
         {entry.transferId && <span className="paired-badge">Paired transfer</span>}
       </div>
       <div className="editor-fields edit-fields">
-        <label>{direction === "outflow" ? "Outflow" : "Inflow"}<input autoFocus required inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
+        <label>Date<input autoFocus required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
+        {!entry.transferId && <label>Payee
+          <input list={`edit-payees-${entry.id}`} value={payee} onChange={(event) => setPayee(event.target.value)} />
+          <datalist id={`edit-payees-${entry.id}`}>
+            {options.payees.map((option) => <option key={option.id} value={option.name} />)}
+          </datalist>
+        </label>}
+        <label>Category
+          <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+            <option value="">Uncategorized</option>
+            {entry.categoryId && !options.categories.some((option) => option.id === entry.categoryId) &&
+              <option value={entry.categoryId}>{entry.categoryGroupName} / {entry.categoryName} (hidden)</option>}
+            {options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}
+          </select>
+        </label>
+        <label>{direction === "outflow" ? "Outflow" : "Inflow"}<input required inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
         <label>Cleared state
           <select value={clearedState} onChange={(event) => setClearedState(event.target.value as RegisterEntry["clearedState"])}>
             <option value="uncleared">Uncleared</option>
@@ -259,6 +284,12 @@ export function RegisterEntryEditor({
           </select>
         </label>
         <label className="memo-field">Memo<input value={memo} onChange={(event) => setMemo(event.target.value)} /></label>
+        <label>Flag
+          <select value={flagId} onChange={(event) => setFlagId(event.target.value)}>
+            <option value="">No flag</option>
+            {options.flags.map((option) => <option key={option.id} value={option.id}>{option.color} {option.name}</option>)}
+          </select>
+        </label>
       </div>
       <div className="editor-footer">
         <button type="button" className="danger" disabled={saving} onClick={remove}>Delete</button>

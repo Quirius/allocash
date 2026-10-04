@@ -291,9 +291,11 @@ pub struct RegisterEntry {
     pub id: String,
     pub date: CalendarDate,
     pub payee_name: Option<String>,
+    pub category_id: Option<String>,
     pub category_group_name: Option<String>,
     pub category_name: Option<String>,
     pub memo: String,
+    pub flag_id: Option<String>,
     pub flag_name: Option<String>,
     pub flag_color: Option<String>,
     pub cleared_state: ClearedState,
@@ -643,7 +645,11 @@ pub struct ManualTransferInput {
 #[serde(rename_all = "camelCase")]
 pub struct RegisterEntryEdit {
     pub id: String,
+    pub date: CalendarDate,
+    pub payee_name: Option<String>,
+    pub category_id: Option<String>,
     pub memo: String,
+    pub flag_id: Option<String>,
     pub amount: Huf,
     pub cleared_state: ClearedState,
     pub confirmed: bool,
@@ -922,7 +928,7 @@ impl Database {
     pub fn register_entries(&self, account_id: &str) -> LedgerResult<Vec<RegisterEntry>> {
         ensure_account(&self.connection, account_id)?;
         let mut query = self.connection.prepare(
-            "SELECT le.id,le.transaction_date,p.name,cg.name,c.name,le.memo,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,le.transfer_id,transfer_account.name
+            "SELECT le.id,le.transaction_date,p.name,le.category_id,cg.name,c.name,le.memo,le.flag_id,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,le.transfer_id,transfer_account.name
              FROM ledger_entries le
              LEFT JOIN payees p ON p.id=le.payee_id
              LEFT JOIN categories c ON c.id=le.category_id
@@ -946,17 +952,19 @@ impl Database {
                         )
                     })?,
                     payee_name: row.get(2)?,
-                    category_group_name: row.get(3)?,
-                    category_name: row.get(4)?,
-                    memo: row.get(5)?,
-                    flag_name: row.get(6)?,
-                    flag_color: row.get(7)?,
-                    cleared_state: row.get(8)?,
-                    posting_state: row.get(9)?,
-                    origin: row.get(10)?,
-                    amount: Huf(row.get(11)?),
-                    transfer_id: row.get(12)?,
-                    transfer_account_name: row.get(13)?,
+                    category_id: row.get(3)?,
+                    category_group_name: row.get(4)?,
+                    category_name: row.get(5)?,
+                    memo: row.get(6)?,
+                    flag_id: row.get(7)?,
+                    flag_name: row.get(8)?,
+                    flag_color: row.get(9)?,
+                    cleared_state: row.get(10)?,
+                    posting_state: row.get(11)?,
+                    origin: row.get(12)?,
+                    amount: Huf(row.get(13)?),
+                    transfer_id: row.get(14)?,
+                    transfer_account_name: row.get(15)?,
                 })
             })?
             .collect::<Result<_, _>>()?;
@@ -2034,10 +2042,8 @@ impl Database {
         Ok(entered_id)
     }
 
-    /// Applies the editable register fields atomically. Transfer amounts stay
-    /// on the shared pair record, while memo and clearing state belong to the
-    /// selected leg. Any financial change touching reconciled history requires
-    /// an explicit retry with confirmation; memo-only edits never do.
+    /// Applies register edits atomically. Transfer amounts stay on the shared
+    /// pair record; date, category, flag, memo and clearing state belong to a leg.
     pub fn update_register_entry(&mut self, edit: &RegisterEntryEdit) -> LedgerResult<()> {
         if edit.amount.0 == 0 {
             return Err(LedgerError::InvalidValue(
@@ -2049,7 +2055,7 @@ impl Database {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current = transaction
             .query_row(
-                "SELECT transfer_id,transfer_direction,cleared_state,memo,amount_huf,posting_state FROM ledger_entries WHERE id=?1",
+                "SELECT le.transfer_id,le.transfer_direction,le.cleared_state,le.memo,le.amount_huf,le.posting_state,le.transaction_date,le.payee_id,p.name,le.category_id,le.flag_id FROM ledger_entries le LEFT JOIN payees p ON p.id=le.payee_id WHERE le.id=?1",
                 [&edit.id],
                 |row| {
                     Ok((
@@ -2059,6 +2065,11 @@ impl Database {
                         row.get::<_, String>(3)?,
                         row.get::<_, i64>(4)?,
                         row.get::<_, PostingState>(5)?,
+                        row.get::<_, String>(6)?,
+                        row.get::<_, Option<String>>(7)?,
+                        row.get::<_, Option<String>>(8)?,
+                        row.get::<_, Option<String>>(9)?,
+                        row.get::<_, Option<String>>(10)?,
                     ))
                 },
             )
@@ -2071,6 +2082,17 @@ impl Database {
         }
         let amount_changed = current.4 != edit.amount.0;
         let state_changed = current.2 != edit.cleared_state;
+        let is_transfer = current.0.is_some();
+        let payee_name = edit
+            .payee_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty());
+        let payee_changed = !is_transfer && payee_name != current.8.as_deref();
+        let detail_changed = current.6 != edit.date.as_str()
+            || payee_changed
+            || current.9 != edit.category_id
+            || current.10 != edit.flag_id;
         let reconciled_pair = if let Some(transfer_id) = current.0.as_deref() {
             transaction.query_row(
                 "SELECT EXISTS(SELECT 1 FROM transactions WHERE transfer_id=?1 AND cleared_state='reconciled')",
@@ -2080,9 +2102,16 @@ impl Database {
         } else {
             false
         };
-        let confirmation_required = (state_changed && current.2 == ClearedState::Reconciled)
+        let confirmation_required = ((state_changed || detail_changed)
+            && current.2 == ClearedState::Reconciled)
             || (amount_changed && (current.2 == ClearedState::Reconciled || reconciled_pair));
         confirm_reconciled(confirmation_required, edit.confirmed)?;
+
+        let payee_id = if payee_changed {
+            resolve_payee(&transaction, payee_name)?
+        } else {
+            current.7
+        };
 
         if let Some(transfer_id) = current.0 {
             let direction = current.1.ok_or(LedgerError::InvalidValue(
@@ -2115,10 +2144,23 @@ impl Database {
                 params![edit.id, edit.amount.0],
             )?;
         }
-        if current.3 != edit.memo || state_changed {
+        if current.3 != edit.memo || state_changed || detail_changed {
             transaction.execute(
-                "UPDATE transactions SET memo=?2,cleared_state=?3 WHERE id=?1",
-                params![edit.id, edit.memo.trim(), edit.cleared_state],
+                "UPDATE transactions SET transaction_date=?2,payee_id=?3,category_id=?4,memo=?5,flag_id=?6,cleared_state=?7 WHERE id=?1",
+                params![edit.id, edit.date.as_str(), payee_id, edit.category_id, edit.memo.trim(), edit.flag_id, edit.cleared_state],
+            )?;
+        }
+        if let Some(payee_id) = payee_id.filter(|_| {
+            !is_transfer && (payee_changed || current.9 != edit.category_id || amount_changed)
+        }) {
+            let direction = if edit.amount.0 < 0 {
+                Direction::Outflow
+            } else {
+                Direction::Inflow
+            };
+            transaction.execute(
+                "UPDATE payees SET last_category_id=?2,last_direction=?3 WHERE id=?1",
+                params![payee_id, edit.category_id, direction],
             )?;
         }
         transaction.commit()?;
