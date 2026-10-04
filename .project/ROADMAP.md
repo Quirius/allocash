@@ -75,12 +75,15 @@ plans:
     priority: "medium"
     due_date: null
     completed_at: null
-    details: "The October 2026 export matches all 34 Net Worth reference balances and all 1,326 Assigned, Activity, and Available Plan rows across 51 months. Report values still need independent comparison without publishing private data."
+    details: "The October 2026 export matches all 34 current account balances and all 1,326 Plan rows. Historical Net Worth account/total values and January–October 2026 Income v Expense values also match owner references. Spending by Payee, remaining filters, and forecast values still need comparison without publishing private data."
     acceptance_criteria:
       - "Representative recent Plan months match verified reference values or discrepancies are resolved."
       - "Required historical report values match verified reference values or discrepancies are resolved."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "7868acb046a922e8a9399b87f4d66af19bb6331c"
+        note: "Records exact historical Net Worth and Income v Expense comparisons and remaining report validation limits."
       - path: "docs/status.md"
         ref: "7d80939c400efc8f788567dfe7b55109f52e9276"
         note: "Records exact Plan and account-balance agreement after positive-card-balance funding correction; report validation remains open."
@@ -106,7 +109,7 @@ plans:
     priority: "medium"
     due_date: null
     completed_at: null
-    details: "The native desktop executable builds and the October export matches account balances and all Plan rows, but installer packaging, report validation, and final owner-data migration checks remain open; no release tag was documented at the evidence cutoff."
+    details: "The native desktop executable builds, and the October export matches account balances, Plan rows, and the supplied Net Worth and Income v Expense report references. Installer packaging, remaining report validation, restore, and final owner-data migration checks remain open; no release tag was documented at the evidence cutoff."
     acceptance_criteria:
       - "A Windows installer is built and verified."
       - "The final YNAB export imports with account balances, Plan months, and reports verified."
@@ -115,6 +118,9 @@ plans:
       - "allocash-plan-003"
       - "allocash-plan-004"
     evidence:
+      - path: "docs/status.md"
+        ref: "7868acb046a922e8a9399b87f4d66af19bb6331c"
+        note: "Records matched supplied report references and the remaining release gates."
       - path: "docs/status.md"
         ref: "7d80939c400efc8f788567dfe7b55109f52e9276"
         note: "Records exact account and Plan comparison, with report and release gates still open."
@@ -182,8 +188,11 @@ milestones:
   - id: "allocash-milestone-004"
     title: "v0.4 Reports"
     state: "planned"
-    details: "Several reports exist, but coverage and owner-data value validation are not established as complete."
+    details: "Historical Net Worth and January–October 2026 Income v Expense values match owner references; report coverage and remaining filters are not established as complete."
     evidence:
+      - path: "docs/status.md"
+        ref: "7868acb046a922e8a9399b87f4d66af19bb6331c"
+        note: "Records report comparison coverage and remaining limits."
       - path: "docs/product-scope.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Defines the v0.4 report scope."

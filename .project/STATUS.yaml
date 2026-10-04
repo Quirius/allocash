@@ -10,12 +10,12 @@ progress:
   percent: null
   basis: "unknown"
   rationale: "No explicit scoped human assessment of overall completion is documented."
-next_action: "Validate report values against owner reference data and resolve any differences."
-updated_at: "2026-10-04T18:03:28Z"
+next_action: "Validate Spending by Payee, remaining report filters, and forecast values against owner references."
+updated_at: "2026-10-04T19:51:34Z"
 source:
   branch: "main"
-  commit: "7d80939c400efc8f788567dfe7b55109f52e9276"
-  verified_at: "2026-10-04T18:03:28Z"
+  commit: "7868acb046a922e8a9399b87f4d66af19bb6331c"
+  verified_at: "2026-10-04T19:51:34Z"
 summary:
   completed:
     - "Ledger, register, reconciliation, YNAB transaction staging/materialization, monthly Plan, targets, schedules, reports, forecasting, and verified local backup slices are implemented."
@@ -26,12 +26,17 @@ summary:
     - "The as-of Plan cutoff resolves all six October 2026 differences against the owner's export."
     - "Card purchases fund payment categories in date order after cash and positive-card-balance spending receive category money."
     - "The mapped as-of comparison matches all 1,326 Assigned, Activity, and Available Plan rows across 51 months; all 34 reference account balances also match."
+    - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
+    - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
-    - "Broader schedule/target coverage, restore, installer packaging, and independent report value validation remain open."
+    - "Spending by Payee, other report filters, forecast values, broader schedule/target coverage, restore, and installer packaging remain unvalidated or unfinished."
   blockers: []
   open_questions:
-    - "How closely do report values match the owner's reference data? No independent report comparison is documented."
+    - "How closely do Spending by Payee, other report filters, and forecast values match owner references?"
 evidence:
+  - path: "docs/status.md"
+    ref: "7868acb046a922e8a9399b87f4d66af19bb6331c"
+    note: "Records exact historical Net Worth and January–October Income v Expense comparisons, corrected budget-boundary report transfers, and remaining report limits."
   - path: "docs/status.md"
     ref: "7d80939c400efc8f788567dfe7b55109f52e9276"
     note: "Records the exact 1,326-row Plan comparison, 34 reference balance matches, and the remaining report validation gate."
