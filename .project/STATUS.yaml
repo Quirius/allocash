@@ -7,11 +7,11 @@ description: "Offline Windows desktop budgeting app for one local HUF budget."
 objective: "Reach a migration-ready local budgeting workflow by 2026-10-21, before the owner's vacation, while preserving YNAB history and reproducing balances, Plan values, and migration-critical reports."
 phase: "Priority #1 — migration readiness by 2026-10-21"
 progress:
-  percent: null
-  basis: "unknown"
-  rationale: "No explicit scoped human assessment of overall completion is documented."
+  percent: 76
+  basis: "manual"
+  rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
 next_action: "Rehearse the owner's daily budgeting and backup/recovery workflow on a disposable desktop budget, then verify installer packaging and the full migration before the 2026-10-21 release candidate."
-updated_at: "2026-10-04T20:51:40Z"
+updated_at: "2026-10-04T20:50:00Z"
 source:
   branch: "main"
   commit: "e7c17374a6b6ffab33daabeae32149e76370bae9"
