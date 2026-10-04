@@ -86,11 +86,12 @@ the on-budget leg uses its source category for Plan activity; an uncategorized o
 Ready to Assign cash leg changes Ready to Assign. The off-budget leg never funds
 categories.
 
-Within a category/month, cash spending has first claim on the category's
-available money. Remaining funded money moves to the mapped card-payment
-category for card purchases in date order. Purchases covered by a positive card
-balance do not fund a payment category; that portion behaves like cash spending
-when classifying overspending. Card refunds reverse the payment movement. A
+Within a category/month, cash spending and the portions of card purchases
+covered by positive card balances have first claim on the category's available
+money. Remaining funded money moves to the mapped card-payment category for
+eligible card purchases in date order. Positive-balance-covered portions do not
+fund a payment category and behave like cash spending when classifying
+overspending. Card refunds reverse the payment movement. A
 posted cash-to-credit transfer reduces the
 mapped payment category without changing Ready to Assign. Scheduled rows and
 transfers wholly within or outside the budget do not affect Plan activity.

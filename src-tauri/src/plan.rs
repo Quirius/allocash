@@ -597,7 +597,17 @@ fn derive_plan(
                 checked_add(carry, assignment)?,
                 checked_add(cash_in, credit_refunds)?,
             )?;
-            let mut credit_capacity = checked_sub(pool, cash_spend)?.max(0);
+            let positive_balance_spend = entry
+                .map(|value| {
+                    value
+                        .positive_balance_spending
+                        .values()
+                        .try_fold(0i128, |total, amount| checked_add(total, *amount))
+                })
+                .transpose()?
+                .unwrap_or(0);
+            let mut credit_capacity =
+                checked_sub(checked_sub(pool, cash_spend)?, positive_balance_spend)?.max(0);
             let mut total_credit_spend = 0i128;
             let mut credit_overspending = 0i128;
             if let Some(entry) = entry {
@@ -1064,7 +1074,7 @@ mod tests {
     }
 
     #[test]
-    fn card_balance_and_purchase_date_control_shared_category_funding() {
+    fn positive_card_balance_spending_has_first_claim_before_other_card_funding() {
         let directory = tempfile::tempdir().unwrap();
         let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
         for (id, order) in [("first", 0), ("second", 1)] {
@@ -1140,14 +1150,14 @@ mod tests {
                 .activity
         };
         assert_eq!(activity("food"), Huf(-110));
-        assert_eq!(activity("second_payment"), Huf(50));
-        assert_eq!(activity("first_payment"), Huf(10));
+        assert_eq!(activity("second_payment"), Huf(20));
+        assert_eq!(activity("first_payment"), Huf(0));
         assert_eq!(
             database
                 .plan_month(&PlanMonth::parse("2026-10").unwrap())
                 .unwrap()
                 .ready_to_assign,
-            Huf(-100)
+            Huf(-60)
         );
     }
 

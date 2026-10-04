@@ -42,24 +42,21 @@ disposable run materialized all 1,326 `Assigned` values without error. Source
 kind and credit-payment mapping. A matching Net Worth TSV subsequently confirmed
 all 34 account balances exactly, with no missing or extra accounts. The owner
 identified 5 cash, 2 credit, 2 loan and 25 tracking accounts; 15 tracking accounts
-are closed. A disposable run using those types and two uniquely named credit
-payment category candidates matched all 1,326 `Assigned` values. The owner
-confirmed both card-payment mappings. Comparing Plan through the export's
-2026-10-04 as-of date excludes future-dated ledger entries. Card-payment
-funding now follows purchase dates and accounts for spending covered by a
-positive card balance. The mapped disposable comparison matches 1,324
-`Activity` and 1,308 `Available` values. Both card mappings and the current
-Plan month match; the remaining 18 differing rows are in one card-payment
-category. Only October 2024 and November 2025 differ in Activity, while the
-Available differences carry forward from those months. The detail stays in a
-private local diagnostic file.
+are closed. The owner confirmed both card-payment mappings. Comparing Plan
+through the export's 2026-10-04 as-of date excludes future-dated ledger entries.
+Card-payment funding follows purchase dates and gives positive-balance-covered
+spending first claim on category money. The owner's card Activity breakdowns
+isolated the remaining differences to funded spending; after that correction,
+the disposable comparison matches all 1,326 `Assigned`, `Activity`, and
+`Available` values across 51 months. All 34 reference balances still match.
 Imported Ready to Assign rows now retain their category in the register while
 Plan routes their cash activity to its separate Ready to Assign balance; the
 34-account and Assigned comparisons stayed unchanged after this correction.
 The Capital Gains tracking route now appears as one Income Breakdown source
-when it crosses into an on-budget account. No independent
-report-value comparison has been completed. These runs used temporary databases
-and did not modify the owner's live budget.
+when it crosses into an on-budget account. No independent report-value
+comparison has been completed. These runs used temporary databases and did not
+modify the owner's live budget. The 2026-10-04 credit correction passed all 92
+Rust core tests and the disposable import comparison.
 
 The native Windows MSVC desktop-build gate was verified on 2026-09-23. On a
 Windows 11 machine with Node.js 24.19.0, Rust 1.98.1 (`stable-x86_64-pc-windows-msvc`)
@@ -73,10 +70,10 @@ has proceeded, so older instructions to start that work only after v0.1 are
 sequencing intent, not an accurate description of today's implementation. No
 release tag existed at this review; tag only after owner-data validation.
 
-Full historical Plan Activity/Available agreement, full target frequencies, recurring
-transfers, backup restore/retention and installer packaging remain outside the
-implemented slices documented here. Consult topic requirements before choosing
-next work; do not treat this list as an exhaustive backlog.
+Full target frequencies, recurring transfers, backup restore/retention, report
+value validation and installer packaging remain outside the implemented slices
+documented here. Consult topic requirements before choosing next work; do not
+treat this list as an exhaustive backlog.
 
 Update this file with dated evidence when a gate changes. Keep test counts and
 machine-specific baseline failures out of always-loaded instructions.
