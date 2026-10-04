@@ -4,6 +4,7 @@ import {
   listNativeBackups,
   loadAccountRegister,
   loadWorkspace,
+  recoverUnreadableBudget,
   restoreNativeBackup,
   type AccountKind,
   type AccountOverview,
@@ -89,9 +90,10 @@ export function App() {
     { status: "idle" } | { status: "saving" } | { status: "ready"; path: string } | { status: "error" }
   >({ status: "idle" });
   const [backups, setBackups] = useState<string[]>([]);
+  const [backupDirectory, setBackupDirectory] = useState("");
   const [selectedBackup, setSelectedBackup] = useState("");
   const [restore, setRestore] = useState<
-    { status: "idle" } | { status: "restoring" } | { status: "ready"; safetyPath: string } | { status: "error"; message: string }
+    { status: "idle" } | { status: "restoring" } | { status: "ready"; message: string; path: string } | { status: "error"; message: string }
   >({ status: "idle" });
 
   useEffect(() => {
@@ -142,10 +144,11 @@ export function App() {
   }, [selectedAccountId, registerAttempt, startup.status]);
 
   useEffect(() => {
-    if (startup.status === "ready") {
-      listNativeBackups().then((names) => {
-        setBackups(names);
-        setSelectedBackup((current) => names.includes(current) ? current : "");
+    if (startup.status === "ready" || startup.status === "error") {
+      listNativeBackups().then((result) => {
+        setBackups(result.names);
+        setBackupDirectory(result.directory);
+        setSelectedBackup((current) => result.names.includes(current) ? current : "");
       }).catch(() => setRestore({ status: "error", message: "Could not list local backups." }));
     }
   }, [startup.status, startupAttempt]);
@@ -174,18 +177,28 @@ export function App() {
   }
 
   async function refreshBackups() {
-    const names = await listNativeBackups();
-    setBackups(names);
-    setSelectedBackup((current) => names.includes(current) ? current : "");
+    const result = await listNativeBackups();
+    setBackups(result.names);
+    setBackupDirectory(result.directory);
+    setSelectedBackup((current) => result.names.includes(current) ? current : "");
   }
 
   async function restoreSelectedBackup() {
     if (!selectedBackup || restore.status === "restoring") return;
-    if (!window.confirm(`Restore ${selectedBackup}? This replaces the current budget. Allocash will save a verified safety backup first.`)) return;
+    const recovering = startup.status === "error";
+    const confirmation = recovering
+      ? `Recover from ${selectedBackup}? Allocash will preserve the unreadable database files before installing this backup.`
+      : `Restore ${selectedBackup}? This replaces the current budget. Allocash will save a verified safety backup first.`;
+    if (!window.confirm(confirmation)) return;
     setRestore({ status: "restoring" });
     try {
-      const receipt = await restoreNativeBackup(selectedBackup);
-      setRestore({ status: "ready", safetyPath: receipt.safetyBackupPath });
+      if (recovering) {
+        const receipt = await recoverUnreadableBudget(selectedBackup);
+        setRestore({ status: "ready", message: "Budget recovered. Unreadable files were preserved at", path: receipt.preservedDataPath });
+      } else {
+        const receipt = await restoreNativeBackup(selectedBackup);
+        setRestore({ status: "ready", message: "Budget restored. The previous budget was saved at", path: receipt.safetyBackupPath });
+      }
       setView("register");
       setSelectedAccountId(null);
       setStartupAttempt((value) => value + 1);
@@ -250,8 +263,8 @@ export function App() {
               {startup.status === "loading" && "Opening your local budget…"}
               {startup.status === "preview" && "Browser preview — open the desktop app to read your local ledger."}
               {startup.status === "error" && <>
-                Could not open your local budget. Check the data folder permissions and restart the app.
-                <button onClick={() => setStartupAttempt((value) => value + 1)}>Retry</button>
+                Could not open your local budget. Retry, or recover from a verified local backup below if the database is unreadable.
+                <button onClick={() => setStartupAttempt((value) => value + 1)} disabled={restore.status === "restoring"}>Retry</button>
               </>}
             </div>
           )}
@@ -286,25 +299,27 @@ export function App() {
               <summary>Local data location</summary>
               <p className="database-path">{startup.workspace.budget.databasePath}</p>
             </details>}
-            {startup.status === "ready" && <div className="backup-controls">
-              <button onClick={saveNativeBackup} disabled={backup.status === "saving" || restore.status === "restoring"}>
+            {(startup.status === "ready" || startup.status === "error") && <div className="backup-controls">
+              {startup.status === "ready" && <><button onClick={saveNativeBackup} disabled={backup.status === "saving" || restore.status === "restoring"}>
                 {backup.status === "saving" ? "Creating verified backup…" : "Create verified backup"}
               </button>
               <p>A full local SQLite copy is saved beside your budget. Copy it to another drive or private storage to protect against disk loss.</p>
               {backup.status === "ready" && <p className="backup-success" role="status">Verified backup created: <span>{backup.path}</span></p>}
-              {backup.status === "error" && <p className="backup-error" role="alert">The backup could not be created. Your live budget was not changed.</p>}
+              {backup.status === "error" && <p className="backup-error" role="alert">The backup could not be created. Your live budget was not changed.</p>}</>}
               <div className="restore-controls">
-                <p>Restore replaces the current budget after saving a safety copy. Only backups in the local backups folder appear here.</p>
+                <p>{startup.status === "error" ? "Recover from a local backup. Allocash preserves the unreadable database files before installing it." : "Restore replaces the current budget after saving a safety copy."} Only backups in the local backups folder appear here.</p>
+                {backupDirectory && <p className="database-path">Backups folder: {backupDirectory}</p>}
                 <button onClick={() => refreshBackups().catch(() => setRestore({ status: "error", message: "Could not list local backups." }))} disabled={restore.status === "restoring"}>Find local backups</button>
+                {startup.status === "error" && backups.length === 0 && <p>No local backups found. Copy a verified Allocash backup into this folder, then select Find local backups.</p>}
                 {backups.length > 0 && <>
                   <label htmlFor="restore-backup">Backup to restore</label>
                   <select id="restore-backup" value={selectedBackup} onChange={(event) => setSelectedBackup(event.target.value)} disabled={restore.status === "restoring"}>
                     <option value="">Choose a backup</option>
                     {backups.map((name) => <option key={name} value={name}>{name}</option>)}
                   </select>
-                  <button onClick={restoreSelectedBackup} disabled={!selectedBackup || restore.status === "restoring"}>{restore.status === "restoring" ? "Restoring…" : "Restore selected backup"}</button>
+                  <button onClick={restoreSelectedBackup} disabled={!selectedBackup || restore.status === "restoring"}>{restore.status === "restoring" ? "Restoring…" : startup.status === "error" ? "Recover from backup" : "Restore selected backup"}</button>
                 </>}
-                {restore.status === "ready" && <p className="backup-success" role="status">Budget restored. The previous budget was saved at <span>{restore.safetyPath}</span></p>}
+                {restore.status === "ready" && <p className="backup-success" role="status">{restore.message} <span>{restore.path}</span></p>}
                 {restore.status === "error" && <p className="backup-error" role="alert">{restore.message}</p>}
               </div>
             </div>}

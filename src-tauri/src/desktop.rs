@@ -1,4 +1,6 @@
-use crate::database::{BudgetInfo, Database, NativeBackupReceipt, NativeRestoreReceipt};
+use crate::database::{
+    BudgetInfo, Database, NativeBackupReceipt, NativeRecoveryReceipt, NativeRestoreReceipt,
+};
 use crate::ledger::{
     AccountOverview, BalanceOverTimeInput, BalanceOverTimeReport, CalendarDate, ForecastInput,
     ForecastReport, IncomeBreakdownInput, IncomeBreakdownReport, IncomeExpenseReport,
@@ -25,6 +27,13 @@ struct WorkspaceSnapshot {
     budget: BudgetInfo,
     accounts: Vec<AccountOverview>,
     transaction_options: TransactionFormOptions,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeBackupList {
+    directory: String,
+    names: Vec<String>,
 }
 
 fn with_database<T>(
@@ -95,14 +104,16 @@ fn create_native_backup(
 }
 
 #[tauri::command]
-fn list_native_backups(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, BudgetState>,
-) -> Result<Vec<String>, String> {
-    with_database(&app, &state, |database| {
-        database
-            .list_native_backups()
-            .map_err(|_| "Could not list local backups.".to_owned())
+fn list_native_backups(app: tauri::AppHandle) -> Result<NativeBackupList, String> {
+    let directory = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "Could not locate the application data folder.".to_owned())?;
+    let names = Database::list_native_backups_at(&directory.join("budget.sqlite3"))
+        .map_err(|_| "Could not list local backups.".to_owned())?;
+    Ok(NativeBackupList {
+        directory: directory.join("backups").to_string_lossy().into_owned(),
+        names,
     })
 }
 
@@ -117,6 +128,30 @@ fn restore_native_backup(
             .restore_native_backup(&name)
             .map_err(|error| error.to_string())
     })
+}
+
+#[tauri::command]
+fn recover_unreadable_budget(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    name: String,
+) -> Result<NativeRecoveryReceipt, String> {
+    let mut slot = state
+        .0
+        .lock()
+        .map_err(|_| "Budget storage is unavailable.")?;
+    if slot.is_some() {
+        return Err("The budget is open; use normal backup restore.".to_owned());
+    }
+    let directory = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "Could not locate the application data folder.".to_owned())?;
+    let (database, receipt) =
+        Database::recover_unreadable_budget(&directory.join("budget.sqlite3"), &name)
+            .map_err(|error| error.to_string())?;
+    *slot = Some(database);
+    Ok(receipt)
 }
 
 #[tauri::command]
@@ -545,6 +580,7 @@ pub fn run() {
             create_native_backup,
             list_native_backups,
             restore_native_backup,
+            recover_unreadable_budget,
             get_workspace,
             get_account_register,
             get_scheduled_occurrences,

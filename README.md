@@ -141,9 +141,12 @@ protection. Deleting a register entry or canceling a schedule first creates a
 verified safety snapshot; if that snapshot fails, Allocash makes no change. When
 the budget opens normally, the desktop app can restore a selected file from its
 local `backups/` folder. It validates the selected copy and saves the current
-budget before replacing it. Keep an external copy of an important backup;
-startup recovery from an unreadable live database and automatic retention are
-still future work.
+budget before replacing it. If the live budget cannot open, the startup screen
+can recover from a verified file in the same `backups/` folder. It preserves the
+unreadable database and its WAL sidecars in a separate folder before installing
+the backup. Copy an external backup into the displayed backups folder and select
+Find local backups when needed. Keep an external copy of an important backup;
+automatic retention is still future work.
 
 ## Git convention
 

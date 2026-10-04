@@ -14,6 +14,8 @@ export interface NativeBackupReceipt {
 }
 
 export interface NativeRestoreReceipt { safetyBackupPath: string; }
+export interface NativeRecoveryReceipt { preservedDataPath: string; }
+export interface NativeBackupList { directory: string; names: string[]; }
 
 export type AccountKind = "cash" | "credit" | "loan" | "tracking";
 export type ClearedState = "uncleared" | "cleared" | "reconciled";
@@ -177,12 +179,16 @@ export async function createNativeBackup(): Promise<NativeBackupReceipt> {
   return invoke<NativeBackupReceipt>("create_native_backup");
 }
 
-export async function listNativeBackups(): Promise<string[]> {
-  return invoke<string[]>("list_native_backups");
+export async function listNativeBackups(): Promise<NativeBackupList> {
+  return invoke<NativeBackupList>("list_native_backups");
 }
 
 export async function restoreNativeBackup(name: string): Promise<NativeRestoreReceipt> {
   return invoke<NativeRestoreReceipt>("restore_native_backup", { name });
+}
+
+export async function recoverUnreadableBudget(name: string): Promise<NativeRecoveryReceipt> {
+  return invoke<NativeRecoveryReceipt>("recover_unreadable_budget", { name });
 }
 
 export async function loadWorkspace(asOf: string): Promise<WorkspaceSnapshot | null> {

@@ -37,8 +37,14 @@ unversioned databases and unsupported versions. An open budget can restore a
 selected local backup through SQLite's online restore API. Restore validates the
 candidate's integrity, foreign keys, schema version and HUF budget identity,
 creates a verified snapshot of the current budget, then verifies the restored
-database. On failure it attempts to recover from the snapshot. A database that
-cannot be opened at startup still needs a separate recovery route.
+database. On failure it attempts to recover from the snapshot. Startup first
+checks an existing database read-only, so a corrupt file's WAL sidecars are not
+altered by a failed writable open. If the database is unreadable, the recovery
+command validates a local backup, makes a self-contained replacement in a
+temporary file, preserves the original database and sidecars in a unique
+`backups/unreadable-budget-*` folder, then installs and reopens the replacement.
+If the replacement cannot open, it attempts to put the originals back. A valid
+live database cannot enter this recovery path.
 The desktop command layer also creates a required safety snapshot immediately before
 register deletion (including both transfer legs) and schedule deactivation, which
 removes a pending occurrence. It validates the action before snapshotting to avoid

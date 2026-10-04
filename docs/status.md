@@ -20,6 +20,8 @@ or owner-data validation run.
   register deletion or schedule deactivation.
 - Local native backup restore for an open budget, with source validation, a
   verified pre-restore safety copy, and post-restore validation/recovery.
+- Startup recovery from an unreadable budget using a verified local backup,
+  with the original SQLite files preserved in a separate folder.
 
 On 2026-10-04, register editing gained account, date, payee, category, flag and
 ordinary inflow/outflow direction corrections without replacing transaction
@@ -34,8 +36,16 @@ The selected backup is validated before use, a verified copy of the current
 budget is saved, and the restored database is checked before the app refreshes
 its workspace. A failed restore attempts to recover the prior budget from that
 copy. The restore tests cover a WAL-backed round trip and invalid sources; the
-96 Rust tests and frontend build passed. Recovery when the live database cannot
-open at startup and a full owner workflow rehearsal remain separate gates.
+96 Rust tests and frontend build passed. A full owner workflow rehearsal remains
+a separate gate.
+
+On 2026-10-04, startup recovery gained a separate path for an unreadable live
+database. It validates a selected local backup before replacement, preserves
+the unreadable database and WAL sidecars, and reopens the replacement. A valid
+live database is refused by this route. The disposable tests cover recovery,
+file preservation and invalid inputs; 99 desktop Rust tests, 58 frontend
+tests and frontend build passed. The backup and recovery UI still needs a
+desktop workflow rehearsal before the migration gate closes.
 
 See [accounting-rules.md](accounting-rules.md) for implemented semantics and
 [architecture.md](architecture.md) for storage/import boundaries. These slices do
@@ -100,7 +110,7 @@ has proceeded, so older instructions to start that work only after v0.1 are
 sequencing intent, not an accurate description of today's implementation. No
 release tag existed at this review; tag only after owner-data validation.
 
-Full target frequencies, recurring transfers, startup recovery, automatic backup
+Full target frequencies, recurring transfers, automatic backup
 retention, remaining report value validation and installer packaging remain outside
 the implemented slices documented here. Consult topic requirements before choosing next work;
 do not treat this list as an exhaustive backlog.
