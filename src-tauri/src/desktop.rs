@@ -383,6 +383,7 @@ struct PlanMoveInput {
     to_category_id: String,
     month: String,
     amount: String,
+    as_of: String,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -410,10 +411,14 @@ fn get_plan_month(
     app: tauri::AppHandle,
     state: tauri::State<'_, BudgetState>,
     month: String,
+    as_of: String,
 ) -> Result<PlanSnapshot, String> {
     let month = PlanMonth::parse(&month).map_err(ledger_error)?;
+    let as_of = CalendarDate::parse(&as_of).map_err(ledger_error)?;
     with_database(&app, &state, |database| {
-        database.plan_month(&month).map_err(ledger_error)
+        database
+            .plan_month_as_of(&month, &as_of)
+            .map_err(ledger_error)
     })
 }
 
@@ -445,6 +450,7 @@ fn move_plan_money(
     input: PlanMoveInput,
 ) -> Result<(), String> {
     let month = PlanMonth::parse(&input.month).map_err(ledger_error)?;
+    let as_of = CalendarDate::parse(&input.as_of).map_err(ledger_error)?;
     let amount = input
         .amount
         .parse::<i64>()
@@ -454,11 +460,12 @@ fn move_plan_money(
     }
     with_database(&app, &state, |database| {
         database
-            .move_monthly_money(
+            .move_monthly_money_as_of(
                 &input.from_category_id,
                 &input.to_category_id,
                 &month,
                 crate::ledger::Huf(amount),
+                &as_of,
             )
             .map_err(ledger_error)
     })

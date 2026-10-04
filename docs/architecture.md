@@ -101,6 +101,8 @@ The YNAB `Inflow: Ready to Assign` category stays on imported ledger entries and
 in raw rows. Plan treats it as its separate Ready to Assign balance rather than a
 regular category. Structured categories on transfer legs are retained so
 transfers across the budget boundary can affect Plan activity.
+The desktop Plan receives the local calendar date as its activity cutoff; a
+disposable export comparison uses the export's explicit as-of date.
 Transfer materialization requires reciprocal legs with the same accounts, date and
 exact opposite nonzero amount. Repeated equal transfers are paired as a balanced
 group only when the memo/flag multisets also match; each source leg keeps its own

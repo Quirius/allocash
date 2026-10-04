@@ -66,7 +66,9 @@ income/spending; implemented report and Plan semantics are described below.
 
 ## Plan cash and credit spending
 
-The Plan replays posted on-budget activity one calendar month at a time. An
+The Plan replays posted on-budget activity one calendar month at a time, through
+an explicit as-of date for the desktop view and export comparison. Future-dated
+entries remain in the ledger but do not yet change Plan Activity or Available. An
 imported YNAB Budget row's `Assigned` amount can populate the matching
 category/month assignment without replacing an existing edit. The importer keeps
 source `Activity` and `Available` values for later comparison; Plan activity and

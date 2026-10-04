@@ -1,6 +1,6 @@
 use crate::{
     database::Database,
-    ledger::{Huf, LedgerError, LedgerResult},
+    ledger::{CalendarDate, Huf, LedgerError, LedgerResult},
 };
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -238,6 +238,34 @@ impl Database {
         month: &PlanMonth,
         amount: Huf,
     ) -> LedgerResult<()> {
+        self.move_monthly_money_with_cutoff(from_category_id, to_category_id, month, amount, None)
+    }
+
+    pub fn move_monthly_money_as_of(
+        &mut self,
+        from_category_id: &str,
+        to_category_id: &str,
+        month: &PlanMonth,
+        amount: Huf,
+        as_of: &CalendarDate,
+    ) -> LedgerResult<()> {
+        self.move_monthly_money_with_cutoff(
+            from_category_id,
+            to_category_id,
+            month,
+            amount,
+            Some(as_of),
+        )
+    }
+
+    fn move_monthly_money_with_cutoff(
+        &mut self,
+        from_category_id: &str,
+        to_category_id: &str,
+        month: &PlanMonth,
+        amount: Huf,
+        as_of: Option<&CalendarDate>,
+    ) -> LedgerResult<()> {
         if from_category_id == to_category_id || amount.0 <= 0 {
             return Err(LedgerError::InvalidValue(
                 "A category move needs two categories and a positive amount.",
@@ -254,7 +282,7 @@ impl Database {
         if count != 2 {
             return Err(LedgerError::NotFound);
         }
-        if category_available_for(&transaction, from_category_id, month)?.0 < amount.0 {
+        if category_available_for(&transaction, from_category_id, month, as_of)?.0 < amount.0 {
             return Err(LedgerError::InvalidValue(
                 "Cannot move more than this category has available.",
             ));
@@ -296,7 +324,23 @@ impl Database {
     }
 
     pub fn plan_month(&self, month: &PlanMonth) -> LedgerResult<PlanSnapshot> {
-        let derivation = derive_plan(&self.connection, month)?;
+        self.plan_month_with_cutoff(month, None)
+    }
+
+    pub fn plan_month_as_of(
+        &self,
+        month: &PlanMonth,
+        as_of: &CalendarDate,
+    ) -> LedgerResult<PlanSnapshot> {
+        self.plan_month_with_cutoff(month, Some(as_of))
+    }
+
+    fn plan_month_with_cutoff(
+        &self,
+        month: &PlanMonth,
+        as_of: Option<&CalendarDate>,
+    ) -> LedgerResult<PlanSnapshot> {
+        let derivation = derive_plan(&self.connection, month, as_of)?;
         let ready_category_ids = ready_to_assign_category_ids(&self.connection)?;
         let target_definitions = target_definitions_for(&self.connection, month)?;
         let target_snoozes = target_snoozes_for(&self.connection, month)?;
@@ -381,6 +425,7 @@ fn ready_to_assign_category_ids(
 fn derive_plan(
     connection: &rusqlite::Connection,
     target: &PlanMonth,
+    as_of: Option<&CalendarDate>,
 ) -> LedgerResult<PlanDerivation> {
     let ready_category_ids = ready_to_assign_category_ids(connection)?;
     let payment_categories: BTreeMap<String, String> = connection
@@ -418,10 +463,13 @@ fn derive_plan(
         "SELECT t.category_id,t.amount_huf,t.transaction_date,a.kind,t.account_id,t.transfer_id,
                 (SELECT other_account.kind FROM ledger_entries other JOIN accounts other_account ON other_account.id=other.account_id WHERE other.transfer_id=t.transfer_id AND other.account_id<>t.account_id)
          FROM ledger_entries t JOIN accounts a ON a.id=t.account_id
-         WHERE t.posting_state='posted' AND t.transaction_date<?1 AND a.kind IN ('cash','credit')
+         WHERE t.posting_state='posted' AND t.transaction_date<?1 AND (?2 IS NULL OR t.transaction_date<=?2) AND a.kind IN ('cash','credit')
          ORDER BY t.transaction_date,t.id",
     )?;
-    let mut rows = entries.query([target.next_start()])?;
+    let mut rows = entries.query(params![
+        target.next_start(),
+        as_of.map(CalendarDate::as_str)
+    ])?;
     while let Some(row) = rows.next()? {
         let category_id: Option<String> = row.get(0)?;
         let amount = i128::from(row.get::<_, i64>(1)?);
@@ -686,9 +734,10 @@ fn category_available_for(
     connection: &rusqlite::Connection,
     category_id: &str,
     month: &PlanMonth,
+    as_of: Option<&CalendarDate>,
 ) -> LedgerResult<Huf> {
     narrow(
-        *derive_plan(connection, month)?
+        *derive_plan(connection, month, as_of)?
             .available
             .get(category_id)
             .unwrap_or(&0),
@@ -725,6 +774,57 @@ mod tests {
             .as_ref()
             .unwrap()
     }
+
+    #[test]
+    fn as_of_plan_excludes_future_dated_entries_until_their_date() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "cash".into(),
+                name: "Cash".into(),
+                kind: AccountKind::Cash,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        database.create_category("other", "g", "Other", 1).unwrap();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &month, Huf(100))
+            .unwrap();
+        let income = Entry::manual("income", "cash", CalendarDate::parse("2026-09-10").unwrap());
+        database.create_transaction(&income, Huf(200)).unwrap();
+        let mut spend = Entry::manual("spend", "cash", CalendarDate::parse("2026-09-10").unwrap());
+        spend.category_id = Some("food".into());
+        database.create_transaction(&spend, Huf(-40)).unwrap();
+
+        let before = database
+            .plan_month_as_of(&month, &CalendarDate::parse("2026-09-09").unwrap())
+            .unwrap();
+        assert_eq!(before.ready_to_assign, Huf(-100));
+        assert_eq!(before.categories[0].activity, Huf(0));
+        assert_eq!(before.categories[0].available, Huf(100));
+
+        let on_date = database
+            .plan_month_as_of(&month, &CalendarDate::parse("2026-09-10").unwrap())
+            .unwrap();
+        assert_eq!(on_date.ready_to_assign, Huf(100));
+        assert_eq!(on_date.categories[0].activity, Huf(-40));
+        assert_eq!(on_date.categories[0].available, Huf(60));
+        assert!(database
+            .move_monthly_money_as_of(
+                "food",
+                "other",
+                &month,
+                Huf(80),
+                &CalendarDate::parse("2026-09-10").unwrap(),
+            )
+            .is_err());
+    }
+
     #[test]
     fn plan_uses_posted_on_budget_activity_and_rolls_available_forward() {
         let directory = tempfile::tempdir().unwrap();

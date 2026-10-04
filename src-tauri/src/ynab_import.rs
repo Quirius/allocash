@@ -615,6 +615,22 @@ impl Database {
         &self,
         summary: &ImportValidationSummary,
     ) -> ImportResult<PlanValueComparison> {
+        self.compare_staged_plan_values_with_cutoff(summary, None)
+    }
+
+    pub fn compare_staged_plan_values_as_of(
+        &self,
+        summary: &ImportValidationSummary,
+        as_of: &CalendarDate,
+    ) -> ImportResult<PlanValueComparison> {
+        self.compare_staged_plan_values_with_cutoff(summary, Some(as_of))
+    }
+
+    fn compare_staged_plan_values_with_cutoff(
+        &self,
+        summary: &ImportValidationSummary,
+        as_of: Option<&CalendarDate>,
+    ) -> ImportResult<PlanValueComparison> {
         let rows = parse_staged_plan_rows(&self.connection, &summary.batch_id)?;
         let mut snapshots = BTreeMap::new();
         let mut assigned_match_count = 0;
@@ -624,7 +640,13 @@ impl Database {
         for row in &rows {
             if !snapshots.contains_key(&row.month) {
                 let month = PlanMonth::parse(&row.month)?;
-                snapshots.insert(row.month.clone(), self.plan_month(&month)?);
+                snapshots.insert(
+                    row.month.clone(),
+                    match as_of {
+                        Some(date) => self.plan_month_as_of(&month, date)?,
+                        None => self.plan_month(&month)?,
+                    },
+                );
             }
             let category = snapshots[&row.month]
                 .categories

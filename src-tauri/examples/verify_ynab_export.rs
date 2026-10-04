@@ -149,7 +149,7 @@ fn main() -> Result<(), AnyError> {
     let validation = database.validate_materialized_import(&staged, &as_of)?;
     let plan_comparison = owner_mappings
         .as_ref()
-        .map(|_| database.compare_staged_plan_values(&staged))
+        .map(|_| database.compare_staged_plan_values_as_of(&staged, &as_of))
         .transpose()?;
     if let Some(path) = plan_differences_path {
         let comparison = plan_comparison.as_ref().ok_or_else(|| {
