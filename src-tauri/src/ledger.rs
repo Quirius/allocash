@@ -1798,9 +1798,11 @@ impl Database {
             values.extend(input.account_ids.iter().cloned().map(Into::into));
             values
         };
-        let mut income_sql = "SELECT t.payee_id,COALESCE(p.name,'No payee'),SUM(t.amount_huf),COUNT(*) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN payees p ON p.id=t.payee_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf>0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        let mut income_sql = "SELECT CASE WHEN t.transfer_id IS NOT NULL THEN 'transfer-account-'||other_a.id ELSE t.payee_id END source_id,CASE WHEN t.transfer_id IS NOT NULL THEN other_a.name ELSE COALESCE(p.name,'No payee') END source_name,SUM(t.amount_huf),COUNT(*) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN payees p ON p.id=t.payee_id LEFT JOIN ledger_entries other ON other.transfer_id=t.transfer_id AND other.id<>t.id LEFT JOIN accounts other_a ON other_a.id=other.account_id WHERE t.posting_state='posted' AND (t.transfer_id IS NULL OR (a.kind IN ('cash','credit') AND other_a.kind IN ('tracking','loan'))) AND t.amount_huf>0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
         scope(&mut income_sql);
-        income_sql.push_str(" GROUP BY t.payee_id,p.name ORDER BY SUM(t.amount_huf) DESC,COALESCE(p.name,'No payee'),t.payee_id");
+        income_sql.push_str(
+            " GROUP BY source_id,source_name ORDER BY SUM(t.amount_huf) DESC,source_name,source_id",
+        );
         let mut income_statement = self.connection.prepare(&income_sql)?;
         let income_sources = income_statement
             .query_map(rusqlite::params_from_iter(values()), |row| {
@@ -1812,7 +1814,7 @@ impl Database {
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;
-        let mut expense_sql = "SELECT g.id,COALESCE(g.name,'Uncategorized'),SUM(-t.amount_huf),COUNT(*) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN category_groups g ON g.id=c.group_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        let mut expense_sql = "SELECT g.id,COALESCE(g.name,'Uncategorized'),SUM(-t.amount_huf),COUNT(*) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN ledger_entries other ON other.transfer_id=t.transfer_id AND other.id<>t.id LEFT JOIN accounts other_a ON other_a.id=other.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN category_groups g ON g.id=c.group_id WHERE t.posting_state='posted' AND (t.transfer_id IS NULL OR (a.kind IN ('cash','credit') AND other_a.kind IN ('tracking','loan'))) AND t.amount_huf<0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
         scope(&mut expense_sql);
         expense_sql.push_str(" GROUP BY g.id,g.name ORDER BY CASE WHEN g.id IS NULL THEN 1 ELSE 0 END,g.sort_order,g.id");
         let mut expense_statement = self.connection.prepare(&expense_sql)?;

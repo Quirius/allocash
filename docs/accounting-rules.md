@@ -75,12 +75,19 @@ Each closed month carries positive category money forward and resets a negative
 category balance. Cash overspending reduces Ready to Assign in the next month;
 credit overspending is card debt and does not reduce Ready to Assign.
 
+YNAB's `Inflow: Ready to Assign` marker imports as uncategorized ledger income,
+so it funds Ready to Assign rather than appearing as a spendable category. A
+transfer between on-budget accounts remains outside category activity. When a
+posted transfer crosses between a cash/credit account and a tracking/loan account,
+the on-budget leg uses its source category for Plan activity; an uncategorized
+cash leg changes Ready to Assign. The off-budget leg never funds categories.
+
 Within a category/month, cash spending has first claim on the category's
 available money. Remaining funded money moves to the mapped card-payment
 category for card spending, allocated in the account presentation order. Card
 refunds reverse that movement. A posted cash-to-credit transfer reduces the
-mapped payment category without changing Ready to Assign. Scheduled, off-budget
-and ordinary transfer rows do not affect Plan activity.
+mapped payment category without changing Ready to Assign. Scheduled rows and
+transfers wholly within or outside the budget do not affect Plan activity.
 
 ## Plan targets
 
@@ -166,10 +173,13 @@ null-category history. Its category series preserve stored order and are aligned
 to every returned month, including zero-activity months.
 
 Income Breakdown treats payees as income sources and category groups as aggregate
-expense destinations. It includes posted, non-transfer, nonzero ordinary entries
-in the activity-report account scope; null payees are `No payee` and null expense
-categories form a final `Uncategorized` group. Transfers, including Capital Gains
-routing, are excluded structurally. The visual joins sources to Total Income and
+expense destinations. It includes posted nonzero ordinary entries in the
+activity-report account scope; null payees are `No payee` and null expense
+categories form a final `Uncategorized` group. For a transfer crossing from a
+tracking/loan account into cash/credit, the off-budget account name is the income
+source. A categorized transfer out of the budget is an expense. This preserves
+the owner's Capital Gains routing as one income source. Transfers within the
+budget remain excluded. The visual joins sources to Total Income and
 expenses from Total Expenses; its net gain or shortfall is period-level only and
 never traces individual funds.
 

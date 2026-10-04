@@ -5,6 +5,7 @@
 use crate::{
     database::Database,
     ledger::{AccountKind, CalendarDate, Huf, LedgerError},
+    plan::PlanMonth,
 };
 use csv::{ReaderBuilder, StringRecord};
 use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
@@ -142,6 +143,31 @@ pub struct TransferMaterializationSummary {
 pub struct PlanAssignmentMaterializationSummary {
     pub assignment_count: usize,
     pub month_count: usize,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanValueComparison {
+    pub source_row_count: usize,
+    pub month_count: usize,
+    pub assigned_match_count: usize,
+    pub activity_match_count: usize,
+    pub available_match_count: usize,
+    pub differences: Vec<PlanValueDifference>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlanValueDifference {
+    pub month: String,
+    pub category_group: String,
+    pub category_name: String,
+    pub source_assigned: Huf,
+    pub derived_assigned: Huf,
+    pub source_activity: Huf,
+    pub derived_activity: Huf,
+    pub source_available: Huf,
+    pub derived_available: Huf,
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -311,6 +337,8 @@ struct TransferCandidate {
     date: CalendarDate,
     amount: i64,
     payee: String,
+    category_group: String,
+    category: String,
     memo: String,
     flag: String,
     cleared: &'static str,
@@ -330,6 +358,16 @@ struct RegisterRow {
     inflow: String,
     flag: String,
     cleared: String,
+}
+
+struct ImportedPlanRow {
+    month: String,
+    category_group: String,
+    category_name: String,
+    category_id: String,
+    assigned: i64,
+    activity: i64,
+    available: i64,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -534,62 +572,12 @@ impl Database {
                 "The staged import batch was not found.",
             ));
         }
-        let staged = load_staged_rows(&transaction, &summary.batch_id)?;
-        let mut headers: HashMap<String, Vec<String>> = HashMap::new();
-        let mut seen = HashSet::new();
+        let rows = parse_staged_plan_rows(&transaction, &summary.batch_id)?;
         let mut months = BTreeSet::new();
-        for (_row_id, source_file, row_number, raw_data) in staged {
-            let raw: RawCsvRow = serde_json::from_str(&raw_data)?;
-            if row_number == 1 {
-                headers.insert(
-                    source_file,
-                    raw.cells
-                        .iter()
-                        .map(|value| normalize_header(value))
-                        .collect(),
-                );
-                continue;
-            }
-            let header = headers.get(&source_file).ok_or(ImportError::InvalidValue(
-                "A staged source file has no header row.",
-            ))?;
-            if classify(header) != SourceFileKind::Budget {
-                continue;
-            }
-            let required = |name| {
-                field(header, name)
-                    .and_then(|index| raw.cells.get(index))
-                    .map(String::as_str)
-                    .ok_or(ImportError::InvalidValue(
-                        "A budget source column is missing.",
-                    ))
-            };
-            let month = parse_budget_month(required("month")?).ok_or(ImportError::InvalidValue(
-                "An imported Plan month is invalid.",
-            ))?;
-            let group = required("category group")?.trim();
-            let category = required("category")?.trim();
-            if group.is_empty() || category.is_empty() {
-                return Err(ImportError::InvalidValue(
-                    "An imported Plan category is missing.",
-                ));
-            }
-            let assigned = parse_huf(required("assigned")?)?;
-            parse_huf(required("activity")?)?;
-            parse_huf(required("available")?)?;
-            let category_id = import_id(
-                &summary.batch_id,
-                "category",
-                &format!("{group}:{category}"),
-            );
-            if !seen.insert((category_id.clone(), month.clone())) {
-                return Err(ImportError::InvalidValue(
-                    "The export repeats a Plan category and month.",
-                ));
-            }
+        for row in &rows {
             let category_exists: bool = transaction.query_row(
                 "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
-                [&category_id],
+                [&row.category_id],
                 |row| row.get(0),
             )?;
             if !category_exists {
@@ -599,7 +587,7 @@ impl Database {
             }
             let assignment_exists: bool = transaction.query_row(
                 "SELECT EXISTS(SELECT 1 FROM category_month_assignments WHERE category_id=?1 AND month=?2)",
-                params![category_id, month],
+                params![row.category_id, row.month],
                 |row| row.get(0),
             )?;
             if assignment_exists {
@@ -609,14 +597,69 @@ impl Database {
             }
             transaction.execute(
                 "INSERT INTO category_month_assignments (category_id,month,amount_huf) VALUES (?1,?2,?3)",
-                params![category_id, month, assigned],
+                params![row.category_id, row.month, row.assigned],
             )?;
-            months.insert(month);
+            months.insert(row.month.clone());
         }
         transaction.commit()?;
         Ok(PlanAssignmentMaterializationSummary {
-            assignment_count: seen.len(),
+            assignment_count: rows.len(),
             month_count: months.len(),
+        })
+    }
+
+    /// Compares imported monthly source values with the current Plan derivation.
+    /// Meaningful Activity/Available results require explicit account kinds and
+    /// credit payment category mappings first.
+    pub fn compare_staged_plan_values(
+        &self,
+        summary: &ImportValidationSummary,
+    ) -> ImportResult<PlanValueComparison> {
+        let rows = parse_staged_plan_rows(&self.connection, &summary.batch_id)?;
+        let mut snapshots = BTreeMap::new();
+        let mut assigned_match_count = 0;
+        let mut activity_match_count = 0;
+        let mut available_match_count = 0;
+        let mut differences = Vec::new();
+        for row in &rows {
+            if !snapshots.contains_key(&row.month) {
+                let month = PlanMonth::parse(&row.month)?;
+                snapshots.insert(row.month.clone(), self.plan_month(&month)?);
+            }
+            let category = snapshots[&row.month]
+                .categories
+                .iter()
+                .find(|category| category.category_id == row.category_id)
+                .ok_or(ImportError::InvalidValue(
+                    "An imported Plan category is missing from the Plan view.",
+                ))?;
+            assigned_match_count += usize::from(category.assigned.0 == row.assigned);
+            activity_match_count += usize::from(category.activity.0 == row.activity);
+            available_match_count += usize::from(category.available.0 == row.available);
+            if category.assigned.0 != row.assigned
+                || category.activity.0 != row.activity
+                || category.available.0 != row.available
+            {
+                differences.push(PlanValueDifference {
+                    month: row.month.clone(),
+                    category_group: row.category_group.clone(),
+                    category_name: row.category_name.clone(),
+                    source_assigned: Huf(row.assigned),
+                    derived_assigned: category.assigned,
+                    source_activity: Huf(row.activity),
+                    derived_activity: category.activity,
+                    source_available: Huf(row.available),
+                    derived_available: category.available,
+                });
+            }
+        }
+        Ok(PlanValueComparison {
+            source_row_count: rows.len(),
+            month_count: snapshots.len(),
+            assigned_match_count,
+            activity_match_count,
+            available_match_count,
+            differences,
         })
     }
 
@@ -705,13 +748,15 @@ impl Database {
             };
             let group = get("category group");
             let category = get("category");
-            let category_id = (!group.is_empty() && !category.is_empty()).then(|| {
-                import_id(
-                    &summary.batch_id,
-                    "category",
-                    &format!("{group}:{category}"),
-                )
-            });
+            let category_id =
+                (!group.is_empty() && !category.is_empty() && !is_ready_to_assign(group, category))
+                    .then(|| {
+                        import_id(
+                            &summary.batch_id,
+                            "category",
+                            &format!("{group}:{category}"),
+                        )
+                    });
             let payee_id =
                 (!payee.is_empty()).then(|| import_id(&summary.batch_id, "payee", payee));
             let flag_id = source_flag_color(get("flag")).map(|color| format!("flag-{color}"));
@@ -787,6 +832,8 @@ impl Database {
                         "An imported HUF amount is out of range.",
                     ))?,
                 payee: get("payee").into(),
+                category_group: get("category group").into(),
+                category: get("category").into(),
                 memo: get("memo").into(),
                 flag: get("flag").to_ascii_lowercase(),
                 cleared,
@@ -1568,6 +1615,10 @@ fn is_transfer_like(payee: &str, combined_category: &str) -> bool {
     transfer_target(payee).is_some() || category == "category not needed"
 }
 
+fn is_ready_to_assign(group: &str, category: &str) -> bool {
+    group.eq_ignore_ascii_case("Inflow") && category.eq_ignore_ascii_case("Ready to Assign")
+}
+
 fn transfer_target(payee: &str) -> Option<&str> {
     let (prefix, target) = payee.split_once(':')?;
     let prefix = prefix.trim().to_ascii_lowercase();
@@ -1647,6 +1698,79 @@ fn load_staged_rows(connection: &Connection, batch_id: &str) -> ImportResult<Vec
     Ok(rows)
 }
 
+fn parse_staged_plan_rows(
+    connection: &Connection,
+    batch_id: &str,
+) -> ImportResult<Vec<ImportedPlanRow>> {
+    let exists: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM import_batches WHERE id=?1)",
+        [batch_id],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Err(ImportError::InvalidValue(
+            "The staged import batch was not found.",
+        ));
+    }
+    let staged = load_staged_rows(connection, batch_id)?;
+    let mut headers: HashMap<String, Vec<String>> = HashMap::new();
+    let mut seen = HashSet::new();
+    let mut rows = Vec::new();
+    for (_row_id, source_file, row_number, raw_data) in staged {
+        let raw: RawCsvRow = serde_json::from_str(&raw_data)?;
+        if row_number == 1 {
+            headers.insert(
+                source_file,
+                raw.cells
+                    .iter()
+                    .map(|value| normalize_header(value))
+                    .collect(),
+            );
+            continue;
+        }
+        let header = headers.get(&source_file).ok_or(ImportError::InvalidValue(
+            "A staged source file has no header row.",
+        ))?;
+        if classify(header) != SourceFileKind::Budget {
+            continue;
+        }
+        let required = |name| {
+            field(header, name)
+                .and_then(|index| raw.cells.get(index))
+                .map(String::as_str)
+                .ok_or(ImportError::InvalidValue(
+                    "A budget source column is missing.",
+                ))
+        };
+        let month = parse_budget_month(required("month")?).ok_or(ImportError::InvalidValue(
+            "An imported Plan month is invalid.",
+        ))?;
+        let group = required("category group")?.trim();
+        let category = required("category")?.trim();
+        if group.is_empty() || category.is_empty() {
+            return Err(ImportError::InvalidValue(
+                "An imported Plan category is missing.",
+            ));
+        }
+        let category_id = import_id(batch_id, "category", &format!("{group}:{category}"));
+        if !seen.insert((category_id.clone(), month.clone())) {
+            return Err(ImportError::InvalidValue(
+                "The export repeats a Plan category and month.",
+            ));
+        }
+        rows.push(ImportedPlanRow {
+            month,
+            category_group: group.to_owned(),
+            category_name: category.to_owned(),
+            category_id,
+            assigned: parse_huf(required("assigned")?)?,
+            activity: parse_huf(required("activity")?)?,
+            available: parse_huf(required("available")?)?,
+        });
+    }
+    Ok(rows)
+}
+
 fn parse_register_rows(staged: Vec<StagedRow>) -> ImportResult<Vec<RegisterRow>> {
     let mut headers: HashMap<String, Vec<String>> = HashMap::new();
     let mut rows = Vec::new();
@@ -1703,9 +1827,19 @@ fn insert_import_transfer_leg(
     direction: &str,
 ) -> ImportResult<()> {
     let flag_id = source_flag_color(&candidate.flag).map(|color| format!("flag-{color}"));
+    let category_id = (!candidate.category_group.is_empty()
+        && !candidate.category.is_empty()
+        && !is_ready_to_assign(&candidate.category_group, &candidate.category))
+    .then(|| {
+        import_id(
+            &summary.batch_id,
+            "category",
+            &format!("{}:{}", candidate.category_group, candidate.category),
+        )
+    });
     transaction.execute(
-        "INSERT INTO transactions (id,account_id,transaction_date,payee_id,memo,flag_id,cleared_state,posting_state,origin,import_row_id,transfer_id,transfer_direction) VALUES (?1,?2,?3,?4,?5,?6,?7,'posted','import',?8,?9,?10)",
-        params![id, import_id(&summary.batch_id, "account", &candidate.account), candidate.date.as_str(), import_id(&summary.batch_id, "payee", &candidate.payee), candidate.memo, flag_id, candidate.cleared, candidate.row_id, transfer_id, direction],
+        "INSERT INTO transactions (id,account_id,transaction_date,payee_id,category_id,memo,flag_id,cleared_state,posting_state,origin,import_row_id,transfer_id,transfer_direction) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,'posted','import',?9,?10,?11)",
+        params![id, import_id(&summary.batch_id, "account", &candidate.account), candidate.date.as_str(), import_id(&summary.batch_id, "payee", &candidate.payee), category_id, candidate.memo, flag_id, candidate.cleared, candidate.row_id, transfer_id, direction],
     )?;
     Ok(())
 }

@@ -813,6 +813,66 @@ fn income_breakdown_uses_payees_and_budget_groups_without_tracing_funds() {
 }
 
 #[test]
+fn income_breakdown_names_the_off_budget_source_of_a_budget_transfer() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("asset", AccountKind::Tracking, 1))
+        .unwrap();
+    database
+        .create_account(&Account {
+            name: "Capital Gains".into(),
+            ..account("capital", AccountKind::Tracking, 2)
+        })
+        .unwrap();
+    database
+        .create_category_group("invest", "Invest", 0)
+        .unwrap();
+    database.create_category("buy", "invest", "Buy", 0).unwrap();
+    database
+        .create_transfer(&TransferDraft::manual(
+            "asset-to-capital",
+            Huf(100),
+            entry("asset-out", "asset"),
+            entry("capital-in", "capital"),
+            Direction::Outflow,
+        ))
+        .unwrap();
+    database
+        .create_transfer(&TransferDraft::manual(
+            "capital-to-cash",
+            Huf(100),
+            entry("capital-out", "capital"),
+            entry("cash-in", "cash"),
+            Direction::Outflow,
+        ))
+        .unwrap();
+    let mut cash_out = entry("cash-out", "cash");
+    cash_out.category_id = Some("buy".into());
+    database
+        .create_transfer(&TransferDraft::manual(
+            "cash-to-asset",
+            Huf(30),
+            cash_out,
+            entry("asset-in", "asset"),
+            Direction::Outflow,
+        ))
+        .unwrap();
+    database.set_account_closed("capital", true).unwrap();
+
+    let report = database
+        .income_breakdown(&IncomeBreakdownInput {
+            from: date("2026-09-10"),
+            to: date("2026-09-10"),
+            account_ids: vec![],
+        })
+        .unwrap();
+    assert_eq!(report.total_income, Huf(100));
+    assert_eq!(report.income_sources[0].payee_name, "Capital Gains");
+    assert_eq!(report.total_expense, Huf(30));
+    assert_eq!(report.expense_groups[0].group_name, "Invest");
+}
+
+#[test]
 fn forecast_bootstraps_complete_months_deterministically() {
     let (_directory, database) = database();
     database

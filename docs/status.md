@@ -39,9 +39,18 @@ signatures were flagged for review, not removed. The ZIP also contains 1,326
 historical Plan rows across 51 months (2022-08 through 2026-10). A follow-up
 disposable run materialized all 1,326 `Assigned` values without error. Source
 `Activity` and `Available` remain staged for comparison after explicit account
-kind and credit-payment mapping. No matching Net Worth TSV was supplied, so exact
-account-balance comparison and Plan/report value validation remain open. This
-run used a temporary database and did not modify the owner's live budget.
+kind and credit-payment mapping. A matching Net Worth TSV subsequently confirmed
+all 34 account balances exactly, with no missing or extra accounts. The owner
+identified 5 cash, 2 credit, 2 loan and 25 tracking accounts; 15 tracking accounts
+are closed. A disposable run using those types and two uniquely named credit
+payment category candidates matched all 1,326 `Assigned`, 1,303 `Activity`, and
+1,264 `Available` source values. The 62 rows with Plan differences are retained
+in a private local diagnostic file; 58 Available differences and 19 Activity
+differences concern the two credit payment categories, while four other rows
+differ in the current month. The Capital Gains tracking route now appears as one
+Income Breakdown source when it crosses into an on-budget account. No independent
+report-value comparison has been completed. These runs used temporary databases
+and did not modify the owner's live budget.
 
 The native Windows MSVC desktop-build gate was verified on 2026-09-23. On a
 Windows 11 machine with Node.js 24.19.0, Rust 1.98.1 (`stable-x86_64-pc-windows-msvc`)

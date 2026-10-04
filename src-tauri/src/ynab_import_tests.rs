@@ -68,6 +68,13 @@ fn imports_budget_assignments_without_overwriting_plan_edits() {
         .unwrap();
     assert_eq!(september.categories[0].assigned, Huf(1000));
     assert_eq!(october.categories[0].assigned, Huf(-100));
+    let comparison = database.compare_staged_plan_values(&summary).unwrap();
+    assert_eq!(comparison.source_row_count, 2);
+    assert_eq!(comparison.month_count, 2);
+    assert_eq!(comparison.assigned_match_count, 2);
+    assert_eq!(comparison.activity_match_count, 1);
+    assert_eq!(comparison.available_match_count, 0);
+    assert_eq!(comparison.differences.len(), 2);
     assert!(matches!(
         database.materialize_historical_plan_assignments(&summary),
         Err(ImportError::InvalidValue(
@@ -112,6 +119,70 @@ fn invalid_budget_amount_rolls_back_all_assignments() {
             .unwrap(),
         0
     );
+}
+
+#[test]
+fn imported_ready_income_and_tracking_transfers_flow_into_plan() {
+    let (_directory, mut database) = database();
+    let archive = fixture_zip(&[(
+        "Fixture/Register.tsv",
+        "Account\tDate\tPayee\tCategory Group/Category\tCategory Group\tCategory\tOutflow\tInflow\tCleared\nCash\t2026/09/01\tEmployer\tInflow: Ready to Assign\tInflow\tReady to Assign\t0 Ft\t1 000 Ft\tCleared\nAsset\t2026/09/02\tTransfer : Capital Gains\tCategory Not Needed\t\t\t500 Ft\t0 Ft\tCleared\nCapital Gains\t2026/09/02\tTransfer : Asset\tCategory Not Needed\t\t\t0 Ft\t500 Ft\tCleared\nCapital Gains\t2026/09/03\tTransfer : Cash\tCategory Not Needed\t\t\t500 Ft\t0 Ft\tCleared\nCash\t2026/09/03\tTransfer : Capital Gains\tInflow: Ready to Assign\tInflow\tReady to Assign\t0 Ft\t500 Ft\tCleared\nCash\t2026/09/04\tTransfer : Asset\tLiving/Groceries\tLiving\tGroceries\t200 Ft\t0 Ft\tCleared\nAsset\t2026/09/04\tTransfer : Cash\tCategory Not Needed\t\t\t0 Ft\t200 Ft\tCleared\n",
+    )]);
+    let summary = database
+        .stage_ynab_zip("fixture.zip", &archive, &date("2026-09-30"))
+        .unwrap();
+    let mappings = [
+        AccountImportMapping {
+            source_name: "Cash".into(),
+            kind: crate::ledger::AccountKind::Cash,
+            closed: false,
+            sort_order: 0,
+        },
+        AccountImportMapping {
+            source_name: "Asset".into(),
+            kind: crate::ledger::AccountKind::Tracking,
+            closed: false,
+            sort_order: 1,
+        },
+        AccountImportMapping {
+            source_name: "Capital Gains".into(),
+            kind: crate::ledger::AccountKind::Tracking,
+            closed: true,
+            sort_order: 2,
+        },
+    ];
+    database
+        .materialize_import_accounts(&summary.batch_id, &summary.account_names, &mappings)
+        .unwrap();
+    database.materialize_import_references(&summary).unwrap();
+    database
+        .materialize_ordinary_transactions(&summary)
+        .unwrap();
+    assert_eq!(
+        database
+            .materialize_transfers(&summary)
+            .unwrap()
+            .paired_transfer_count,
+        3
+    );
+
+    let plan = database
+        .plan_month(&PlanMonth::parse("2026-09").unwrap())
+        .unwrap();
+    assert_eq!(plan.ready_to_assign, Huf(1500));
+    let groceries = plan
+        .categories
+        .iter()
+        .find(|category| category.category_name == "Groceries")
+        .unwrap();
+    assert_eq!(groceries.activity, Huf(-200));
+    assert_eq!(groceries.available, Huf(-200));
+    let ready = plan
+        .categories
+        .iter()
+        .find(|category| category.category_name == "Ready to Assign")
+        .unwrap();
+    assert_eq!(ready.activity, Huf(0));
 }
 
 #[test]

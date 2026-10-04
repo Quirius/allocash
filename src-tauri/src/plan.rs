@@ -401,7 +401,7 @@ fn derive_plan(
     }
     let mut entries = connection.prepare(
         "SELECT t.category_id,t.amount_huf,t.transaction_date,a.kind,t.account_id,t.transfer_id,
-                EXISTS(SELECT 1 FROM ledger_entries other JOIN accounts other_account ON other_account.id=other.account_id WHERE other.transfer_id=t.transfer_id AND other_account.kind='cash')
+                (SELECT other_account.kind FROM ledger_entries other JOIN accounts other_account ON other_account.id=other.account_id WHERE other.transfer_id=t.transfer_id AND other.account_id<>t.account_id)
          FROM ledger_entries t JOIN accounts a ON a.id=t.account_id
          WHERE t.posting_state='posted' AND t.transaction_date<?1 AND a.kind IN ('cash','credit')
          ORDER BY t.transaction_date,t.id",
@@ -414,11 +414,11 @@ fn derive_plan(
         let kind: String = row.get(3)?;
         let account_id: String = row.get(4)?;
         let transfer_id: Option<String> = row.get(5)?;
-        let has_cash_counterpart: bool = row.get(6)?;
+        let counterpart_kind: Option<String> = row.get(6)?;
         let month = &date[..7];
         let month_activity = months.entry(month.to_owned()).or_default();
         if transfer_id.is_some() {
-            if kind == "credit" && amount > 0 && has_cash_counterpart {
+            if kind == "credit" && amount > 0 && counterpart_kind.as_deref() == Some("cash") {
                 if let Some(payment_category) = payment_categories.get(&account_id) {
                     let delta = month_activity
                         .payment_deltas
@@ -427,7 +427,9 @@ fn derive_plan(
                     *delta = checked_add(*delta, -amount)?;
                 }
             }
-            continue;
+            if !matches!(counterpart_kind.as_deref(), Some("tracking" | "loan")) {
+                continue;
+            }
         }
         if let Some(category_id) = category_id {
             let category = month_activity.categories.entry(category_id).or_default();

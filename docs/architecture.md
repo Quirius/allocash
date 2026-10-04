@@ -97,6 +97,9 @@ Ordinary register rows parse HUF text directly to checked integers and retain
 their source-row provenance, dates, metadata and clearing state. Rows that look
 like transfers or payments remain in staging until both legs can be paired and
 validated; no one-sided account movement is written as ordinary spending.
+The YNAB `Inflow: Ready to Assign` marker becomes a null ledger category while
+remaining intact in the raw row. Structured categories on transfer legs are
+retained so transfers across the budget boundary can affect Plan activity.
 Transfer materialization requires reciprocal legs with the same accounts, date and
 exact opposite nonzero amount. Repeated equal transfers are paired as a balanced
 group only when the memo/flag multisets also match; each source leg keeps its own
