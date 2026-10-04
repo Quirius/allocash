@@ -1026,7 +1026,7 @@ impl Database {
                 "Report start date must not be after its end date.",
             ));
         }
-        let mut sql = "SELECT t.category_id,g.name,COALESCE(c.name,'Uncategorized'),SUM(-t.amount_huf),COUNT(*) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN category_groups g ON g.id=c.group_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        let mut sql = "SELECT t.category_id,g.name,COALESCE(c.name,'Uncategorized'),SUM(-t.amount_huf),COUNT(*) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN ledger_entries other ON other.transfer_id=t.transfer_id AND other.id<>t.id LEFT JOIN accounts other_a ON other_a.id=other.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN category_groups g ON g.id=c.group_id WHERE t.posting_state='posted' AND (t.transfer_id IS NULL OR (a.kind IN ('cash','credit') AND other_a.kind IN ('tracking','loan'))) AND t.amount_huf<0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
         if input.account_ids.is_empty() {
             sql.push_str(" AND a.kind IN ('cash','credit')");
         } else {
@@ -1067,7 +1067,7 @@ impl Database {
                 "Report start date must not be after its end date.",
             ));
         }
-        let mut sql = "SELECT COALESCE(p.name,'No payee'),SUM(-t.amount_huf),COUNT(*) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN payees p ON p.id=t.payee_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        let mut sql = "SELECT COALESCE(p.name,'No payee'),SUM(-t.amount_huf),COUNT(*) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN ledger_entries other ON other.transfer_id=t.transfer_id AND other.id<>t.id LEFT JOIN accounts other_a ON other_a.id=other.account_id LEFT JOIN payees p ON p.id=t.payee_id WHERE t.posting_state='posted' AND (t.transfer_id IS NULL OR (a.kind IN ('cash','credit') AND other_a.kind IN ('tracking','loan'))) AND t.amount_huf<0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
         if input.account_ids.is_empty() {
             sql.push_str(" AND a.kind IN ('cash','credit')");
         } else {
@@ -1107,7 +1107,7 @@ impl Database {
                 "Report start date must not be after its end date.",
             ));
         }
-        let mut sql = "SELECT substr(t.transaction_date,1,7),SUM(CASE WHEN t.amount_huf>0 THEN t.amount_huf ELSE 0 END),SUM(CASE WHEN t.amount_huf<0 THEN -t.amount_huf ELSE 0 END),SUM(CASE WHEN t.amount_huf>0 THEN 1 ELSE 0 END),SUM(CASE WHEN t.amount_huf<0 THEN 1 ELSE 0 END) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<>0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        let mut sql = "SELECT substr(t.transaction_date,1,7),SUM(CASE WHEN t.amount_huf>0 THEN t.amount_huf ELSE 0 END),SUM(CASE WHEN t.amount_huf<0 THEN -t.amount_huf ELSE 0 END),SUM(CASE WHEN t.amount_huf>0 THEN 1 ELSE 0 END),SUM(CASE WHEN t.amount_huf<0 THEN 1 ELSE 0 END) FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN ledger_entries other ON other.transfer_id=t.transfer_id AND other.id<>t.id LEFT JOIN accounts other_a ON other_a.id=other.account_id WHERE t.posting_state='posted' AND (t.transfer_id IS NULL OR (a.kind IN ('cash','credit') AND other_a.kind IN ('tracking','loan'))) AND t.amount_huf<>0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
         if input.account_ids.is_empty() {
             sql.push_str(" AND a.kind IN ('cash','credit')");
         } else {
@@ -1184,7 +1184,7 @@ impl Database {
             ));
         }
         let months = report_months(&input.from, &input.to)?;
-        let mut sql = "SELECT t.category_id,g.id,g.name,c.name,substr(t.transaction_date,1,7),t.amount_huf FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN category_groups g ON g.id=c.group_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<>0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        let mut sql = "SELECT t.category_id,g.id,g.name,c.name,substr(t.transaction_date,1,7),t.amount_huf FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN ledger_entries other ON other.transfer_id=t.transfer_id AND other.id<>t.id LEFT JOIN accounts other_a ON other_a.id=other.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN category_groups g ON g.id=c.group_id WHERE t.posting_state='posted' AND (t.transfer_id IS NULL OR (a.kind IN ('cash','credit') AND other_a.kind IN ('tracking','loan'))) AND t.amount_huf<>0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
         if input.account_ids.is_empty() {
             sql.push_str(" AND a.kind IN ('cash','credit')");
         } else {
@@ -1285,9 +1285,9 @@ impl Database {
             total_income: narrow(total_income)?,
             total_expense: narrow(total_expense)?,
             total_net_income: narrow(total_net_income)?,
-            average_monthly_income: narrow(total_income / month_count)?,
-            average_monthly_expense: narrow(total_expense / month_count)?,
-            average_monthly_net_income: narrow(total_net_income / month_count)?,
+            average_monthly_income: rounded_monthly_average(total_income, month_count)?,
+            average_monthly_expense: rounded_monthly_average(total_expense, month_count)?,
+            average_monthly_net_income: rounded_monthly_average(total_net_income, month_count)?,
             savings_ratio_basis_points: savings_ratio(total_income, total_net_income)?,
         })
     }
@@ -1408,7 +1408,7 @@ impl Database {
             }
         }
         let months = report_months(&input.from, &input.to)?;
-        let mut sql = "SELECT t.category_id,g.id,g.name,c.name,substr(t.transaction_date,1,7),t.amount_huf FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN category_groups g ON g.id=c.group_id WHERE t.posting_state='posted' AND t.transfer_id IS NULL AND t.amount_huf<0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
+        let mut sql = "SELECT t.category_id,g.id,g.name,c.name,substr(t.transaction_date,1,7),t.amount_huf FROM ledger_entries t JOIN accounts a ON a.id=t.account_id LEFT JOIN ledger_entries other ON other.transfer_id=t.transfer_id AND other.id<>t.id LEFT JOIN accounts other_a ON other_a.id=other.account_id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN category_groups g ON g.id=c.group_id WHERE t.posting_state='posted' AND (t.transfer_id IS NULL OR (a.kind IN ('cash','credit') AND other_a.kind IN ('tracking','loan'))) AND t.amount_huf<0 AND t.transaction_date>=?1 AND t.transaction_date<=?2".to_owned();
         if input.account_ids.is_empty() {
             sql.push_str(" AND a.kind IN ('cash','credit')");
         } else {
@@ -2519,6 +2519,19 @@ fn savings_ratio(income: i128, net_income: i128) -> LedgerResult<Option<Huf>> {
         .map(Huf)
         .map(Some)
 }
+fn rounded_monthly_average(total: i128, month_count: i128) -> LedgerResult<Huf> {
+    let quotient = total / month_count;
+    let remainder = total % month_count;
+    let halfway = month_count / 2 + month_count % 2;
+    let rounded = if remainder.abs() >= halfway {
+        quotient
+            .checked_add(total.signum())
+            .ok_or(LedgerError::AmountOverflow)?
+    } else {
+        quotient
+    };
+    narrow(rounded)
+}
 fn income_expense_groups(
     categories: Vec<IncomeExpenseCategoryAccum>,
     month_count: i128,
@@ -2540,7 +2553,7 @@ fn income_expense_groups(
                 .into_iter()
                 .map(narrow)
                 .collect::<LedgerResult<Vec<_>>>()?,
-            average: narrow(total / month_count)?,
+            average: rounded_monthly_average(total, month_count)?,
             total: narrow(total)?,
         };
         match groups.iter_mut().find(|group| group.group_id == group_id) {

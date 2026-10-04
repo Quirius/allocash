@@ -53,10 +53,22 @@ Imported Ready to Assign rows now retain their category in the register while
 Plan routes their cash activity to its separate Ready to Assign balance; the
 34-account and Assigned comparisons stayed unchanged after this correction.
 The Capital Gains tracking route now appears as one Income Breakdown source
-when it crosses into an on-budget account. No independent report-value
-comparison has been completed. These runs used temporary databases and did not
-modify the owner's live budget. The 2026-10-04 credit correction passed all 92
-Rust core tests and the disposable import comparison.
+when it crosses into an on-budget account. The owner's Net Worth TSV also has
+monthly history from August 2022 through October 2026. A disposable comparison
+matched all 1,734 account-month balances and all 51 monthly totals from both
+Balance Over Time and Net Worth reports. Historical blank cells before an account
+first appears were treated as zero; there were no later blank account cells.
+The owner's Income v Expense TSV covers January through October 2026, with the
+last month compared through the export's 2026-10-04 as-of date. Including only
+transfers across the budget boundary brought all 10 monthly income, expense,
+and net totals into exact agreement. The comparison also matches 40 income-source
+cells, 50 expense-group cells, 200 expense-category cells, all 20 category totals
+and averages, and the three period totals and averages. Related Inflow / Outflow,
+Outflow Over Time, Spending by Category, and Income Breakdown values agree for
+this scope. Spending by Payee, other date/account filters, and forecast values
+still need independent references. These runs used temporary databases and did
+not modify the owner's live budget. The 2026-10-04 report correction passed all
+93 Rust core tests and the disposable import/report comparisons.
 
 The native Windows MSVC desktop-build gate was verified on 2026-09-23. On a
 Windows 11 machine with Node.js 24.19.0, Rust 1.98.1 (`stable-x86_64-pc-windows-msvc`)
@@ -70,10 +82,10 @@ has proceeded, so older instructions to start that work only after v0.1 are
 sequencing intent, not an accurate description of today's implementation. No
 release tag existed at this review; tag only after owner-data validation.
 
-Full target frequencies, recurring transfers, backup restore/retention, report
-value validation and installer packaging remain outside the implemented slices
-documented here. Consult topic requirements before choosing next work; do not
-treat this list as an exhaustive backlog.
+Full target frequencies, recurring transfers, backup restore/retention, remaining
+report value validation and installer packaging remain outside the implemented
+slices documented here. Consult topic requirements before choosing next work;
+do not treat this list as an exhaustive backlog.
 
 Update this file with dated evidence when a gate changes. Keep test counts and
 machine-specific baseline failures out of always-loaded instructions.

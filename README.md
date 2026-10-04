@@ -78,7 +78,9 @@ amounts into the disposable database):
 cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --example verify_ynab_export -- "path/to/export.zip" yyyy-mm-dd
 ```
 
-For an independent exact balance check, provide a matching Net Worth TSV:
+For an independent current and historical Net Worth comparison, provide a
+matching Net Worth TSV. The example compares every monthly account balance and
+the Balance Over Time and Net Worth totals:
 
 ```powershell
 cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --example verify_ynab_export -- "path/to/export.zip" "path/to/net-worth.tsv" yyyy-mm-dd
@@ -91,7 +93,14 @@ with `exportSha256`, an `accounts` array of explicit `sourceName`, `kind` (`cash
 `categoryGroup` and `categoryName` mappings. An optional fifth argument writes
 row-level Plan differences to a private JSON file. Keep both files in ignored
 `private-data/`; the terminal output contains only counts. Matching balances do
-not imply matching Plan or report values.
+not imply matching Plan or report values. An optional sixth argument provides a
+matching Income v Expense TSV. With explicit account and card-payment mappings,
+the example compares monthly totals, income sources, expense groups/categories,
+averages, and the related report totals without printing private amounts:
+
+```powershell
+cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --example verify_ynab_export -- "path/to/export.zip" "path/to/net-worth.tsv" yyyy-mm-dd "private-data/mappings.json" "private-data/plan-differences.json" "path/to/income-expense.tsv"
+```
 
 Rust checks require a Rust toolchain; the desktop build also requires the Windows
 build prerequisites. Installer

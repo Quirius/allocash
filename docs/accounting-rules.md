@@ -144,25 +144,27 @@ ordinary ledger history.
 ## Spending reports
 
 Spending by Category and Spending by Payee are read-only tables over posted
-ordinary outflows in an inclusive date range. They group by category identity
-or payee respectively, include cash and credit accounts by default, and can be
-restricted to selected accounts. Transfers, scheduled rows, and inflows/refunds
-are excluded from these spending magnitude views.
+outflows in an inclusive date range. They group by category identity or payee
+respectively, include cash and credit accounts by default, and can be restricted
+to selected accounts. The on-budget leg of a transfer to a tracking or loan
+account counts as spending; transfers within the budget, scheduled rows, and
+inflows/refunds are excluded from these spending magnitude views.
 
 Inflow / Outflow is a dense monthly view over the same inclusive scope. It uses
-posted, non-transfer, nonzero ordinary entries: positive amounts are gross
-inflows, negative amounts are positive outflow magnitudes, and difference is
-inflow minus outflow. Thus ordinary refunds and reimbursements appear as gross
-inflows rather than reducing a prior expense. Months without activity remain in
-the response so a later chart has a continuous series.
+posted, nonzero ordinary entries and the on-budget legs of transfers crossing
+to tracking or loan accounts: positive amounts are gross inflows, negative
+amounts are positive outflow magnitudes, and difference is inflow minus outflow.
+Thus ordinary refunds and reimbursements appear as gross inflows rather than
+reducing a prior expense. Months without activity remain in the response so a
+later chart has a continuous series.
 
 Income vs Expense uses that same gross-entry scope, but keeps positive and
 negative activity separate by category and group. A category with both signs
 therefore appears in both sections. It preserves stored group/category order,
 including hidden history; null categories form a final `Uncategorized` row.
-It returns month-aligned category amounts, period/month totals, whole-HUF
-monthly averages, and a savings ratio in integer basis points when income is
-nonzero.
+It returns month-aligned category amounts, period/month totals, monthly averages
+rounded to the nearest HUF with half-forint ties away from zero, and a savings
+ratio in integer basis points when income is nonzero.
 
 Balance Over Time is a separate, dense as-of working-balance series. Its first
 point is the inclusive `from` date, intermediate points are calendar month ends,
@@ -172,9 +174,10 @@ reports. Transfers remain included exactly as ledger movements, so a transfer
 between two selected accounts nets out while selecting one side changes that
 selected aggregate. Pending scheduled rows are excluded until posted.
 
-Outflow Over Time is a dense monthly gross-outflow series. It uses posted,
-non-transfer negative ordinary entries in the activity-report account scope,
-with positive refunds excluded rather than netted. Optional category selection
+Outflow Over Time is a dense monthly gross-outflow series. It uses posted
+negative ordinary entries and the on-budget legs of transfers to tracking or
+loan accounts in the activity-report account scope, with positive refunds
+excluded rather than netted. Optional category selection
 matches stable category identities; choosing `Uncategorized` explicitly includes
 null-category history. Its category series preserve stored order and are aligned
 to every returned month, including zero-activity months.

@@ -467,6 +467,43 @@ fn income_vs_expense_keeps_category_sides_and_months_distinct() {
 }
 
 #[test]
+fn income_vs_expense_rounds_monthly_averages_to_nearest_huf() {
+    let (_directory, database) = database();
+    database.create_category_group("g", "Living", 0).unwrap();
+    database.create_category("food", "g", "Food", 0).unwrap();
+    let mut purchase = entry("food-purchase", "cash");
+    purchase.category_id = Some("food".into());
+    database.create_transaction(&purchase, Huf(-1)).unwrap();
+    database
+        .create_transaction(&entry("income", "cash"), Huf(2))
+        .unwrap();
+    let report = database
+        .income_vs_expense(&SpendingReportInput {
+            from: date("2026-09-01"),
+            to: date("2026-10-31"),
+            account_ids: vec![],
+        })
+        .unwrap();
+    assert_eq!(report.average_monthly_income, Huf(1));
+    assert_eq!(report.average_monthly_expense, Huf(1));
+    assert_eq!(report.average_monthly_net_income, Huf(1));
+    assert_eq!(report.expense_groups[0].categories[0].average, Huf(1));
+    let mut second_purchase = entry("second-food-purchase", "cash");
+    second_purchase.category_id = Some("food".into());
+    database
+        .create_transaction(&second_purchase, Huf(-2))
+        .unwrap();
+    let negative = database
+        .income_vs_expense(&SpendingReportInput {
+            from: date("2026-09-01"),
+            to: date("2026-10-31"),
+            account_ids: vec![],
+        })
+        .unwrap();
+    assert_eq!(negative.average_monthly_net_income, Huf(-1));
+}
+
+#[test]
 fn balance_over_time_uses_signed_posted_balances_and_month_end_points() {
     let (_directory, mut database) = database();
     database
@@ -813,8 +850,11 @@ fn income_breakdown_uses_payees_and_budget_groups_without_tracing_funds() {
 }
 
 #[test]
-fn income_breakdown_names_the_off_budget_source_of_a_budget_transfer() {
+fn reports_count_budget_boundary_transfers_once_and_exclude_internal_transfers() {
     let (_directory, mut database) = database();
+    database
+        .create_account(&account("cash2", AccountKind::Cash, 3))
+        .unwrap();
     database
         .create_account(&account("asset", AccountKind::Tracking, 1))
         .unwrap();
@@ -857,7 +897,49 @@ fn income_breakdown_names_the_off_budget_source_of_a_budget_transfer() {
             Direction::Outflow,
         ))
         .unwrap();
+    database
+        .create_transfer(&TransferDraft::manual(
+            "cash-to-cash",
+            Huf(20),
+            entry("cash-out-internal", "cash"),
+            entry("cash-in-internal", "cash2"),
+            Direction::Outflow,
+        ))
+        .unwrap();
     database.set_account_closed("capital", true).unwrap();
+
+    let scope = || SpendingReportInput {
+        from: date("2026-09-10"),
+        to: date("2026-09-10"),
+        account_ids: vec![],
+    };
+    let income_expense = database.income_vs_expense(&scope()).unwrap();
+    assert_eq!(income_expense.total_income, Huf(100));
+    assert_eq!(income_expense.total_expense, Huf(30));
+    assert_eq!(income_expense.total_net_income, Huf(70));
+    let flow = database.inflow_outflow_by_month(&scope()).unwrap();
+    assert_eq!(flow.total_inflow, Huf(100));
+    assert_eq!(flow.total_outflow, Huf(30));
+    let categories = database.spending_by_category(&scope()).unwrap();
+    assert_eq!(categories.len(), 1);
+    assert_eq!(categories[0].category_name, "Buy");
+    assert_eq!(categories[0].total, Huf(30));
+    assert_eq!(
+        database.spending_by_payee(&scope()).unwrap()[0].total,
+        Huf(30)
+    );
+    assert_eq!(
+        database
+            .outflow_over_time(&OutflowOverTimeInput {
+                from: date("2026-09-10"),
+                to: date("2026-09-10"),
+                account_ids: vec![],
+                category_ids: vec![],
+            })
+            .unwrap()
+            .total_outflow,
+        Huf(30)
+    );
 
     let report = database
         .income_breakdown(&IncomeBreakdownInput {
