@@ -37,12 +37,15 @@ plans:
     priority: "medium"
     due_date: null
     completed_at: null
-    details: "Monthly targets and ordinary income/expense schedules exist; full target frequencies and recurring transfers remain outside the documented implementation."
+    details: "Owner-required monthly, quarterly and yearly targets and income/expense/transfer schedules are implemented and tested. Weekly/custom recurrence remains deferred; owner desktop rehearsal of the migration subset is still open."
     acceptance_criteria:
       - "Documented target frequency behavior is implemented and tested."
       - "Recurring transfers preserve linked account movements and are tested."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "7089bc2bc70a75caeb275701704b7e9d4caab3d9"
+        note: "Records monthly/quarterly/yearly targets and schedules, linked transfers and checks; weekly/custom recurrence and owner rehearsal remain open."
       - path: "docs/status.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Distinguishes implemented monthly slices from remaining target and recurring-transfer work."
@@ -64,6 +67,9 @@ plans:
       - "No pre-migration retention work is required beyond what is necessary to avoid deleting the only known-good copy."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "7089bc2bc70a75caeb275701704b7e9d4caab3d9"
+        note: "Records schema-10 upgrades and restoration/recovery from older backups through isolated copies, preserving original sources."
       - path: "docs/status.md"
         ref: "0838ef8a62e1f23ae867f5ddf021a870bfeb36f7"
         note: "Records owner-confirmed desktop restore and reopen persistence; startup recovery rehearsal remains open."
@@ -169,7 +175,7 @@ plans:
     priority: "high"
     due_date: "2026-10-08"
     completed_at: null
-    details: "The owner confirmed ordinary entry/edit/delete, transfer-payee entry, corrected Plan money moves with negative balances and date-eligible clearing/reconciliation. Confirm and exercise targets/schedules actually relied on before closing the daily-workflow gate; fix migration-blocking gaps only."
+    details: "The owner confirmed ordinary entry/edit/delete, transfer-payee entry, corrected Plan money moves with negative balances and date-eligible clearing/reconciliation. Required monthly/quarterly/yearly targets and scheduled transfers are implemented with passing checks; rehearse them before closing the daily-workflow gate."
     acceptance_criteria:
       - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
@@ -177,8 +183,11 @@ plans:
     blocked_by: []
     evidence:
       - path: "docs/status.md"
+        ref: "7089bc2bc70a75caeb275701704b7e9d4caab3d9"
+        note: "Records owner-required targets and scheduled transfers, automated checks and desktop control inspection; owner rehearsal remains open."
+      - path: "docs/status.md"
         ref: "0838ef8a62e1f23ae867f5ddf021a870bfeb36f7"
-        note: "Records owner-confirmed Plan, clearing and reconciliation checks; required targets/schedules remain to be established."
+        note: "Records owner-confirmed Plan, clearing and reconciliation checks before target/schedule requirements were established."
       - path: "docs/status.md"
         ref: "74aaf667d7d3fbee0404cb51b1ea44c2e1f0f99c"
         note: "Records transfer success and checked Plan corrections; full workflow rehearsal remains open."
@@ -255,8 +264,11 @@ milestones:
   - id: "allocash-milestone-003"
     title: "v0.3 Scheduling, Targets, and Workflow"
     state: "planned"
-    details: "Ordinary monthly scheduling and targets exist, but documented frequency and recurring-transfer coverage remain open."
+    details: "Monthly, quarterly and yearly targets and schedules, including linked transfers, are implemented and tested. Owner workflow rehearsal and weekly/custom recurrence remain open; this milestone is not complete."
     evidence:
+      - path: "docs/status.md"
+        ref: "7089bc2bc70a75caeb275701704b7e9d4caab3d9"
+        note: "Records periodic funding guidance and transfer schedules with validation and remaining workflow limits."
       - path: "docs/product-scope.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Defines the v0.3 milestone."

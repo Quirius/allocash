@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Confirm targets/schedules required for daily use and rehearse unreadable-database recovery, then verify installer packaging and the final clean migration."
-updated_at: "2026-10-05T18:59:02Z"
+next_action: "Rehearse the owner's monthly, quarterly and yearly targets and scheduled transfers, then unreadable-database recovery, installer packaging and the final clean migration."
+updated_at: "2026-10-05T20:02:02Z"
 source:
   branch: "main"
-  commit: "0838ef8a62e1f23ae867f5ddf021a870bfeb36f7"
-  verified_at: "2026-10-05T18:59:02Z"
+  commit: "7089bc2bc70a75caeb275701704b7e9d4caab3d9"
+  verified_at: "2026-10-05T20:02:02Z"
 summary:
   completed:
+    - "Owner-required monthly, quarterly and yearly category targets and income/expense/transfer schedules are implemented. Periodic targets use explicit due settings and spread funding over months. Schema-10 upgrades and older-backup restore preserve existing data; 122 core tests, 73 frontend tests and the standalone desktop build passed. Existing owner export comparisons remain exact."
     - "The owner confirmed corrected Plan money moves, date-eligible clearing/reconciliation and native backup restore that reverted a test entry and persisted after reopening. Startup recovery and remaining required daily workflows remain open."
     - "Plan money moves now refresh Assigned inputs and may leave Assigned/Available negative, with green highlights. All 16 Plan tests, formatting, frontend and standalone rehearsal builds passed; owner Plan retest passed."
     - "The owner-data candidate passed exact account, Plan and supplied report comparisons. The owner reported restore, backup creation, ordinary entry/edit/delete and corrected transfer-payee entry success."
@@ -36,7 +37,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
-    - "The complete owner daily budgeting workflow still needs rehearsal."
+    - "The new periodic targets and scheduled transfers need owner desktop rehearsal before the daily budgeting gate closes."
     - "Native desktop backup/restore passed the owner rehearsal; startup recovery, installer packaging and a full clean migration still need verification before 2026-10-21."
     - "The one-time desktop import handoff currently uses the verifier and a manual candidate copy into the rehearsal backup folder; no in-app YNAB import flow has been rehearsed."
     - "Spending by Payee, other report filters, forecast values, and broader schedule/target coverage remain secondary unless they block the owner's real migration workflow."
@@ -44,6 +45,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "7089bc2bc70a75caeb275701704b7e9d4caab3d9"
+    note: "Records owner-required recurrence, paired scheduled transfers, schema-10 and older-backup validation, desktop build/control inspection, exact export regression comparisons and remaining owner rehearsal."
   - path: "docs/status.md"
     ref: "0838ef8a62e1f23ae867f5ddf021a870bfeb36f7"
     note: "Records owner-confirmed Plan, date-eligible clearing/reconciliation, backup restore and reopen persistence, with startup recovery and remaining gates open."
