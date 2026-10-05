@@ -175,13 +175,16 @@ plans:
     priority: "high"
     due_date: "2026-10-08"
     completed_at: null
-    details: "The owner confirmed ordinary entry/edit/delete, transfer-payee entry, corrected Plan money moves with negative balances and date-eligible clearing/reconciliation. Required monthly/quarterly/yearly targets and scheduled transfers are implemented with passing checks; rehearse them before closing the daily-workflow gate."
+    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation and a new target/scheduled transfer. Their register Date/Repeat workflow now supports future one-time and monthly/quarterly/yearly entries with direct Post/Skip; rehearse this corrected entry flow before closing the daily-workflow gate."
     acceptance_criteria:
       - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
       - "Non-essential feature expansion is deferred until after migration."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "b00c059a26e2bd06921d2ef78ecdf84f4e97ebfa"
+        note: "Records confirmed target/transfer behavior and tested register Date/Repeat entry; owner retest of the register flow remains open."
       - path: "docs/status.md"
         ref: "7089bc2bc70a75caeb275701704b7e9d4caab3d9"
         note: "Records owner-required targets and scheduled transfers, automated checks and desktop control inspection; owner rehearsal remains open."
