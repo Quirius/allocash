@@ -365,6 +365,28 @@ function AccountRegister({
   const [editor, setEditor] = useState<"new" | "reconcile" | RegisterEntry | null>(null);
   const [scheduleAction, setScheduleAction] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [registerPage, setRegisterPage] = useState(0);
+  const registerPageSize = 100;
+  const entryCount = register.status === "ready" ? register.entries.length : 0;
+  const pageCount = Math.ceil(entryCount / registerPageSize);
+  const safeRegisterPage = register.status === "ready"
+    ? Math.min(registerPage, Math.max(0, pageCount - 1))
+    : registerPage;
+  const pageEntries = useMemo(
+    () => register.status === "ready"
+      ? register.entries.slice(safeRegisterPage * registerPageSize, (safeRegisterPage + 1) * registerPageSize)
+      : [],
+    [register, safeRegisterPage],
+  );
+
+  useEffect(() => {
+    setRegisterPage(0);
+  }, [account.id]);
+
+  useEffect(() => {
+    if (register.status === "ready" && registerPage !== safeRegisterPage) setRegisterPage(safeRegisterPage);
+  }, [register.status, registerPage, safeRegisterPage]);
+
   async function finishSchedule(id: string, post: boolean) {
     setScheduleAction(true); setScheduleError(null);
     try {
@@ -393,7 +415,7 @@ function AccountRegister({
       <div className="register-toolbar">
         <div>
           <strong>All transactions</strong>
-          <span>{register.status === "ready" ? `${register.entries.length} entries` : "Local history"}</span>
+          <span>{register.status === "ready" ? `${entryCount} entries` : "Local history"}</span>
         </div>
         <button
           disabled={account.closed}
@@ -442,23 +464,34 @@ function AccountRegister({
         <div className="register-message">No transactions in this account yet.</div>
       )}
       {register.status === "ready" && register.entries.length > 0 && (
-        <div className="register-table-wrap">
-          <table className="register-table">
-            <thead>
-              <tr>
-                <th className="flag-column"><span className="sr-only">Flag</span></th>
-                <th>Date</th>
-                <th>Payee</th>
-                <th>Category</th>
-                <th>Memo</th>
-                <th className="status-column">Status</th>
-                <th className="money-column">Outflow</th>
-                <th className="money-column">Inflow</th>
-                <th className="action-column"><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {register.entries.map((entry) => {
+        <>
+          <nav className="register-pagination" aria-label="Register pages">
+            <span aria-live="polite">
+              Showing {safeRegisterPage * registerPageSize + 1}–{Math.min((safeRegisterPage + 1) * registerPageSize, entryCount)} of {entryCount} transactions
+            </span>
+            <div>
+              <button type="button" onClick={() => setRegisterPage((page) => Math.max(0, page - 1))} disabled={safeRegisterPage === 0}>Previous</button>
+              <span>Page {safeRegisterPage + 1} of {pageCount}</span>
+              <button type="button" onClick={() => setRegisterPage((page) => Math.min(pageCount - 1, page + 1))} disabled={safeRegisterPage >= pageCount - 1}>Next</button>
+            </div>
+          </nav>
+          <div className="register-table-wrap">
+            <table className="register-table">
+              <thead>
+                <tr>
+                  <th className="flag-column"><span className="sr-only">Flag</span></th>
+                  <th>Date</th>
+                  <th>Payee</th>
+                  <th>Category</th>
+                  <th>Memo</th>
+                  <th className="status-column">Status</th>
+                  <th className="money-column">Outflow</th>
+                  <th className="money-column">Inflow</th>
+                  <th className="action-column"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+              {pageEntries.map((entry) => {
                 const amount = BigInt(entry.amount);
                 return (
                   <tr key={entry.id} className={entry.postingState === "scheduled" ? "scheduled" : undefined}>
@@ -485,9 +518,20 @@ function AccountRegister({
                   </tr>
                 );
               })}
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
+          <nav className="register-pagination bottom" aria-label="Register pages">
+            <span aria-live="polite">
+              Showing {safeRegisterPage * registerPageSize + 1}–{Math.min((safeRegisterPage + 1) * registerPageSize, entryCount)} of {entryCount} transactions
+            </span>
+            <div>
+              <button type="button" onClick={() => setRegisterPage((page) => Math.max(0, page - 1))} disabled={safeRegisterPage === 0}>Previous</button>
+              <span>Page {safeRegisterPage + 1} of {pageCount}</span>
+              <button type="button" onClick={() => setRegisterPage((page) => Math.min(pageCount - 1, page + 1))} disabled={safeRegisterPage >= pageCount - 1}>Next</button>
+            </div>
+          </nav>
+        </>
       )}
     </section>
   );

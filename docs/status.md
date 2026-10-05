@@ -136,6 +136,19 @@ implemented; the owner-required monthly/quarterly/yearly subset is supported.
 The standalone rehearsal build passed and launched; the register's Date/Repeat
 controls and pending S status were visually inspected without saving new data.
 
+The owner confirmed register Date/Repeat entry worked, but closed the app because
+of heavy lag. A read-only-source diagnostic on an isolated rehearsal copy found
+1,832 rows in the largest register; its database read took about 46–48 ms in a
+debug build. The frontend rendered every row at once. The register now renders
+at most 100 rows per page, with Previous/Next controls and the full history kept
+accessible. Page selection survives save/reload and clamps when history shrinks;
+switching accounts starts at the first page. This reduces DOM work without
+changing ledger queries, dates, money or stored history. It is a likely lag
+contributor, not a measured guarantee that every cause is resolved. The frontend
+and standalone rehearsal builds passed. Desktop inspection verified ranges
+1–100 and 101–200 and navigation back to the newest entries. Owner responsiveness
+retesting remains open.
+
 The existing project record reports that the 2026-09-14 owner export matched all
 34 YNAB reference working balances exactly. Four zero-value transfer rows remain
 preserved in staging without affecting balances. This is historical evidence,

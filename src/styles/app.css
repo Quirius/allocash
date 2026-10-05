@@ -110,6 +110,11 @@ details { border-top: 1px solid #323d49; padding-top: 16px; margin-top: 20px; fo
 .register-toolbar strong { font-size: 13px; }
 .register-toolbar span { color: #8f9ba7; font-size: 11px; }
 .register-toolbar button { background: #315b49; border-color: #4e7d68; color: #d8eee1; font-size: 12px; }
+.register-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 2px; color: #93a1ae; font-size: 11px; }
+.register-pagination > div { display: flex; align-items: center; gap: 10px; }
+.register-pagination button { padding: 6px 10px; background: #202a34; border-color: #3a4652; color: #c9d1d9; font-size: 11px; }
+.register-pagination button:disabled { opacity: .45; cursor: default; }
+.register-pagination.bottom { padding-top: 10px; }
 .transaction-editor { margin-bottom: 16px; padding: 18px 20px; border: 1px solid #466354; border-radius: 8px; background: #1b2924; }
 .transaction-editor.compact { border-color: #405262; background: #1b252e; }
 .editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
