@@ -10,15 +10,16 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Retest Assigned refresh and negative category money moves in the updated standalone rehearsal app, then exercise reconciliation and backup/recovery before installer packaging and final migration."
-updated_at: "2026-10-05T18:28:59Z"
+next_action: "Confirm targets/schedules required for daily use and rehearse unreadable-database recovery, then verify installer packaging and the final clean migration."
+updated_at: "2026-10-05T18:59:02Z"
 source:
   branch: "main"
-  commit: "74aaf667d7d3fbee0404cb51b1ea44c2e1f0f99c"
-  verified_at: "2026-10-05T18:28:59Z"
+  commit: "0838ef8a62e1f23ae867f5ddf021a870bfeb36f7"
+  verified_at: "2026-10-05T18:59:02Z"
 summary:
   completed:
-    - "Plan money moves now refresh Assigned inputs and may leave Assigned/Available negative, with green highlights. All 16 Plan tests, formatting, frontend and standalone rehearsal builds passed; owner Plan retest remains open."
+    - "The owner confirmed corrected Plan money moves, date-eligible clearing/reconciliation and native backup restore that reverted a test entry and persisted after reopening. Startup recovery and remaining required daily workflows remain open."
+    - "Plan money moves now refresh Assigned inputs and may leave Assigned/Available negative, with green highlights. All 16 Plan tests, formatting, frontend and standalone rehearsal builds passed; owner Plan retest passed."
     - "The owner-data candidate passed exact account, Plan and supplied report comparisons. The owner reported restore, backup creation, ordinary entry/edit/delete and corrected transfer-payee entry success."
     - "The YNAB verifier can produce a non-overwriting native rehearsal candidate after explicit mappings and matching references. An anonymized end-to-end import produced a candidate; a mismatched reference produced none. The isolated Windows rehearsal build launched under its own data folder without creating the normal app folder."
     - "Startup recovery can install a verified local backup while preserving an unreadable database and WAL sidecars; healthy databases are refused. Disposable corruption and schema tests passed within 99 desktop Rust tests, alongside 58 frontend tests and the frontend build."
@@ -36,13 +37,16 @@ summary:
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
     - "The complete owner daily budgeting workflow still needs rehearsal."
-    - "The backup/recovery desktop workflow, installer packaging, and a full migration rehearsal still need verification before 2026-10-21."
+    - "Native desktop backup/restore passed the owner rehearsal; startup recovery, installer packaging and a full clean migration still need verification before 2026-10-21."
     - "The one-time desktop import handoff currently uses the verifier and a manual candidate copy into the rehearsal backup folder; no in-app YNAB import flow has been rehearsed."
     - "Spending by Payee, other report filters, forecast values, and broader schedule/target coverage remain secondary unless they block the owner's real migration workflow."
   blockers: []
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "0838ef8a62e1f23ae867f5ddf021a870bfeb36f7"
+    note: "Records owner-confirmed Plan, date-eligible clearing/reconciliation, backup restore and reopen persistence, with startup recovery and remaining gates open."
   - path: "docs/status.md"
     ref: "74aaf667d7d3fbee0404cb51b1ea44c2e1f0f99c"
     note: "Records owner-confirmed transfer correction, Plan Assigned refresh and negative moves, 16 passing Plan tests, standalone build/launch and remaining owner retest."

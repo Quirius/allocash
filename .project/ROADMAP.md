@@ -57,13 +57,16 @@ plans:
     priority: "high"
     due_date: "2026-10-16"
     completed_at: null
-    details: "An open budget can restore a validated local backup after saving a verified pre-restore copy. Startup recovery can preserve unreadable SQLite files and install a verified replacement. Both paths have disposable core tests; a desktop restore/recovery workflow check on disposable data remains before this plan can close. Automatic retention polish may move after migration if safe recovery is maintained."
+    details: "The owner confirmed native backup/restore on the isolated desktop budget: restoring removed a subsequent test entry and persisted after reopening. Startup recovery can preserve unreadable SQLite files and install a verified replacement, with core tests passed; its desktop workflow remains before this plan can close. Automatic retention polish may move after migration if safe recovery is maintained."
     acceptance_criteria:
       - "A backup can be restored with validation and a recoverable failure path."
       - "Restore is tested against a disposable copy before the migration rehearsal."
       - "No pre-migration retention work is required beyond what is necessary to avoid deleting the only known-good copy."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "0838ef8a62e1f23ae867f5ddf021a870bfeb36f7"
+        note: "Records owner-confirmed desktop restore and reopen persistence; startup recovery rehearsal remains open."
       - path: "docs/status.md"
         ref: "e7c17374a6b6ffab33daabeae32149e76370bae9"
         note: "Records the startup recovery path, preserved damaged files, tests, and remaining desktop rehearsal."
@@ -166,13 +169,16 @@ plans:
     priority: "high"
     due_date: "2026-10-08"
     completed_at: null
-    details: "The owner reported ordinary entry/edit/delete and corrected transfer-payee entry success. Plan rehearsal exposed stale Assigned inputs and requested negative category moves; both corrections are pushed and need owner retesting in the standalone rehearsal app. Continue reconciliation and targets/schedules actually relied on; fix migration-blocking workflow gaps only."
+    details: "The owner confirmed ordinary entry/edit/delete, transfer-payee entry, corrected Plan money moves with negative balances and date-eligible clearing/reconciliation. Confirm and exercise targets/schedules actually relied on before closing the daily-workflow gate; fix migration-blocking gaps only."
     acceptance_criteria:
       - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
       - "Non-essential feature expansion is deferred until after migration."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "0838ef8a62e1f23ae867f5ddf021a870bfeb36f7"
+        note: "Records owner-confirmed Plan, clearing and reconciliation checks; required targets/schedules remain to be established."
       - path: "docs/status.md"
         ref: "74aaf667d7d3fbee0404cb51b1ea44c2e1f0f99c"
         note: "Records transfer success and checked Plan corrections; full workflow rehearsal remains open."
