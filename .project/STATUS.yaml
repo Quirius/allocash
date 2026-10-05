@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Rehearse upcoming-entry edit/delete and confirm register responsiveness, then unreadable-database recovery, installer packaging and the final clean migration."
-updated_at: "2026-10-05T20:50:45Z"
+next_action: "Verify installer installation and first launch, confirm register responsiveness and upcoming deletion, then rehearse the final clean migration."
+updated_at: "2026-10-05T21:05:49Z"
 source:
   branch: "main"
-  commit: "ba86c8de5bcd678011b9cb425ffffd4342b49e0e"
-  verified_at: "2026-10-05T20:50:45Z"
+  commit: "208165612a2370be70c81441a71b4664e5cd9aa3"
+  verified_at: "2026-10-05T21:05:49Z"
 summary:
   completed:
+    - "Synthetic native desktop startup recovery passed, including desktop reopen, unchanged source backup and exact preservation of unreadable database/WAL bytes. The owner rehearsal budget was untouched. The per-user x64 NSIS installer built successfully; installation and first launch remain open."
     - "Upcoming scheduled entries now use the register editor with Date/Repeat and other fields. Edits update pending/future instances while preserving posted history, paired transfers and original recurrence anchors. Delete cancels repeats through the safety-backup path. 129 core tests, 24 IPC tests and the standalone build passed; owner edit/delete rehearsal remains open."
     - "The owner confirmed register Date/Repeat worked but reported heavy lag. Register rendering is now bounded to 100 rows per page with full history accessible; frontend and standalone builds passed and desktop navigation was inspected. Owner responsiveness retesting remains open."
     - "The owner reported the new target and scheduled transfer worked, then clarified register-based Date/Repeat entry. The composer now supports Never/Monthly/Quarterly/Yearly, one-time future entries and atomic Post/Skip from either transfer leg. 22 routing tests, 48 ledger tests and the standalone build passed; desktop controls were inspected."
@@ -40,14 +41,17 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
-    - "Upcoming-entry edit/delete and register responsiveness need owner retesting before the daily budgeting gate closes; Date/Repeat entry and the target/schedule flow received owner confirmation."
-    - "Native desktop backup/restore passed the owner rehearsal; startup recovery, installer packaging and a full clean migration still need verification before 2026-10-21."
+    - "Upcoming editing received owner confirmation; upcoming deletion and register responsiveness still need owner feedback before the daily budgeting gate closes."
+    - "Native desktop backup/restore passed the owner rehearsal and synthetic desktop startup recovery passed. Installer installation/first launch and a full clean migration still need verification before 2026-10-21."
     - "The one-time desktop import handoff currently uses the verifier and a manual candidate copy into the rehearsal backup folder; no in-app YNAB import flow has been rehearsed."
     - "Spending by Payee, other report filters, forecast values, and broader schedule/target coverage remain secondary unless they block the owner's real migration workflow."
   blockers: []
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "208165612a2370be70c81441a71b4664e5cd9aa3"
+    note: "Records owner upcoming-edit confirmation, synthetic desktop recovery/reopen and preserved bytes, successful installer packaging and the remaining installation/release gates."
   - path: "docs/status.md"
     ref: "ba86c8de5bcd678011b9cb425ffffd4342b49e0e"
     note: "Records editable upcoming entries, recurrence/transfer/delete invariants, independent review, tests and desktop build, with owner rehearsal still open."

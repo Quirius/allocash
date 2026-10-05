@@ -54,19 +54,22 @@ plans:
         note: "Describes intended schedule and target behavior."
   - id: "allocash-plan-003"
     title: "Add native backup restore and safe recovery"
-    state: "planned"
+    state: "completed"
     window: "Next week"
     window_as_of: "2026-10-04"
     priority: "high"
     due_date: "2026-10-16"
-    completed_at: null
-    details: "The owner confirmed native backup/restore on the isolated desktop budget: restoring removed a subsequent test entry and persisted after reopening. Startup recovery can preserve unreadable SQLite files and install a verified replacement, with core tests passed; its desktop workflow remains before this plan can close. Automatic retention polish may move after migration if safe recovery is maintained."
+    completed_at: "2026-10-05T21:05:49Z"
+    details: "The owner confirmed native backup/restore and reopen persistence. A separate synthetic native desktop startup recovery also passed, with correct restored balance, desktop reopen, unchanged source backup and exact preservation of unreadable database/WAL bytes. Safe recovery is verified; automatic retention polish remains deferred beyond migration."
     acceptance_criteria:
       - "A backup can be restored with validation and a recoverable failure path."
       - "Restore is tested against a disposable copy before the migration rehearsal."
       - "No pre-migration retention work is required beyond what is necessary to avoid deleting the only known-good copy."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "208165612a2370be70c81441a71b4664e5cd9aa3"
+        note: "Records the synthetic desktop startup recovery and reopen, unchanged backup and exact damaged-file preservation, without using the owner budget."
       - path: "docs/status.md"
         ref: "7089bc2bc70a75caeb275701704b7e9d4caab3d9"
         note: "Records schema-10 upgrades and restoration/recovery from older backups through isolated copies, preserving original sources."
@@ -100,6 +103,9 @@ plans:
     blocked_by: []
     evidence:
       - path: "docs/status.md"
+        ref: "208165612a2370be70c81441a71b4664e5cd9aa3"
+        note: "Records successful per-user x64 installer packaging, with installation and first launch still unverified."
+      - path: "docs/status.md"
         ref: "7868acb046a922e8a9399b87f4d66af19bb6331c"
         note: "Records exact historical Net Worth and Income v Expense comparisons and remaining report validation limits."
       - path: "docs/status.md"
@@ -128,7 +134,7 @@ plans:
     priority: "high"
     due_date: "2026-10-21"
     completed_at: null
-    details: "The native desktop executable builds and the October export matches account balances, Plan rows, and supplied report references. The owner targets a migration-ready release by 2026-10-21, before vacation. Installer packaging, restore, migration rehearsal, and final owner-data checks are the critical gates; 2026-10-22 through 2026-10-30 is emergency-only contingency."
+    details: "The normal per-user x64 NSIS installer builds, with installation and first launch still unverified. Native restore/recovery is verified, and the October export matches account balances, Plan rows and supplied report references. Installer verification, final clean migration and final owner-data checks remain before the 2026-10-21 release; 2026-10-22 through 2026-10-30 is emergency-only contingency."
     acceptance_criteria:
       - "A Windows installer is built and verified."
       - "The final YNAB export imports with account balances, Plan months, and reports verified."
@@ -175,13 +181,16 @@ plans:
     priority: "high"
     due_date: "2026-10-08"
     completed_at: null
-    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation, a target/scheduled transfer and register Date/Repeat entry. Heavy lag and missing upcoming editing were then reported. Register rendering is paged and upcoming editing/deletion is implemented with passing checks. Confirm responsiveness and upcoming edit/delete before closing the daily-workflow gate."
+    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation, a target/scheduled transfer, register Date/Repeat entry and the upcoming editing correction. Register rendering is paged and upcoming deletion is implemented with passing checks. Confirm responsiveness and upcoming deletion before closing the daily-workflow gate."
     acceptance_criteria:
       - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
       - "Non-essential feature expansion is deferred until after migration."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "208165612a2370be70c81441a71b4664e5cd9aa3"
+        note: "Records owner confirmation of upcoming editing, with responsiveness and upcoming deletion feedback still open."
       - path: "docs/status.md"
         ref: "ba86c8de5bcd678011b9cb425ffffd4342b49e0e"
         note: "Records the upcoming-entry register editor/cancellation fix and passed financial/IPC/build checks; owner retest remains open."
