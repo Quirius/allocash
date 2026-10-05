@@ -149,6 +149,21 @@ and standalone rehearsal builds passed. Desktop inspection verified ranges
 1–100 and 101–200 and navigation back to the newest entries. Owner responsiveness
 retesting remains open.
 
+The next owner check found that upcoming entries lacked the register Edit action.
+Upcoming scheduled rows now open the usual editor, including Date and Repeat.
+Edits update the pending occurrence and its future template without replacing
+identities or altering posted occurrences. Transfer edits from either leg keep
+the pair's amounts/dates consistent and expose the shared pending category.
+Non-date edits preserve the original recurrence day after short-month clamping;
+changing an advanced recurring occurrence to Never retains one-time semantics.
+Scheduled rows remain pending and Uncleared until explicitly posted. Deletion
+stops repeats, removes the pending entry/pair and preserves posted history, using
+the existing pre-deletion backup. The change passed all 129 Rust core tests,
+24 desktop IPC frontend tests, formatting and frontend build checks. An
+independent read-only review supplemented the recurrence and transfer tests.
+The standalone rehearsal build passed and launched against the existing budget.
+Owner upcoming-entry edit/delete rehearsal remains open.
+
 The existing project record reports that the 2026-09-14 owner export matched all
 34 YNAB reference working balances exactly. Four zero-value transfer rows remain
 preserved in staging without affecting balances. This is historical evidence,

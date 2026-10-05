@@ -514,7 +514,7 @@ function AccountRegister({
                     </td>
                     <td className="money-column outflow">{amount < 0n ? huf((-amount).toString()) : ""}</td>
                     <td className="money-column inflow">{amount >= 0n ? huf(amount.toString()) : ""}</td>
-                    <td className="action-column">{entry.postingState === "scheduled" ? <><button disabled={scheduleAction} onClick={() => void finishSchedule(entry.id, true)}>Post</button><button disabled={scheduleAction} onClick={() => void finishSchedule(entry.id, false)}>Skip</button></> : <button onClick={() => setEditor(entry)}>Edit</button>}</td>
+                    <td className="action-column"><button onClick={() => setEditor(entry)}>Edit</button>{entry.postingState === "scheduled" && <><button disabled={scheduleAction} onClick={() => void finishSchedule(entry.id, true)}>Post</button><button disabled={scheduleAction} onClick={() => void finishSchedule(entry.id, false)}>Skip</button></>}</td>
                   </tr>
                 );
               })}

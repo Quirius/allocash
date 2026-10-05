@@ -120,6 +120,7 @@ details { border-top: 1px solid #323d49; padding-top: 16px; margin-top: 20px; fo
 .editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
 .editor-heading > div:first-child > span { color: #91bda2; font-size: 9px; font-weight: 700; letter-spacing: 1.2px; }
 .editor-heading h3 { margin: 4px 0 0; font-size: 15px; }
+.editor-heading p { margin: 6px 0 0; color: #9eaca5; font-size: 11px; line-height: 1.5; }
 .entry-kind { display: flex; padding: 2px; border: 1px solid #405149; border-radius: 6px; background: #151e1a; }
 .entry-kind button { border: 0; padding: 6px 10px; background: transparent; color: #91a19a; font-size: 11px; }
 .entry-kind button.active { background: #315846; color: #d9eee1; }
@@ -153,8 +154,8 @@ details { border-top: 1px solid #323d49; padding-top: 16px; margin-top: 20px; fo
 .register-table .memo-column span { color: #596673; }
 .register-table .status-column { width: 68px; text-align: center; }
 .register-table .money-column { width: 120px; text-align: right; font-variant-numeric: tabular-nums; }
-.register-table .action-column { width: 58px; padding-inline: 6px; text-align: center; }
-.register-table .action-column button { border: 0; padding: 5px 7px; background: transparent; color: #91a1ae; font-size: 10px; }
+.register-table .action-column { width: 58px; padding-inline: 6px; text-align: center; white-space: normal; }
+.register-table .action-column button { display: block; margin-inline: auto; border: 0; padding: 5px 7px; background: transparent; color: #91a1ae; font-size: 10px; }
 .register-table .action-column button:hover { color: #c7dfd1; }
 .register-table .outflow { color: #e9a096; }
 .register-table .inflow { color: #9fdeb7; }

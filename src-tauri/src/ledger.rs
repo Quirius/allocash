@@ -304,6 +304,8 @@ pub struct RegisterEntry {
     pub amount: Huf,
     pub transfer_id: Option<String>,
     pub transfer_account_name: Option<String>,
+    pub schedule_id: Option<String>,
+    pub repeat_interval_months: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -652,7 +654,7 @@ pub struct ManualTransferInput {
     pub direction: Direction,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterEntryEdit {
     pub id: String,
@@ -665,6 +667,8 @@ pub struct RegisterEntryEdit {
     pub amount: Huf,
     pub cleared_state: ClearedState,
     pub confirmed: bool,
+    #[serde(default)]
+    pub repeat_interval_months: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -940,14 +944,16 @@ impl Database {
     pub fn register_entries(&self, account_id: &str) -> LedgerResult<Vec<RegisterEntry>> {
         ensure_account(&self.connection, account_id)?;
         let mut query = self.connection.prepare(
-            "SELECT le.id,le.transaction_date,p.name,le.category_id,cg.name,c.name,le.memo,le.flag_id,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,le.transfer_id,transfer_account.name
+            "SELECT le.id,le.transaction_date,p.name,CASE WHEN le.posting_state='scheduled' THEN COALESCE(le.category_id,peer.category_id) ELSE le.category_id END,cg.name,c.name,le.memo,le.flag_id,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,le.transfer_id,transfer_account.name,o.schedule_id,CASE WHEN s.end_date=s.start_date THEN 0 ELSE s.interval_months END
              FROM ledger_entries le
              LEFT JOIN payees p ON p.id=le.payee_id
-             LEFT JOIN categories c ON c.id=le.category_id
+             LEFT JOIN transactions peer ON peer.transfer_id=le.transfer_id AND peer.id<>le.id
+             LEFT JOIN categories c ON c.id=CASE WHEN le.posting_state='scheduled' THEN COALESCE(le.category_id,peer.category_id) ELSE le.category_id END
              LEFT JOIN category_groups cg ON cg.id=c.group_id
              LEFT JOIN flags f ON f.id=le.flag_id
-             LEFT JOIN transactions peer ON peer.transfer_id=le.transfer_id AND peer.id<>le.id
              LEFT JOIN accounts transfer_account ON transfer_account.id=peer.account_id
+             LEFT JOIN schedule_occurrences o ON (o.transaction_id=le.id OR o.transaction_id=peer.id) AND o.state='pending'
+             LEFT JOIN schedules s ON s.id=o.schedule_id
              WHERE le.account_id=?1
              ORDER BY le.transaction_date DESC,le.created_at DESC,le.id DESC",
         )?;
@@ -977,6 +983,8 @@ impl Database {
                     amount: Huf(row.get(13)?),
                     transfer_id: row.get(14)?,
                     transfer_account_name: row.get(15)?,
+                    schedule_id: row.get(16)?,
+                    repeat_interval_months: row.get(17)?,
                 })
             })?
             .collect::<Result<_, _>>()?;
@@ -1960,15 +1968,7 @@ impl Database {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        require_changed(transaction.execute(
-            "UPDATE schedules SET active=0 WHERE id=?1 AND active=1",
-            [schedule_id],
-        )?)?;
-        let ids = transaction.prepare("SELECT transaction_id FROM schedule_occurrences WHERE schedule_id=?1 AND state='pending'")?.query_map([schedule_id], |row| row.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
-        transaction.execute("UPDATE schedule_occurrences SET transaction_id=NULL,state='skipped' WHERE schedule_id=?1 AND state='pending'", [schedule_id])?;
-        for id in ids {
-            delete_scheduled_transfer(&transaction, &id)?;
-        }
+        deactivate_schedule_in_transaction(&transaction, schedule_id)?;
         transaction.commit()?;
         Ok(())
     }
@@ -2119,9 +2119,9 @@ impl Database {
             .optional()?
             .ok_or(LedgerError::NotFound)?;
         if current.5 == PostingState::Scheduled {
-            return Err(LedgerError::InvalidValue(
-                "Use the schedule Post or Skip action.",
-            ));
+            update_scheduled_register_entry(&transaction, edit, &current)?;
+            transaction.commit()?;
+            return Ok(());
         }
         let amount_changed = current.4 != edit.amount.0;
         let state_changed = current.2 != edit.cleared_state;
@@ -2275,7 +2275,13 @@ impl Database {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let schedule_id = pending_schedule_for_entry(&transaction, id)?;
         let transfer = guard_entry_deletion(&transaction, id, confirmed)?;
+        if let Some(schedule_id) = schedule_id {
+            deactivate_schedule_in_transaction(&transaction, &schedule_id)?;
+            transaction.commit()?;
+            return Ok(());
+        }
         if let Some(transfer_id) = transfer {
             transaction.execute(
                 "DELETE FROM transactions WHERE transfer_id=?1",
@@ -2659,6 +2665,192 @@ fn confirm_reconciled(reconciled: bool, confirmed: bool) -> LedgerResult<()> {
         Ok(())
     }
 }
+
+fn update_scheduled_register_entry(
+    transaction: &rusqlite::Transaction<'_>,
+    edit: &RegisterEntryEdit,
+    current: &(
+        Option<String>,
+        Option<Direction>,
+        ClearedState,
+        String,
+        i64,
+        PostingState,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        String,
+    ),
+) -> LedgerResult<()> {
+    if current.2 != ClearedState::Uncleared || edit.cleared_state != ClearedState::Uncleared {
+        return Err(LedgerError::InvalidValue(
+            "Scheduled entries must remain uncleared.",
+        ));
+    }
+    let (schedule_id, anchor_id, occurrence_date, start_date, day_of_month, end_date, old_interval, account_id, counterpart): (
+        String, String, String, String, i64, Option<String>, i64, String, Option<String>,
+    ) = transaction.query_row(
+        "SELECT s.id,o.transaction_id,o.occurrence_date,s.start_date,s.day_of_month,s.end_date,CASE WHEN s.end_date=s.start_date THEN 0 ELSE s.interval_months END,s.account_id,s.counterpart_account_id FROM schedule_occurrences o JOIN schedules s ON s.id=o.schedule_id JOIN transactions anchor ON anchor.id=o.transaction_id JOIN transactions selected ON selected.id=?1 AND (selected.id=anchor.id OR (anchor.transfer_id IS NOT NULL AND selected.transfer_id=anchor.transfer_id)) WHERE o.state='pending'",
+        [&edit.id],
+        |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?,row.get(7)?,row.get(8)?)),
+    ).optional()?.ok_or(LedgerError::InvalidValue("This scheduled entry has no editable schedule."))?;
+    let interval = edit.repeat_interval_months.unwrap_or(old_interval);
+    if ![0, 1, 3, 12].contains(&interval) {
+        return Err(LedgerError::InvalidValue("Invalid repeat interval."));
+    }
+    let was_one_off = old_interval == 0 || end_date.as_deref() == Some(start_date.as_str());
+    let new_end = if interval == 0 {
+        Some(edit.date.as_str())
+    } else if was_one_off {
+        None
+    } else {
+        end_date.as_deref()
+    };
+    if new_end.is_some_and(|end| end < edit.date.as_str()) {
+        return Err(LedgerError::InvalidValue(
+            "Schedule end date cannot precede its start date.",
+        ));
+    }
+    let is_transfer = current.0.is_some();
+    let selected_account = edit.account_id.as_deref().unwrap_or(&current.11);
+    if selected_account != current.11 && is_transfer {
+        return Err(LedgerError::InvalidValue(
+            "A linked transfer account cannot be changed here.",
+        ));
+    }
+    ensure_open_account(transaction, selected_account)?;
+    if let Some(peer) = counterpart.as_deref() {
+        ensure_open_account(transaction, peer)?;
+    }
+    let payee_id = if is_transfer {
+        transaction.query_row(
+            "SELECT payee_id FROM schedules WHERE id=?1",
+            [&schedule_id],
+            |row| row.get::<_, Option<String>>(0),
+        )?
+    } else {
+        resolve_payee(
+            transaction,
+            edit.payee_name
+                .as_deref()
+                .map(str::trim)
+                .filter(|name| !name.is_empty()),
+        )?
+    };
+    let mut signed_amount = if let Some(direction) = current.1 {
+        let valid_sign = match direction {
+            Direction::Outflow => edit.amount.0 < 0,
+            Direction::Inflow => edit.amount.0 > 0,
+        };
+        if !valid_sign {
+            return Err(LedgerError::InvalidValue(
+                "A transfer cannot reverse direction during amount editing.",
+            ));
+        }
+        edit.amount.0
+    } else {
+        edit.amount.0
+    };
+    if is_transfer && edit.id != anchor_id {
+        signed_amount = signed_amount
+            .checked_neg()
+            .ok_or(LedgerError::AmountOverflow)?;
+    }
+    let anchor_transfer: Option<String> = transaction.query_row(
+        "SELECT transfer_id FROM transactions WHERE id=?1",
+        [&anchor_id],
+        |row| row.get(0),
+    )?;
+    let new_anchor_account = if is_transfer {
+        account_id.as_str()
+    } else {
+        selected_account
+    };
+    let rescheduled = edit.date.as_str() != occurrence_date;
+    let new_start_date = if interval == 0 || rescheduled {
+        edit.date.as_str()
+    } else {
+        start_date.as_str()
+    };
+    let day = if interval == 0 || rescheduled {
+        calendar_day(&edit.date)?
+    } else {
+        day_of_month
+    };
+    transaction.execute(
+        "UPDATE schedules SET account_id=?2,payee_id=?3,category_id=?4,memo=?5,flag_id=?6,amount_huf=?7,start_date=?8,day_of_month=?9,end_date=?10,interval_months=?11 WHERE id=?1",
+        params![schedule_id,new_anchor_account,payee_id,edit.category_id,edit.memo.trim(),edit.flag_id,signed_amount,new_start_date,day,new_end,if interval == 0 { 1 } else { interval }],
+    )?;
+    transaction.execute("UPDATE schedule_occurrences SET occurrence_date=?2 WHERE schedule_id=?1 AND occurrence_date=(SELECT occurrence_date FROM schedule_occurrences WHERE transaction_id=?3)", params![schedule_id,edit.date.as_str(),anchor_id])?;
+    let category_leg: Option<String> =
+        if let (Some(_), Some(peer)) = (anchor_transfer.as_deref(), counterpart.as_deref()) {
+            let (anchor_kind, peer_kind): (String, String) = transaction.query_row(
+                "SELECT a.kind,b.kind FROM accounts a JOIN accounts b ON b.id=?2 WHERE a.id=?1",
+                params![account_id, peer],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )?;
+            if matches!(anchor_kind.as_str(), "cash" | "credit") {
+                Some(anchor_id.clone())
+            } else if matches!(peer_kind.as_str(), "cash" | "credit") {
+                Some(transaction.query_row(
+                    "SELECT id FROM transactions WHERE transfer_id=?1 AND id<>?2",
+                    params![anchor_transfer, anchor_id],
+                    |row| row.get::<_, String>(0),
+                )?)
+            } else {
+                Some(anchor_id.clone())
+            }
+        } else {
+            Some(anchor_id.clone())
+        };
+    if let Some(transfer_id) = anchor_transfer {
+        transaction.execute(
+            "UPDATE transfers SET amount_huf=?2 WHERE id=?1",
+            params![
+                transfer_id,
+                signed_amount
+                    .checked_abs()
+                    .ok_or(LedgerError::AmountOverflow)?
+            ],
+        )?;
+        transaction.execute("UPDATE transactions SET transaction_date=?2,memo=?3,flag_id=?4 WHERE transfer_id=?1 AND posting_state='scheduled'", params![transfer_id,edit.date.as_str(),edit.memo.trim(),edit.flag_id])?;
+        if let Some(id) = category_leg {
+            transaction.execute(
+                "UPDATE transactions SET category_id=?2 WHERE id=?1",
+                params![id, edit.category_id],
+            )?;
+        }
+    } else {
+        transaction.execute("UPDATE transactions SET account_id=?2,transaction_date=?3,payee_id=?4,category_id=?5,memo=?6,flag_id=?7,amount_huf=?8 WHERE id=?1", params![edit.id,selected_account,edit.date.as_str(),payee_id,edit.category_id,edit.memo.trim(),edit.flag_id,edit.amount.0])?;
+    }
+    Ok(())
+}
+
+fn pending_schedule_for_entry(connection: &Connection, id: &str) -> LedgerResult<Option<String>> {
+    Ok(connection.query_row(
+        "SELECT o.schedule_id FROM schedule_occurrences o JOIN transactions anchor ON anchor.id=o.transaction_id JOIN transactions selected ON selected.id=?1 AND (selected.id=anchor.id OR (anchor.transfer_id IS NOT NULL AND selected.transfer_id=anchor.transfer_id)) WHERE o.state='pending'",
+        [id], |row| row.get(0),
+    ).optional()?)
+}
+
+fn deactivate_schedule_in_transaction(
+    transaction: &rusqlite::Transaction<'_>,
+    schedule_id: &str,
+) -> LedgerResult<()> {
+    require_changed(transaction.execute(
+        "UPDATE schedules SET active=0 WHERE id=?1 AND active=1",
+        [schedule_id],
+    )?)?;
+    let ids = transaction.prepare("SELECT transaction_id FROM schedule_occurrences WHERE schedule_id=?1 AND state='pending'")?.query_map([schedule_id], |row| row.get::<_,String>(0))?.collect::<Result<Vec<_>,_>>()?;
+    transaction.execute("UPDATE schedule_occurrences SET transaction_id=NULL,state='skipped' WHERE schedule_id=?1 AND state='pending'", [schedule_id])?;
+    for id in ids {
+        delete_scheduled_transfer(transaction, &id)?;
+    }
+    Ok(())
+}
+
 fn guard_transfer(connection: &Connection, id: &str, confirmed: bool) -> LedgerResult<()> {
     let reconciled: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM transactions WHERE transfer_id=?1 AND cleared_state='reconciled')",[id],|row|row.get(0))?;
     confirm_reconciled(reconciled, confirmed)
@@ -2677,7 +2869,7 @@ fn guard_entry_deletion(
         )
         .optional()?
         .ok_or(LedgerError::NotFound)?;
-    if scheduled {
+    if scheduled && pending_schedule_for_entry(connection, id)?.is_none() {
         return Err(LedgerError::InvalidValue(
             "Use the schedule Post or Skip action.",
         ));

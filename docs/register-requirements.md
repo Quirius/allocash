@@ -99,6 +99,10 @@ Scheduled transaction:
   Quarterly and Yearly repeat from the selected date
 - can be posted or skipped directly in either account's register; a scheduled
   transfer acts on both linked legs together
+- can be edited using the register editor, including Date and Repeat; changes
+  update the pending entry and future repeats while preserving posted history
+- deleting an upcoming entry stops its repeats and removes the pending entry
+  (both linked legs for transfers), with the normal safety backup
 - remains excluded from posted balances and Plan until posted
 
 Transfer counterpart:

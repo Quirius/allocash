@@ -173,8 +173,13 @@ a time, with both entries for a transfer. Posting explicitly turns that occurren
 into posted ledger history and creates the next occurrence; skipping records the
 skipped occurrence and advances instead. Recurrence retains the start date's
 original day, clamping short months to their last day. Pending rows are excluded
-from balances and the Plan, and cannot be edited or deleted through the generic
-register actions.
+from balances and the Plan. Register editing updates the pending occurrence and
+its recurrence template, preserving posted history and pending identities. A
+scheduled transfer keeps its direction/accounts, shares pending dates, amount,
+memo and flag changes, and places a budget-boundary category on its on-budget leg.
+Editing from either leg shows the shared pending category. Scheduled rows remain
+Uncleared until posted. Register deletion cancels the template and removes its
+pending occurrence; it uses the existing pre-deletion safety backup.
 An optional end date prevents generation after its inclusive date. Canceling a
 schedule removes its pending occurrence, including both linked transfer entries,
 but preserves every posted occurrence as ledger history. A budget-boundary

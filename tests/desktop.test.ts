@@ -221,3 +221,22 @@ it("sends atomic register edits and confirmed deletions", async () => {
     confirmed: true,
   });
 });
+
+it.each([0, 1, 3, 12] as const)("sends scheduled register edits with exact HUF text and %i-month recurrence metadata", async (repeatIntervalMonths) => {
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  const edit = {
+    id: "scheduled-entry",
+    accountId: "cash",
+    date: "2026-10-10",
+    payeeName: "Rent",
+    categoryId: "rent",
+    memo: "Updated schedule",
+    flagId: "orange",
+    amount: "-9223372036854775807",
+    clearedState: "uncleared" as const,
+    confirmed: false,
+    repeatIntervalMonths,
+  };
+  await updateRegisterEntry(edit);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("update_register_entry", { edit });
+});

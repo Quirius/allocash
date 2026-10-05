@@ -2156,6 +2156,7 @@ fn manual_transfer_and_register_edit_preserve_pair_and_confirmation_rules() {
         amount: Huf(-2000),
         cleared_state: ClearedState::Uncleared,
         confirmed: false,
+        repeat_interval_months: None,
     };
     assert!(matches!(
         database.update_register_entry(&edit),
@@ -2226,6 +2227,7 @@ fn register_correction_preserves_identity_and_updates_financial_views() {
         amount: Huf(-2500),
         cleared_state: ClearedState::Reconciled,
         confirmed: false,
+        repeat_interval_months: None,
     };
     assert!(matches!(
         database.update_register_entry(&edit),
@@ -2285,6 +2287,7 @@ fn register_correction_preserves_identity_and_updates_financial_views() {
         amount: Huf(2500),
         cleared_state: ClearedState::Reconciled,
         confirmed: false,
+        repeat_interval_months: None,
     };
     assert!(matches!(
         database.update_register_entry(&moved),
@@ -2322,6 +2325,391 @@ fn register_correction_preserves_identity_and_updates_financial_views() {
         })
         .unwrap()
         .is_empty());
+}
+
+#[test]
+fn upcoming_ordinary_register_edits_reschedule_and_preserve_one_off_semantics() {
+    let (_directory, mut database) = database();
+    database.create_category_group("g", "Living", 0).unwrap();
+    database.create_category("c", "g", "Food", 0).unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-09-15"),
+            end_date: Some(date("2026-09-15")),
+            payee_name: Some("Shop".into()),
+            category_id: Some("c".into()),
+            memo: "Old".into(),
+            flag_id: None,
+            amount: Huf(-1000),
+            interval_months: 1,
+            counterpart_account_id: None,
+        })
+        .unwrap();
+    let pending = database.scheduled_occurrences().unwrap().remove(0);
+    let row = database.register_entries("cash").unwrap().remove(0);
+    assert_eq!(
+        row.schedule_id.as_deref(),
+        Some(pending.schedule_id.as_str())
+    );
+    assert_eq!(row.repeat_interval_months, Some(0));
+    database
+        .update_register_entry(&RegisterEntryEdit {
+            id: pending.transaction_id.clone(),
+            account_id: None,
+            date: date("2026-09-20"),
+            payee_name: Some("Market".into()),
+            category_id: Some("c".into()),
+            memo: "Updated".into(),
+            flag_id: Some("flag-blue".into()),
+            amount: Huf(-2500),
+            cleared_state: ClearedState::Uncleared,
+            confirmed: false,
+            repeat_interval_months: None,
+        })
+        .unwrap();
+    let edited = database.register_entries("cash").unwrap().remove(0);
+    assert_eq!(edited.date, date("2026-09-20"));
+    assert_eq!(edited.payee_name.as_deref(), Some("Market"));
+    assert_eq!(edited.memo, "Updated");
+    assert_eq!(edited.amount, Huf(-2500));
+    assert_eq!(edited.repeat_interval_months, Some(0));
+    database
+        .post_scheduled_occurrence(&pending.transaction_id)
+        .unwrap();
+    assert!(database.scheduled_occurrences().unwrap().is_empty());
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-09-30"))
+            .unwrap()
+            .working,
+        Huf(-2500)
+    );
+}
+
+#[test]
+fn upcoming_transfer_edit_from_peer_keeps_sign_category_and_both_dates() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("loan", AccountKind::Loan, 0))
+        .unwrap();
+    database.create_category_group("g", "Living", 0).unwrap();
+    database
+        .create_category("c", "g", "Loan payment", 0)
+        .unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-09-12"),
+            end_date: None,
+            payee_name: None,
+            category_id: Some("c".into()),
+            memo: "Payment".into(),
+            flag_id: None,
+            amount: Huf(-1000),
+            interval_months: 1,
+            counterpart_account_id: Some("loan".into()),
+        })
+        .unwrap();
+    let pending = database.scheduled_occurrences().unwrap().remove(0);
+    let peer = database.entries("loan").unwrap().remove(0);
+    let peer_id = peer.entry.id.clone();
+    assert_eq!(peer.amount, Huf(1000));
+    let row = database.register_entries("loan").unwrap().remove(0);
+    assert_eq!(row.category_id.as_deref(), Some("c"));
+    database
+        .update_register_entry(&RegisterEntryEdit {
+            id: peer_id.clone(),
+            account_id: None,
+            date: date("2026-09-20"),
+            payee_name: None,
+            category_id: Some("c".into()),
+            memo: "Changed payment".into(),
+            flag_id: Some("flag-orange".into()),
+            amount: Huf(2500),
+            cleared_state: ClearedState::Uncleared,
+            confirmed: false,
+            repeat_interval_months: Some(3),
+        })
+        .unwrap();
+    let cash = database.entries("cash").unwrap().remove(0);
+    let loan = database.entries("loan").unwrap().remove(0);
+    assert_eq!(cash.amount, Huf(-2500));
+    assert_eq!(loan.amount, Huf(2500));
+    assert_eq!(cash.entry.date, date("2026-09-20"));
+    assert_eq!(loan.entry.date, date("2026-09-20"));
+    assert_eq!(cash.entry.memo, "Changed payment");
+    assert_eq!(loan.entry.flag_id.as_deref(), Some("flag-orange"));
+    assert_eq!(
+        database.register_entries("loan").unwrap()[0]
+            .category_id
+            .as_deref(),
+        Some("c")
+    );
+    database.post_scheduled_occurrence(&peer_id).unwrap();
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].date,
+        date("2026-12-20")
+    );
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].amount,
+        Huf(-2500)
+    );
+    assert_ne!(pending.transaction_id, peer_id);
+}
+
+#[test]
+fn memo_edit_on_clamped_occurrence_preserves_original_day_anchor() {
+    let (_directory, mut database) = database();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2027-01-31"),
+            end_date: None,
+            payee_name: None,
+            category_id: None,
+            memo: "Initial".into(),
+            flag_id: None,
+            amount: Huf(-100),
+            interval_months: 1,
+            counterpart_account_id: None,
+        })
+        .unwrap();
+    let january = database.scheduled_occurrences().unwrap().remove(0);
+    database
+        .post_scheduled_occurrence(&january.transaction_id)
+        .unwrap();
+    let february = database.scheduled_occurrences().unwrap().remove(0);
+    assert_eq!(february.date, date("2027-02-28"));
+    database
+        .update_register_entry(&RegisterEntryEdit {
+            id: february.transaction_id.clone(),
+            account_id: None,
+            date: february.date.clone(),
+            payee_name: None,
+            category_id: None,
+            memo: "Adjusted memo".into(),
+            flag_id: None,
+            amount: Huf(-100),
+            cleared_state: ClearedState::Uncleared,
+            confirmed: false,
+            repeat_interval_months: None,
+        })
+        .unwrap();
+    database
+        .post_scheduled_occurrence(&february.transaction_id)
+        .unwrap();
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].date,
+        date("2027-03-31")
+    );
+}
+
+#[test]
+fn invalid_upcoming_edits_leave_occurrence_and_template_unchanged() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("closed", AccountKind::Cash, 0))
+        .unwrap();
+    database.set_account_closed("closed", true).unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-09-10"),
+            end_date: Some(date("2026-10-01")),
+            payee_name: None,
+            category_id: None,
+            memo: "Original".into(),
+            flag_id: None,
+            amount: Huf(-1000),
+            interval_months: 1,
+            counterpart_account_id: None,
+        })
+        .unwrap();
+    let pending = database.scheduled_occurrences().unwrap().remove(0);
+    let original = RegisterEntryEdit {
+        id: pending.transaction_id.clone(),
+        account_id: None,
+        date: date("2026-09-10"),
+        payee_name: None,
+        category_id: None,
+        memo: "Original".into(),
+        flag_id: None,
+        amount: Huf(-1000),
+        cleared_state: ClearedState::Uncleared,
+        confirmed: false,
+        repeat_interval_months: None,
+    };
+    let mut zero = RegisterEntryEdit {
+        amount: Huf(0),
+        memo: "Bad".into(),
+        ..original.clone()
+    };
+    assert!(database.update_register_entry(&zero).is_err());
+    zero.amount = Huf(-1000);
+    let invalid_repeat = RegisterEntryEdit {
+        repeat_interval_months: Some(2),
+        memo: "Bad".into(),
+        ..original.clone()
+    };
+    assert!(database.update_register_entry(&invalid_repeat).is_err());
+    let closed_account = RegisterEntryEdit {
+        account_id: Some("closed".into()),
+        memo: "Bad".into(),
+        ..original.clone()
+    };
+    assert!(database.update_register_entry(&closed_account).is_err());
+    let cleared = RegisterEntryEdit {
+        cleared_state: ClearedState::Cleared,
+        memo: "Bad".into(),
+        ..original.clone()
+    };
+    assert!(database.update_register_entry(&cleared).is_err());
+    let after_end = RegisterEntryEdit {
+        date: date("2026-10-02"),
+        memo: "Bad".into(),
+        ..original
+    };
+    assert!(database.update_register_entry(&after_end).is_err());
+    let saved = database.register_entries("cash").unwrap().remove(0);
+    assert_eq!(saved.date, date("2026-09-10"));
+    assert_eq!(saved.memo, "Original");
+    assert_eq!(saved.amount, Huf(-1000));
+    assert_eq!(database.scheduled_occurrences().unwrap().len(), 1);
+}
+
+#[test]
+fn converting_later_repeating_occurrence_to_never_sets_one_off_anchor() {
+    let (_directory, mut database) = database();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2027-01-31"),
+            end_date: None,
+            payee_name: None,
+            category_id: None,
+            memo: "Recurring".into(),
+            flag_id: None,
+            amount: Huf(-100),
+            interval_months: 1,
+            counterpart_account_id: None,
+        })
+        .unwrap();
+    let january = database.scheduled_occurrences().unwrap().remove(0);
+    database
+        .post_scheduled_occurrence(&january.transaction_id)
+        .unwrap();
+    let february = database.scheduled_occurrences().unwrap().remove(0);
+    assert_eq!(february.date, date("2027-02-28"));
+    database
+        .update_register_entry(&RegisterEntryEdit {
+            id: february.transaction_id.clone(),
+            account_id: None,
+            date: february.date.clone(),
+            payee_name: None,
+            category_id: None,
+            memo: "One final payment".into(),
+            flag_id: None,
+            amount: Huf(-250),
+            cleared_state: ClearedState::Uncleared,
+            confirmed: false,
+            repeat_interval_months: Some(0),
+        })
+        .unwrap();
+    assert_eq!(
+        database.register_entries("cash").unwrap()[0].repeat_interval_months,
+        Some(0)
+    );
+    database
+        .update_register_entry(&RegisterEntryEdit {
+            id: february.transaction_id.clone(),
+            account_id: None,
+            date: february.date.clone(),
+            payee_name: None,
+            category_id: None,
+            memo: "One final payment updated".into(),
+            flag_id: None,
+            amount: Huf(-300),
+            cleared_state: ClearedState::Uncleared,
+            confirmed: false,
+            repeat_interval_months: None,
+        })
+        .unwrap();
+    assert_eq!(
+        database.register_entries("cash").unwrap()[0].repeat_interval_months,
+        Some(0)
+    );
+    database
+        .post_scheduled_occurrence(&february.transaction_id)
+        .unwrap();
+    assert!(database.scheduled_occurrences().unwrap().is_empty());
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2027-02-28"))
+            .unwrap()
+            .working,
+        Huf(-400)
+    );
+}
+
+#[test]
+fn deleting_either_pending_scheduled_transfer_leg_cancels_template_and_keeps_posted_history() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("other", AccountKind::Cash, 0))
+        .unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-09-10"),
+            end_date: None,
+            payee_name: None,
+            category_id: None,
+            memo: "Move".into(),
+            flag_id: None,
+            amount: Huf(-1000),
+            interval_months: 1,
+            counterpart_account_id: Some("other".into()),
+        })
+        .unwrap();
+    let first = database.scheduled_occurrences().unwrap().remove(0);
+    database
+        .post_scheduled_occurrence(&first.transaction_id)
+        .unwrap();
+    let pending = database.scheduled_occurrences().unwrap().remove(0);
+    let peer_id = database
+        .entries("other")
+        .unwrap()
+        .iter()
+        .find(|entry| entry.entry.posting_state == PostingState::Scheduled)
+        .unwrap()
+        .entry
+        .id
+        .clone();
+    database.check_entry_deletion(&peer_id, false).unwrap();
+    database.delete_entry(&peer_id, false).unwrap();
+    assert!(database.scheduled_occurrences().unwrap().is_empty());
+    let cash = database.entries("cash").unwrap();
+    let other = database.entries("other").unwrap();
+    assert_eq!(cash.len(), 1);
+    assert_eq!(other.len(), 1);
+    assert_eq!(cash[0].entry.id, first.transaction_id);
+    assert_eq!(cash[0].entry.posting_state, PostingState::Posted);
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-12-31"))
+            .unwrap()
+            .working,
+        Huf(-1000)
+    );
+    assert_eq!(
+        database
+            .account_balance("other", &date("2026-12-31"))
+            .unwrap()
+            .working,
+        Huf(1000)
+    );
+    assert_ne!(pending.transaction_id, peer_id);
 }
 
 #[test]

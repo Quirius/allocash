@@ -212,6 +212,10 @@ export function RegisterEntryEditor({
   const [memo, setMemo] = useState(entry.memo);
   const [flagId, setFlagId] = useState(entry.flagId || "");
   const [clearedState, setClearedState] = useState(entry.clearedState);
+  const scheduled = !!entry.scheduleId;
+  const [repeatIntervalMonths, setRepeatIntervalMonths] = useState<0 | 1 | 3 | 12>(
+    entry.repeatIntervalMonths === 1 || entry.repeatIntervalMonths === 3 || entry.repeatIntervalMonths === 12 ? entry.repeatIntervalMonths : 0,
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -229,8 +233,9 @@ export function RegisterEntryEditor({
         memo,
         flagId: flagId || null,
         amount: (direction === "outflow" ? -positive : positive).toString(),
-        clearedState,
+        clearedState: scheduled ? "uncleared" : clearedState,
         confirmed,
+        ...(scheduled ? { repeatIntervalMonths } : {}),
       });
       await onSaved();
       onCancel();
@@ -252,7 +257,10 @@ export function RegisterEntryEditor({
   }
 
   async function remove() {
-    if (!window.confirm(entry.transferId ? "Delete both sides of this transfer?" : "Delete this transaction?")) return;
+    const deletePrompt = scheduled
+      ? "Delete this upcoming entry and stop its repeats?"
+      : entry.transferId ? "Delete both sides of this transfer?" : "Delete this transaction?";
+    if (!window.confirm(deletePrompt)) return;
     setError(null);
     setSaving(true);
     try {
@@ -282,7 +290,9 @@ export function RegisterEntryEditor({
   return (
     <form className="transaction-editor compact" onSubmit={submit}>
       <div className="editor-heading">
-        <div><span>EDIT ENTRY</span><h3>{entry.transferAccountName ? `Transfer: ${entry.transferAccountName}` : entry.payeeName || "No payee"}</h3></div>
+        <div><span>EDIT ENTRY</span><h3>{entry.transferAccountName ? `Transfer: ${entry.transferAccountName}` : entry.payeeName || "No payee"}</h3>
+          {scheduled && <p>Changes apply to this upcoming entry and future repeats. Posted history is unchanged.</p>}
+        </div>
         {entry.transferId && <span className="paired-badge">Paired transfer</span>}
       </div>
       <div className="editor-fields edit-fields">
@@ -293,6 +303,11 @@ export function RegisterEntryEditor({
           </select>
         </label>}
         <label>Date<input autoFocus={!!entry.transferId} required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
+        {scheduled && <label>Repeat
+          <select value={repeatIntervalMonths} onChange={(event) => setRepeatIntervalMonths(Number(event.target.value) as 0 | 1 | 3 | 12)}>
+            <option value={0}>Never</option><option value={1}>Monthly</option><option value={3}>Quarterly</option><option value={12}>Yearly</option>
+          </select>
+        </label>}
         {!entry.transferId && <label>Payee
           <input list={`edit-payees-${entry.id}`} value={payee} onChange={(event) => setPayee(event.target.value)} />
           <datalist id={`edit-payees-${entry.id}`}>
@@ -314,7 +329,7 @@ export function RegisterEntryEditor({
         </label>}
         <label>Amount<input required inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
         <label>Cleared state
-          <select value={clearedState} onChange={(event) => setClearedState(event.target.value as RegisterEntry["clearedState"])}>
+          <select disabled={scheduled} value={scheduled ? "uncleared" : clearedState} onChange={(event) => setClearedState(event.target.value as RegisterEntry["clearedState"])}>
             <option value="uncleared">Uncleared</option>
             <option value="cleared">Cleared</option>
             <option value="reconciled">Reconciled</option>
