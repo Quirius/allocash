@@ -94,7 +94,7 @@ export function ScheduleView({ accounts, options }: { accounts: AccountOverview[
     </form>
     {items === null ? <div className="register-message">{error ? "Schedules unavailable." : "Loading schedules…"}</div> : <div className="schedule-list">
       {items.length === 0 ? <p>No pending scheduled transactions.</p> : items.map((item) => <div key={item.transactionId}>
-        <span><strong>{formatDate(item.date)}</strong> {item.accountName} · {item.transferAccountName ? `Transfer: ${item.transferAccountName}` : item.payeeName ?? "No payee"}<small>{recurrenceLabel(item.intervalMonths)} · {item.categoryName ?? "Uncategorized"}{item.memo && ` · ${item.memo}`}</small></span>
+        <span><strong>{formatDate(item.date)}</strong> {item.accountName} · {item.transferAccountName ? `Transfer: ${item.transferAccountName}` : item.payeeName ?? "No payee"}<small>{item.repeats === false ? "Once" : recurrenceLabel(item.intervalMonths)} · {item.categoryName ?? "Uncategorized"}{item.memo && ` · ${item.memo}`}</small></span>
         <b>{formatHuf(BigInt(item.amount))}</b>
         <button onClick={() => void finish(item.transactionId, true)}>Post</button>
         <button onClick={() => void finish(item.transactionId, false)}>Skip</button>

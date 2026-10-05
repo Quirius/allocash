@@ -637,6 +637,7 @@ pub struct ScheduledOccurrence {
     pub amount: Huf,
     pub interval_months: i64,
     pub transfer_account_name: Option<String>,
+    pub repeats: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1920,7 +1921,7 @@ impl Database {
     }
 
     pub fn scheduled_occurrences(&self) -> LedgerResult<Vec<ScheduledOccurrence>> {
-        let mut statement = self.connection.prepare("SELECT o.schedule_id,o.transaction_id,a.name,t.transaction_date,p.name,c.name,t.memo,le.amount_huf,s.interval_months,other.name FROM schedule_occurrences o JOIN transactions t ON t.id=o.transaction_id JOIN ledger_entries le ON le.id=t.id JOIN schedules s ON s.id=o.schedule_id JOIN accounts a ON a.id=s.account_id LEFT JOIN accounts other ON other.id=s.counterpart_account_id LEFT JOIN payees p ON p.id=t.payee_id LEFT JOIN transactions peer ON peer.transfer_id=t.transfer_id AND peer.id<>t.id LEFT JOIN categories c ON c.id=COALESCE(t.category_id,peer.category_id) WHERE o.state='pending' ORDER BY t.transaction_date,o.schedule_id")?;
+        let mut statement = self.connection.prepare("SELECT o.schedule_id,o.transaction_id,a.name,t.transaction_date,p.name,c.name,t.memo,le.amount_huf,s.interval_months,other.name,(s.end_date IS NULL OR s.end_date<>s.start_date) FROM schedule_occurrences o JOIN transactions t ON t.id=o.transaction_id JOIN ledger_entries le ON le.id=t.id JOIN schedules s ON s.id=o.schedule_id JOIN accounts a ON a.id=s.account_id LEFT JOIN accounts other ON other.id=s.counterpart_account_id LEFT JOIN payees p ON p.id=t.payee_id LEFT JOIN transactions peer ON peer.transfer_id=t.transfer_id AND peer.id<>t.id LEFT JOIN categories c ON c.id=COALESCE(t.category_id,peer.category_id) WHERE o.state='pending' ORDER BY t.transaction_date,o.schedule_id")?;
         let occurrences = statement
             .query_map([], |row| {
                 Ok(ScheduledOccurrence {
@@ -1940,6 +1941,7 @@ impl Database {
                     amount: Huf(row.get(7)?),
                     interval_months: row.get(8)?,
                     transfer_account_name: row.get(9)?,
+                    repeats: row.get(10)?,
                 })
             })?
             .collect::<Result<_, _>>()?;
@@ -1979,7 +1981,8 @@ impl Database {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let (schedule_id, date): (String, String) = transaction.query_row("SELECT schedule_id,occurrence_date FROM schedule_occurrences WHERE transaction_id=?1 AND state='pending'", [transaction_id], |row| Ok((row.get(0)?,row.get(1)?))).optional()?.ok_or(LedgerError::NotFound)?;
+        let (schedule_id, date, anchor_id): (String, String, String) = transaction.query_row("SELECT o.schedule_id,o.occurrence_date,o.transaction_id FROM schedule_occurrences o JOIN transactions anchor ON anchor.id=o.transaction_id JOIN transactions selected ON selected.id=?1 AND (selected.id=anchor.id OR (anchor.transfer_id IS NOT NULL AND selected.transfer_id=anchor.transfer_id)) WHERE o.state='pending'", [transaction_id], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional()?.ok_or(LedgerError::NotFound)?;
+        let transaction_id = anchor_id.as_str();
         let transfer_id: Option<String> = transaction.query_row(
             "SELECT transfer_id FROM transactions WHERE id=?1",
             [transaction_id],

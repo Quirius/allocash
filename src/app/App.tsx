@@ -4,6 +4,8 @@ import {
   listNativeBackups,
   loadAccountRegister,
   loadWorkspace,
+  postScheduledOccurrence,
+  skipScheduledOccurrence,
   recoverUnreadableBudget,
   restoreNativeBackup,
   type AccountKind,
@@ -361,6 +363,17 @@ function AccountRegister({
   onChanged: () => Promise<void>;
 }) {
   const [editor, setEditor] = useState<"new" | "reconcile" | RegisterEntry | null>(null);
+  const [scheduleAction, setScheduleAction] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  async function finishSchedule(id: string, post: boolean) {
+    setScheduleAction(true); setScheduleError(null);
+    try {
+      if (post) await postScheduledOccurrence(id); else await skipScheduledOccurrence(id);
+      await onChanged();
+    } catch (error) {
+      setScheduleError(typeof error === "string" ? error : "Could not update this scheduled entry.");
+    } finally { setScheduleAction(false); }
+  }
 
   return (
     <section className="register" aria-labelledby="register-title">
@@ -394,6 +407,7 @@ function AccountRegister({
         >+ Add transaction</button>
       </div>
 
+      {scheduleError && <p className="editor-error" role="alert">{scheduleError}</p>}
       {editor === "new" && (
         <TransactionComposer
           account={account}
@@ -462,12 +476,12 @@ function AccountRegister({
                     <td className="memo-column">{entry.memo || <span>—</span>}</td>
                     <td className="status-column">
                       <span className={`cleared-state ${entry.clearedState}`} title={statusLabel(entry)}>
-                        {entry.clearedState === "reconciled" ? "R" : entry.clearedState === "cleared" ? "C" : "U"}
+                        {entry.postingState === "scheduled" ? "S" : entry.clearedState === "reconciled" ? "R" : entry.clearedState === "cleared" ? "C" : "U"}
                       </span>
                     </td>
                     <td className="money-column outflow">{amount < 0n ? huf((-amount).toString()) : ""}</td>
                     <td className="money-column inflow">{amount >= 0n ? huf(amount.toString()) : ""}</td>
-                    <td className="action-column"><button onClick={() => setEditor(entry)}>Edit</button></td>
+                    <td className="action-column">{entry.postingState === "scheduled" ? <><button disabled={scheduleAction} onClick={() => void finishSchedule(entry.id, true)}>Post</button><button disabled={scheduleAction} onClick={() => void finishSchedule(entry.id, false)}>Skip</button></> : <button onClick={() => setEditor(entry)}>Edit</button>}</td>
                   </tr>
                 );
               })}

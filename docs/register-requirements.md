@@ -93,6 +93,13 @@ Normal manually created transaction:
 Scheduled transaction:
 
 - defaults to ****Uncleared****
+- is entered in the register using Date and Repeat, without requiring a separate
+  scheduler menu
+- a future date with Repeat Never creates one pending occurrence; Monthly,
+  Quarterly and Yearly repeat from the selected date
+- can be posted or skipped directly in either account's register; a scheduled
+  transfer acts on both linked legs together
+- remains excluded from posted balances and Plan until posted
 
 Transfer counterpart:
 

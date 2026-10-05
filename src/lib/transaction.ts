@@ -35,3 +35,10 @@ export async function createScheduledPayeeEntry(input: MonthlyScheduleInput, acc
   const counterpartId = input.counterpartAccountId ?? resolveTransferPayee(input.payeeName?.trim() ?? "", input.accountId, accounts);
   return createMonthlySchedule({ ...input, counterpartAccountId: counterpartId, payeeName: counterpartId ? null : input.payeeName });
 }
+
+export type EntryRepeat = "never" | "monthly" | "quarterly" | "yearly";
+
+export function scheduleForEntry(date: string, repeat: EntryRepeat, today: string): { intervalMonths: 1 | 3 | 12; endDate: string | null } | null {
+  if (repeat === "never") return date > today ? { intervalMonths: 1, endDate: date } : null;
+  return { intervalMonths: repeat === "monthly" ? 1 : repeat === "quarterly" ? 3 : 12, endDate: null };
+}

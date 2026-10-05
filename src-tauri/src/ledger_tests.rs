@@ -166,6 +166,75 @@ fn deactivating_a_schedule_removes_pending_not_posted_occurrences() {
 }
 
 #[test]
+fn one_off_future_entries_finish_once_from_either_transfer_leg() {
+    for transfer in [false, true] {
+        for post in [false, true] {
+            let (_directory, mut database) = database();
+            database
+                .create_account(&account("other", AccountKind::Cash, 1))
+                .unwrap();
+            database
+                .create_monthly_schedule(&MonthlyScheduleDraft {
+                    account_id: "cash".into(),
+                    start_date: date("2026-11-05"),
+                    end_date: Some(date("2026-11-05")),
+                    payee_name: None,
+                    category_id: None,
+                    memo: "One future entry".into(),
+                    flag_id: None,
+                    amount: Huf(-100),
+                    interval_months: 1,
+                    counterpart_account_id: transfer.then(|| "other".into()),
+                })
+                .unwrap();
+            let occurrence = database.scheduled_occurrences().unwrap().remove(0);
+            assert!(!occurrence.repeats);
+            let selected = if transfer {
+                database.entries("other").unwrap()[0].entry.id.clone()
+            } else {
+                occurrence.transaction_id.clone()
+            };
+            assert_eq!(
+                database
+                    .account_balance("cash", &date("2026-12-01"))
+                    .unwrap()
+                    .working,
+                Huf(0)
+            );
+            if post {
+                database.post_scheduled_occurrence(&selected).unwrap();
+            } else {
+                database.skip_scheduled_occurrence(&selected).unwrap();
+            }
+            assert!(database.scheduled_occurrences().unwrap().is_empty());
+            assert_eq!(
+                database
+                    .account_balance("cash", &date("2026-12-01"))
+                    .unwrap()
+                    .working,
+                Huf(if post { -100 } else { 0 })
+            );
+            assert_eq!(
+                database
+                    .account_balance("other", &date("2026-12-01"))
+                    .unwrap()
+                    .working,
+                Huf(if transfer && post { 100 } else { 0 })
+            );
+            assert!(matches!(
+                database.post_scheduled_occurrence(&occurrence.transaction_id),
+                Err(LedgerError::NotFound)
+            ));
+            assert_eq!(database.entries("cash").unwrap().len(), usize::from(post));
+            assert_eq!(
+                database.entries("other").unwrap().len(),
+                usize::from(transfer && post)
+            );
+        }
+    }
+}
+
+#[test]
 fn quarterly_schedule_keeps_its_original_day_after_short_month_clamp() {
     let (_directory, mut database) = database();
     database

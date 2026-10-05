@@ -9,7 +9,7 @@ import {
   type TransactionFormOptions,
 } from "../lib/desktop";
 import { localCalendarDate, parseHufInput } from "../lib/format";
-import { createPayeeEntry, isTransferPayee } from "../lib/transaction";
+import { createPayeeEntry, createScheduledPayeeEntry, isTransferPayee, scheduleForEntry, type EntryRepeat } from "../lib/transaction";
 
 function errorText(error: unknown): string {
   if (typeof error === "string" && error !== RECONCILED_CONFIRMATION_REQUIRED) return error;
@@ -47,6 +47,7 @@ export function TransactionComposer({
 }) {
   const [kind, setKind] = useState<"transaction" | "transfer">("transaction");
   const [date, setDate] = useState(localCalendarDate());
+  const [repeat, setRepeat] = useState<EntryRepeat>("never");
   const [payee, setPayee] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [counterpartId, setCounterpartId] = useState("");
@@ -70,19 +71,25 @@ export function TransactionComposer({
     try {
       const parsed = signedAmount(outflow, inflow);
       setStatus("saving");
+      const schedule = scheduleForEntry(date, repeat, localCalendarDate());
       if (kind === "transfer") {
         if (!counterpartId) throw new Error("Choose the other transfer account.");
-        await createManualTransfer({
-          accountId: account.id,
-          counterpartAccountId: counterpartId,
-          date,
-          memo,
-          flagId: flagId || null,
-          amount: parsed.positive,
-          direction: parsed.direction,
-        });
+        if (schedule) {
+          await createScheduledPayeeEntry({ accountId: account.id, counterpartAccountId: counterpartId, startDate: date, endDate: schedule.endDate,
+            payeeName: null, categoryId: categoryId || null, memo, flagId: flagId || null, amount: parsed.amount, intervalMonths: schedule.intervalMonths }, accounts);
+        } else {
+          await createManualTransfer({
+            accountId: account.id,
+            counterpartAccountId: counterpartId,
+            date,
+            memo,
+            flagId: flagId || null,
+            amount: parsed.positive,
+            direction: parsed.direction,
+          });
+        }
       } else {
-        await createPayeeEntry({
+        const input = {
           accountId: account.id,
           date,
           payeeName: payee.trim() || null,
@@ -90,7 +97,9 @@ export function TransactionComposer({
           memo,
           flagId: flagId || null,
           amount: parsed.amount,
-        }, accounts);
+        };
+        if (schedule) await createScheduledPayeeEntry({ ...input, startDate: date, endDate: schedule.endDate, intervalMonths: schedule.intervalMonths }, accounts);
+        else await createPayeeEntry(input, accounts);
       }
       await onSaved();
       onCancel();
@@ -102,6 +111,7 @@ export function TransactionComposer({
 
   const openCounterparts = accounts.filter((item) => !item.closed && item.id !== account.id);
   const transferPayee = kind === "transaction" && isTransferPayee(payee);
+  const scheduled = scheduleForEntry(date, repeat, localCalendarDate()) !== null;
 
   return (
     <form className="transaction-editor" onSubmit={submit}>
@@ -115,6 +125,9 @@ export function TransactionComposer({
 
       <div className="editor-fields">
         <label>Date<input required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
+        <label>Repeat<select value={repeat} onChange={(event) => setRepeat(event.target.value as EntryRepeat)}>
+          <option value="never">Never</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option>
+        </select></label>
         {kind === "transaction" ? <>
           <label>Payee
             <input
@@ -131,7 +144,7 @@ export function TransactionComposer({
             </datalist>
           </label>
           <label>Category
-            <select disabled={transferPayee} value={transferPayee ? "" : categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+            <select disabled={transferPayee && !scheduled} value={transferPayee && !scheduled ? "" : categoryId} onChange={(event) => setCategoryId(event.target.value)}>
               <option value="">Uncategorized</option>
               {options.categories.map((option) => (
                 <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>
@@ -139,13 +152,18 @@ export function TransactionComposer({
             </select>
           </label>
         </> : (
-          <label className="wide-field">Other account
+          <label>Other account
             <select required autoFocus value={counterpartId} onChange={(event) => setCounterpartId(event.target.value)}>
               <option value="">Choose account…</option>
               {openCounterparts.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
             </select>
           </label>
         )}
+        {(kind === "transfer" && scheduled) && <label>Category
+          <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Uncategorized</option>
+            {options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}
+          </select>
+        </label>}
         <label className="memo-field">Memo<input value={memo} onChange={(event) => setMemo(event.target.value)} placeholder="Optional note" /></label>
         <label>Flag
           <select value={flagId} onChange={(event) => setFlagId(event.target.value)}>
@@ -161,7 +179,7 @@ export function TransactionComposer({
 
       <div className="editor-footer">
         <p className={error ? "form-error" : "form-hint"} role={error ? "alert" : undefined}>
-          {error || (kind === "transfer" || transferPayee ? "Saving creates both linked transfer entries. The entered side will be Cleared; its counterpart will be Uncleared." : "New manual transactions default to Cleared.")}
+          {error || (scheduled ? "Scheduled entries are pending and Uncleared until they are posted." : kind === "transfer" || transferPayee ? "Saving creates both linked transfer entries. The entered side will be Cleared; its counterpart will be Uncleared." : "New manual transactions default to Cleared.")}
         </p>
         <div><button type="button" className="secondary" onClick={onCancel}>Cancel</button><button type="submit" disabled={status === "saving"}>{status === "saving" ? "Saving…" : "Save transaction"}</button></div>
       </div>

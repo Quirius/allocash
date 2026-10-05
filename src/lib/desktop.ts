@@ -133,7 +133,7 @@ export interface ForecastInput { asOf: string; horizonMonths: number; historyMon
 export interface ForecastPercentilePath { percentile: number; balances: string[]; }
 export interface ForecastReport { asOf: string; through: string; historyFrom: string; historyTo: string; seed: string; simulationCount: number; startingBalance: string; pointDates: string[]; percentilePaths: ForecastPercentilePath[]; assumptions: string[]; }
 export interface NetWorthReport { asOf: string; comparedTo: string | null; assets: string; debts: string; netWorth: string; change: string | null; }
-export interface ScheduledOccurrence { scheduleId: string; transactionId: string; accountName: string; date: string; payeeName: string | null; categoryName: string | null; memo: string; amount: string; intervalMonths: RecurrenceMonths; transferAccountName: string | null; }
+export interface ScheduledOccurrence { scheduleId: string; transactionId: string; accountName: string; date: string; payeeName: string | null; categoryName: string | null; memo: string; amount: string; intervalMonths: RecurrenceMonths; transferAccountName: string | null; repeats?: boolean; }
 
 export interface RegisterEntryEdit {
   id: string;

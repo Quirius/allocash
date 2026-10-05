@@ -122,6 +122,20 @@ comparisons. Four unresolved zero-value transfer rows remain held and duplicate
 signals remain retained as before. Owner desktop rehearsal of the new targets and
 schedules remains open; weekly/custom recurrence remains deferred.
 
+The owner then reported that a periodic target and scheduled transfer both worked,
+and clarified that scheduled entry should happen in the register's date/repeat
+workflow. The register composer now provides Date and Repeat Never/Monthly/
+Quarterly/Yearly. A new future entry with Never creates one pending occurrence;
+recurring entries use the selected date as their start. Pending rows display S
+and provide Post/Skip in the register. Both transfer legs resolve to the same
+atomic occurrence action, without requiring the separate Scheduled view. Current
+or past entries with Never retain manual behavior. Posting remains explicit.
+The 22 transaction-routing frontend tests, 48 ledger tests, formatting and
+frontend build passed. The full frequency list in the YNAB screenshot is not yet
+implemented; the owner-required monthly/quarterly/yearly subset is supported.
+The standalone rehearsal build passed and launched; the register's Date/Repeat
+controls and pending S status were visually inspected without saving new data.
+
 The existing project record reports that the 2026-09-14 owner export matched all
 34 YNAB reference working balances exactly. Four zero-value transfer rows remain
 preserved in staging without affecting balances. This is historical evidence,

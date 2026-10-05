@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { createPayeeEntry, createScheduledPayeeEntry } from "../src/lib/transaction";
+import { createPayeeEntry, createScheduledPayeeEntry, scheduleForEntry } from "../src/lib/transaction";
 import type { AccountOverview, ManualTransactionInput } from "../src/lib/desktop";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn() }));
@@ -60,4 +60,37 @@ it.each([3, 12] as const)("schedules a transfer payee every %i months through th
 it("rejects an unresolved transfer payee without creating an ordinary schedule", async () => {
   await expect(createScheduledPayeeEntry({ accountId: "bank", startDate: "2026-10-05", endDate: null, payeeName: "Transfer: Missing", categoryId: null, memo: "", flagId: null, amount: "1000", intervalMonths: 3 }, accounts)).rejects.toThrow();
   expect(invoke).not.toHaveBeenCalled();
+});
+
+it("routes future Never dates to a one-occurrence scheduled entry", async () => {
+  const schedule = scheduleForEntry("2026-10-06", "never", "2026-10-05");
+  expect(schedule).toEqual({ intervalMonths: 1, endDate: "2026-10-06" });
+  await createScheduledPayeeEntry({ accountId: "bank", startDate: "2026-10-06", endDate: schedule!.endDate, payeeName: "Shop", categoryId: "food", memo: "Future", flagId: null, amount: "-1200", intervalMonths: schedule!.intervalMonths }, accounts);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("create_monthly_schedule", { input: expect.objectContaining({ payeeName: "Shop", endDate: "2026-10-06", intervalMonths: 1, amount: "-1200", categoryId: "food" }) });
+});
+
+it.each(["2026-10-05", "2026-10-04"]) ("keeps current or past Never date %s manual", async (date) => {
+  expect(scheduleForEntry(date, "never", "2026-10-05")).toBeNull();
+  await createPayeeEntry({ ...draft, date, payeeName: "Shop" }, accounts);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("create_manual_transaction", { input: expect.objectContaining({ date, payeeName: "Shop" }) });
+});
+
+it("schedules an ordinary yearly entry", async () => {
+  await createScheduledPayeeEntry({ accountId: "bank", startDate: "2026-10-05", endDate: null, payeeName: "Insurance", categoryId: "bills", memo: "Annual", flagId: null, amount: "-10000", intervalMonths: 12 }, accounts);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("create_monthly_schedule", { input: expect.objectContaining({ payeeName: "Insurance", intervalMonths: 12, categoryId: "bills" }) });
+});
+
+it("schedules a future one-off transfer as one linked occurrence", async () => {
+  const schedule = scheduleForEntry("2026-10-06", "never", "2026-10-05");
+  await createScheduledPayeeEntry({ accountId: "bank", counterpartAccountId: "cash", startDate: "2026-10-06", endDate: schedule!.endDate, payeeName: null, categoryId: "loan", memo: "Later", flagId: null, amount: "-4000", intervalMonths: schedule!.intervalMonths }, accounts);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("create_monthly_schedule", { input: expect.objectContaining({ counterpartAccountId: "cash", endDate: "2026-10-06", intervalMonths: 1, categoryId: "loan" }) });
+});
+
+it.each([["monthly", 1], ["quarterly", 3], ["yearly", 12]] as const)("maps %s recurrence to %i months", (repeat, intervalMonths) => {
+  expect(scheduleForEntry("2026-10-05", repeat, "2026-10-05")).toEqual({ intervalMonths, endDate: null });
+});
+
+it("schedules an explicit transfer with its selected category", async () => {
+  await createScheduledPayeeEntry({ accountId: "bank", counterpartAccountId: "cash", startDate: "2026-10-05", endDate: null, payeeName: null, categoryId: "loan", memo: "Recurring", flagId: "orange", amount: "-1000", intervalMonths: 12 }, accounts);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("create_monthly_schedule", { input: expect.objectContaining({ counterpartAccountId: "cash", categoryId: "loan", intervalMonths: 12, amount: "-1000", flagId: "orange" }) });
 });

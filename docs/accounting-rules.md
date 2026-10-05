@@ -158,6 +158,15 @@ normal way to resolve unmatched transaction states.
 
 ## Recurring schedules
 
+The register composer provides Date and Repeat (Never, Monthly, Quarterly,
+Yearly). New future-dated entries with Never become one-time pending schedules,
+represented by an end date equal to their start date. Current/past entries with
+Never retain manual-entry behavior. Choosing recurrence creates a pending
+schedule from the selected date. Existing posted future history is unchanged.
+Pending entries can be posted or skipped from the register, from either transfer
+leg; the Scheduled view remains another way to manage them. There is no automatic
+posting on the due date.
+
 Schedules support monthly, quarterly and yearly ordinary income/expenses and
 linked account transfers. They materialize one Uncleared, pending occurrence at
 a time, with both entries for a transfer. Posting explicitly turns that occurrence
