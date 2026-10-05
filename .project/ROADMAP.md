@@ -175,13 +175,16 @@ plans:
     priority: "high"
     due_date: "2026-10-08"
     completed_at: null
-    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation, a target/scheduled transfer and register Date/Repeat entry. Heavy lag was then reported; register rendering is bounded to 100 rows per page with builds and navigation checks passed. Confirm responsiveness before closing the daily-workflow gate."
+    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation, a target/scheduled transfer and register Date/Repeat entry. Heavy lag and missing upcoming editing were then reported. Register rendering is paged and upcoming editing/deletion is implemented with passing checks. Confirm responsiveness and upcoming edit/delete before closing the daily-workflow gate."
     acceptance_criteria:
       - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
       - "Non-essential feature expansion is deferred until after migration."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "ba86c8de5bcd678011b9cb425ffffd4342b49e0e"
+        note: "Records the upcoming-entry register editor/cancellation fix and passed financial/IPC/build checks; owner retest remains open."
       - path: "docs/status.md"
         ref: "f45ec1a54d31ec9b3ac54b2b7fe1340d0f72852e"
         note: "Records register-flow confirmation and lag fix with desktop checks; owner responsiveness retest remains open."
