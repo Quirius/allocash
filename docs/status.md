@@ -64,6 +64,17 @@ not establish completion of every feature in the product requirements.
 
 ## Evidence and remaining gates
 
+On 2026-10-05, the owner-data candidate was generated from the October 4 export
+after exact account, historical Plan and supplied report comparisons, then
+staged in the isolated rehearsal profile. The owner reported successful restore,
+backup creation and ordinary transaction entry/edit/delete checks. The transfer
+rehearsal exposed that choosing a transfer label in Payee created an ordinary
+transaction. New entries now route exact `Transfer:`/`Payment:` account labels
+through linked transfer creation and reject unresolved destinations. Ten new
+payee-routing tests, 18 IPC tests, the existing paired-transfer Rust regression
+and frontend build passed. The corrected transfer workflow still needs owner
+retesting; Plan moves, reconciliation, recovery and the full rehearsal remain open.
+
 The existing project record reports that the 2026-09-14 owner export matched all
 34 YNAB reference working balances exactly. Four zero-value transfer rows remain
 preserved in staging without affecting balances. This is historical evidence,

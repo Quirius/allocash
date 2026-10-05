@@ -1,6 +1,5 @@
 import { useState, type FormEvent } from "react";
 import {
-  createManualTransaction,
   createManualTransfer,
   deleteRegisterEntry,
   RECONCILED_CONFIRMATION_REQUIRED,
@@ -10,6 +9,7 @@ import {
   type TransactionFormOptions,
 } from "../lib/desktop";
 import { localCalendarDate, parseHufInput } from "../lib/format";
+import { createPayeeEntry, isTransferPayee } from "../lib/transaction";
 
 function errorText(error: unknown): string {
   if (typeof error === "string" && error !== RECONCILED_CONFIRMATION_REQUIRED) return error;
@@ -82,7 +82,7 @@ export function TransactionComposer({
           direction: parsed.direction,
         });
       } else {
-        await createManualTransaction({
+        await createPayeeEntry({
           accountId: account.id,
           date,
           payeeName: payee.trim() || null,
@@ -90,7 +90,7 @@ export function TransactionComposer({
           memo,
           flagId: flagId || null,
           amount: parsed.amount,
-        });
+        }, accounts);
       }
       await onSaved();
       onCancel();
@@ -101,6 +101,7 @@ export function TransactionComposer({
   }
 
   const openCounterparts = accounts.filter((item) => !item.closed && item.id !== account.id);
+  const transferPayee = kind === "transaction" && isTransferPayee(payee);
 
   return (
     <form className="transaction-editor" onSubmit={submit}>
@@ -125,11 +126,12 @@ export function TransactionComposer({
               placeholder="Name or new payee"
             />
             <datalist id={`payees-${account.id}`}>
-              {options.payees.map((option) => <option key={option.id} value={option.name} />)}
+              {openCounterparts.map((option) => <option key={`transfer-${option.id}`} value={`Transfer: ${option.name}`} />)}
+              {options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => <option key={option.id} value={option.name} />)}
             </datalist>
           </label>
           <label>Category
-            <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+            <select disabled={transferPayee} value={transferPayee ? "" : categoryId} onChange={(event) => setCategoryId(event.target.value)}>
               <option value="">Uncategorized</option>
               {options.categories.map((option) => (
                 <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>
@@ -159,7 +161,7 @@ export function TransactionComposer({
 
       <div className="editor-footer">
         <p className={error ? "form-error" : "form-hint"} role={error ? "alert" : undefined}>
-          {error || (kind === "transfer" ? "The entered side will be Cleared; its counterpart will be Uncleared." : "New manual transactions default to Cleared.")}
+          {error || (kind === "transfer" || transferPayee ? "Saving creates both linked transfer entries. The entered side will be Cleared; its counterpart will be Uncleared." : "New manual transactions default to Cleared.")}
         </p>
         <div><button type="button" className="secondary" onClick={onCancel}>Cancel</button><button type="submit" disabled={status === "saving"}>{status === "saving" ? "Saving…" : "Save transaction"}</button></div>
       </div>

@@ -44,6 +44,11 @@ cross-export duplicate signals are implemented. See [architecture.md](architectu
 
 ## Transfers
 
+New register entries accept `Transfer: <account>` and `Payment: <account>` in
+the payee field as linked transfers to an exact, unambiguous open account.
+Missing, closed, ambiguous and same-account destinations are rejected before
+saving. Ordinary payees continue to create ordinary transactions.
+
 A transfer stores one strictly positive integer amount and exactly two linked
 entries. The view derives a negative outflow and positive inflow. Deferred foreign
 keys ensure both legs belong to that transfer at commit, and a transfer must use
