@@ -37,6 +37,13 @@ Current known behavior:
 - scheduled transactions are Uncleared
 - recurrence rules may be reviewed/recreated manually after final YNAB migration
 
+The migration-critical frequencies confirmed on 2026-10-05 are monthly,
+quarterly and yearly, for ordinary transactions and linked account transfers.
+Recurrence uses the selected start date and retains its original day of month;
+short months clamp that occurrence to the last day without losing the anchor.
+Scheduled transfer occurrences have two linked Uncleared entries. Posting,
+skipping or canceling an occurrence handles both entries together.
+
 Native backup/export must preserve recurrence rules exactly.
 
 ## Targets
@@ -87,6 +94,15 @@ Targets should support:
 - To Go
 
 Target definitions must be preserved by native backup/export.
+
+For migration, the owner uses monthly, quarterly and yearly category targets.
+Quarterly/yearly amounts are totals for their target period, funded gradually
+through an explicit first due month and due-day setting. A date in the category
+name is just part of its name; it never supplies target settings. Funding guidance
+divides the remaining period amount by the months remaining, including the due
+month, rounding up to whole HUF. After the first due month, the cycle repeats
+every three or twelve months. Monthly targets retain their existing behavior.
+Weekly and broader custom recurrence remain outside this migration slice.
 
 ## Category snoozing
 

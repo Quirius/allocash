@@ -6,7 +6,7 @@ use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PlanMonth(String);
 impl PlanMonth {
     pub fn parse(value: &str) -> LedgerResult<Self> {
@@ -85,6 +85,14 @@ pub struct CategoryTargetDefinition {
     pub amount: Huf,
     pub due_kind: String,
     pub due_day: Option<i64>,
+    #[serde(default = "monthly_target_interval")]
+    pub interval_months: i64,
+    #[serde(default)]
+    pub first_due_month: Option<String>,
+}
+
+fn monthly_target_interval() -> i64 {
+    1
 }
 
 #[derive(Debug, PartialEq, Eq, Serialize)]
@@ -96,6 +104,13 @@ pub struct CategoryTargetProgress {
     pub funded: Huf,
     pub to_go: Huf,
     pub snoozed: bool,
+    pub due_month: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct EffectiveCategoryTarget {
+    definition: CategoryTargetDefinition,
+    effective_month: PlanMonth,
 }
 
 #[derive(Default)]
@@ -186,7 +201,7 @@ impl Database {
             return Err(LedgerError::NotFound);
         }
         if let Some(definition) = definition {
-            validate_target_definition(definition)?;
+            validate_target_definition(definition, effective_month)?;
         }
         let id: String = self.connection.query_row(
             "SELECT 'category-target-' || lower(hex(randomblob(16)))",
@@ -195,11 +210,11 @@ impl Database {
         )?;
         match definition {
             Some(definition) => self.connection.execute(
-                "INSERT INTO category_target_revisions (id,category_id,effective_month,active,behavior,amount_huf,due_kind,due_day) VALUES (?1,?2,?3,1,?4,?5,?6,?7) ON CONFLICT(category_id,effective_month) DO UPDATE SET active=1,behavior=excluded.behavior,amount_huf=excluded.amount_huf,due_kind=excluded.due_kind,due_day=excluded.due_day,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')",
-                params![id, category_id, effective_month.as_str(), definition.behavior, definition.amount.0, definition.due_kind, definition.due_day],
+                "INSERT INTO category_target_revisions (id,category_id,effective_month,active,behavior,amount_huf,due_kind,due_day,interval_months,first_due_month) VALUES (?1,?2,?3,1,?4,?5,?6,?7,?8,?9) ON CONFLICT(category_id,effective_month) DO UPDATE SET active=1,behavior=excluded.behavior,amount_huf=excluded.amount_huf,due_kind=excluded.due_kind,due_day=excluded.due_day,interval_months=excluded.interval_months,first_due_month=excluded.first_due_month,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')",
+                params![id, category_id, effective_month.as_str(), definition.behavior, definition.amount.0, definition.due_kind, definition.due_day, definition.interval_months, definition.first_due_month],
             )?,
             None => self.connection.execute(
-                "INSERT INTO category_target_revisions (id,category_id,effective_month,active) VALUES (?1,?2,?3,0) ON CONFLICT(category_id,effective_month) DO UPDATE SET active=0,behavior=NULL,amount_huf=NULL,due_kind=NULL,due_day=NULL,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')",
+                "INSERT INTO category_target_revisions (id,category_id,effective_month,active) VALUES (?1,?2,?3,0) ON CONFLICT(category_id,effective_month) DO UPDATE SET active=0,behavior=NULL,amount_huf=NULL,due_kind=NULL,due_day=NULL,interval_months=1,first_due_month=NULL,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')",
                 params![id, category_id, effective_month.as_str()],
             )?,
         };
@@ -363,15 +378,31 @@ impl Database {
                     let target = target_definitions
                         .get(&category_id)
                         .map(|definition| {
-                            target_progress(
-                                definition,
-                                *derivation
-                                    .starting_available
-                                    .get(&category_id)
-                                    .unwrap_or(&0),
-                                assigned,
-                                target_snoozes.contains(&category_id),
-                            )
+                            if definition.definition.interval_months == 1 {
+                                target_progress(
+                                    &definition.definition,
+                                    *derivation
+                                        .starting_available
+                                        .get(&category_id)
+                                        .unwrap_or(&0),
+                                    assigned,
+                                    target_snoozes.contains(&category_id),
+                                )
+                            } else {
+                                periodic_target_progress(
+                                    &self.connection,
+                                    &category_id,
+                                    month,
+                                    definition,
+                                    *derivation
+                                        .starting_available
+                                        .get(&category_id)
+                                        .unwrap_or(&0),
+                                    assigned,
+                                    target_snoozes.contains(&category_id),
+                                    as_of,
+                                )
+                            }
                         })
                         .transpose()?;
                     Ok(PlanCategory {
@@ -690,7 +721,10 @@ fn checked_sub(left: i128, right: i128) -> LedgerResult<i128> {
     left.checked_sub(right).ok_or(LedgerError::AmountOverflow)
 }
 
-fn validate_target_definition(definition: &CategoryTargetDefinition) -> LedgerResult<()> {
+fn validate_target_definition(
+    definition: &CategoryTargetDefinition,
+    effective_month: &PlanMonth,
+) -> LedgerResult<()> {
     let valid_due = match definition.due_kind.as_str() {
         "day" => definition
             .due_day
@@ -698,9 +732,19 @@ fn validate_target_definition(definition: &CategoryTargetDefinition) -> LedgerRe
         "last_day" => definition.due_day.is_none(),
         _ => false,
     };
+    let valid_interval = matches!(definition.interval_months, 1 | 3 | 12);
+    let valid_first_due = match definition.interval_months {
+        1 => definition.first_due_month.is_none(),
+        3 | 12 => definition.first_due_month.as_deref().is_some_and(|due| {
+            PlanMonth::parse(due).is_ok_and(|parsed| parsed >= *effective_month)
+        }),
+        _ => false,
+    };
     if definition.amount.0 <= 0
         || !matches!(definition.behavior.as_str(), "set_aside" | "refill")
         || !valid_due
+        || !valid_interval
+        || !valid_first_due
     {
         return Err(LedgerError::InvalidValue("Invalid category target."));
     }
@@ -710,9 +754,9 @@ fn validate_target_definition(definition: &CategoryTargetDefinition) -> LedgerRe
 fn target_definitions_for(
     connection: &rusqlite::Connection,
     month: &PlanMonth,
-) -> LedgerResult<BTreeMap<String, CategoryTargetDefinition>> {
+) -> LedgerResult<BTreeMap<String, EffectiveCategoryTarget>> {
     let mut statement = connection.prepare(
-        "SELECT revision.category_id,revision.active,revision.behavior,revision.amount_huf,revision.due_kind,revision.due_day
+        "SELECT revision.category_id,revision.effective_month,revision.active,revision.behavior,revision.amount_huf,revision.due_kind,revision.due_day,revision.interval_months,revision.first_due_month
          FROM category_target_revisions revision
          JOIN (SELECT category_id,MAX(effective_month) effective_month FROM category_target_revisions WHERE effective_month<=?1 GROUP BY category_id) current
            ON current.category_id=revision.category_id AND current.effective_month=revision.effective_month",
@@ -721,14 +765,27 @@ fn target_definitions_for(
     for row in statement.query_map([month.as_str()], |row| {
         Ok((
             row.get::<_, String>(0)?,
-            row.get::<_, bool>(1)?,
-            row.get::<_, Option<String>>(2)?,
-            row.get::<_, Option<i64>>(3)?,
-            row.get::<_, Option<String>>(4)?,
-            row.get::<_, Option<i64>>(5)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, bool>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<i64>>(4)?,
+            row.get::<_, Option<String>>(5)?,
+            row.get::<_, Option<i64>>(6)?,
+            row.get::<_, i64>(7)?,
+            row.get::<_, Option<String>>(8)?,
         ))
     })? {
-        let (category_id, active, behavior, amount, due_kind, due_day) = row?;
+        let (
+            category_id,
+            effective_month,
+            active,
+            behavior,
+            amount,
+            due_kind,
+            due_day,
+            interval_months,
+            first_due_month,
+        ) = row?;
         if !active {
             continue;
         }
@@ -737,9 +794,18 @@ fn target_definitions_for(
             amount: Huf(amount.ok_or(LedgerError::InvalidValue("Invalid category target."))?),
             due_kind: due_kind.ok_or(LedgerError::InvalidValue("Invalid category target."))?,
             due_day,
+            interval_months,
+            first_due_month,
         };
-        validate_target_definition(&definition)?;
-        definitions.insert(category_id, definition);
+        let effective_month = PlanMonth::parse(&effective_month)?;
+        validate_target_definition(&definition, &effective_month)?;
+        definitions.insert(
+            category_id,
+            EffectiveCategoryTarget {
+                definition,
+                effective_month,
+            },
+        );
     }
     Ok(definitions)
 }
@@ -764,7 +830,107 @@ fn target_progress(
         funded: narrow(funded)?,
         to_go: narrow(checked_sub(needed, funded)?)?,
         snoozed,
+        due_month: None,
     })
+}
+
+fn periodic_target_progress(
+    connection: &rusqlite::Connection,
+    category_id: &str,
+    month: &PlanMonth,
+    target: &EffectiveCategoryTarget,
+    starting_available: i128,
+    assigned: i128,
+    snoozed: bool,
+    as_of: Option<&CalendarDate>,
+) -> LedgerResult<CategoryTargetProgress> {
+    let definition = &target.definition;
+    let first_due = PlanMonth::parse(definition.first_due_month.as_deref().ok_or(
+        LedgerError::InvalidValue("Periodic target has no first due month."),
+    )?)?;
+    let (cycle_start, due_month) = if month <= &first_due {
+        (target.effective_month.clone(), first_due)
+    } else {
+        let interval = definition.interval_months;
+        let first_due_index = month_index(&first_due)?;
+        let current_index = month_index(month)?;
+        let periods_after = (current_index - first_due_index - 1) / interval + 1;
+        let due = shift_month(&first_due, periods_after * interval)?;
+        let start = shift_month(&first_due, (periods_after - 1) * interval + 1)?;
+        (start, due)
+    };
+    let remaining_months = month_index(&due_month)? - month_index(month)? + 1;
+    if remaining_months <= 0 {
+        return Err(LedgerError::InvalidValue("Invalid periodic target cycle."));
+    }
+    let mut assignments = connection.prepare(
+        "SELECT amount_huf FROM category_month_assignments WHERE category_id=?1 AND month>=?2 AND month<?3",
+    )?;
+    let prior_assigned = assignments
+        .query_map(
+            params![category_id, cycle_start.as_str(), month.as_str()],
+            |row| row.get::<_, i64>(0),
+        )?
+        .try_fold(0i128, |sum, amount| checked_add(sum, i128::from(amount?)))?;
+    let period_goal = if definition.behavior == "set_aside" {
+        i128::from(definition.amount.0)
+    } else {
+        let opening = if cycle_start == *month {
+            starting_available
+        } else {
+            let previous = shift_month(&cycle_start, -1)?;
+            *derive_plan(connection, &previous, as_of)?
+                .available
+                .get(category_id)
+                .unwrap_or(&0)
+        };
+        checked_sub(i128::from(definition.amount.0), opening.max(0))?.max(0)
+    };
+    let outstanding = checked_sub(period_goal, prior_assigned)?.max(0);
+    let remaining_months = i128::from(remaining_months);
+    let needed = outstanding / remaining_months + i128::from(outstanding % remaining_months != 0);
+    let needed = if snoozed { 0 } else { needed };
+    let funded = assigned.max(0).min(needed);
+    let to_go = if snoozed {
+        0
+    } else {
+        checked_sub(needed, assigned)?.max(0)
+    };
+    Ok(CategoryTargetProgress {
+        definition: definition.clone(),
+        needed_this_month: narrow(needed)?,
+        funded: narrow(funded)?,
+        to_go: narrow(to_go)?,
+        snoozed,
+        due_month: Some(due_month.0),
+    })
+}
+
+fn month_index(month: &PlanMonth) -> LedgerResult<i64> {
+    let year: i64 = month.0[..4]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid plan month."))?;
+    let number: i64 = month.0[5..]
+        .parse()
+        .map_err(|_| LedgerError::InvalidValue("Invalid plan month."))?;
+    year.checked_mul(12)
+        .and_then(|value| value.checked_add(number - 1))
+        .ok_or(LedgerError::AmountOverflow)
+}
+
+fn shift_month(month: &PlanMonth, delta: i64) -> LedgerResult<PlanMonth> {
+    let index = month_index(month)?
+        .checked_add(delta)
+        .ok_or(LedgerError::AmountOverflow)?;
+    if index < 12 {
+        return Err(LedgerError::InvalidValue("Plan month is out of range."));
+    }
+    let year = index / 12;
+    let number = index % 12 + 1;
+    if year > 9999 {
+        return Err(LedgerError::InvalidValue("Plan month is out of range."));
+    }
+    PlanMonth::parse(&format!("{year:04}-{number:02}"))
 }
 
 fn target_snoozes_for(
@@ -1536,6 +1702,8 @@ mod tests {
                     amount: Huf(100),
                     due_kind: "day".into(),
                     due_day: Some(10),
+                    interval_months: 1,
+                    first_due_month: None,
                 }),
             )
             .unwrap();
@@ -1564,6 +1732,8 @@ mod tests {
                     amount: Huf(100),
                     due_kind: "last_day".into(),
                     due_day: None,
+                    interval_months: 1,
+                    first_due_month: None,
                 }),
             )
             .unwrap();
@@ -1613,6 +1783,8 @@ mod tests {
                     amount: Huf(100),
                     due_kind: "day".into(),
                     due_day: Some(1),
+                    interval_months: 1,
+                    first_due_month: None,
                 }),
             )
             .unwrap();
@@ -1639,6 +1811,8 @@ mod tests {
                     amount: Huf(100),
                     due_kind: "last_day".into(),
                     due_day: None,
+                    interval_months: 1,
+                    first_due_month: None,
                 }),
             )
             .unwrap();
@@ -1677,5 +1851,492 @@ mod tests {
             database.set_category_target_snoozed("missing", &october, true),
             Err(LedgerError::NotFound)
         ));
+    }
+
+    #[test]
+    fn yearly_target_spreads_partial_first_cycle_catches_up_and_restarts() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database.create_category_group("g", "Savings", 0).unwrap();
+        database.create_category("trip", "g", "Trip", 0).unwrap();
+        database
+            .set_category_target(
+                "trip",
+                &PlanMonth::parse("2026-02").unwrap(),
+                Some(&CategoryTargetDefinition {
+                    behavior: "set_aside".into(),
+                    amount: Huf(100),
+                    due_kind: "day".into(),
+                    due_day: Some(15),
+                    interval_months: 12,
+                    first_due_month: Some("2026-04".into()),
+                }),
+            )
+            .unwrap();
+        let february = PlanMonth::parse("2026-02").unwrap();
+        assert_eq!(
+            category_available_target(&database.plan_month(&february).unwrap(), "trip")
+                .needed_this_month,
+            Huf(34)
+        );
+        database
+            .set_monthly_assignment("trip", &february, Huf(34))
+            .unwrap();
+        let march = PlanMonth::parse("2026-03").unwrap();
+        assert_eq!(
+            category_available_target(&database.plan_month(&march).unwrap(), "trip")
+                .needed_this_month,
+            Huf(33)
+        );
+        database
+            .set_category_target_snoozed("trip", &march, true)
+            .unwrap();
+        assert_eq!(
+            category_available_target(&database.plan_month(&march).unwrap(), "trip")
+                .needed_this_month,
+            Huf(0)
+        );
+        assert_eq!(
+            category_available_target(
+                &database
+                    .plan_month(&PlanMonth::parse("2026-04").unwrap())
+                    .unwrap(),
+                "trip"
+            )
+            .needed_this_month,
+            Huf(66)
+        );
+        database
+            .set_category_target_snoozed("trip", &march, false)
+            .unwrap();
+        database
+            .set_monthly_assignment("trip", &march, Huf(33))
+            .unwrap();
+        let april = PlanMonth::parse("2026-04").unwrap();
+        let april_plan = database.plan_month(&april).unwrap();
+        let april_target = category_available_target(&april_plan, "trip");
+        assert_eq!(april_target.needed_this_month, Huf(33));
+        assert_eq!(april_target.due_month.as_deref(), Some("2026-04"));
+        database
+            .set_monthly_assignment("trip", &april, Huf(33))
+            .unwrap();
+        let may = PlanMonth::parse("2026-05").unwrap();
+        let may_plan = database.plan_month(&may).unwrap();
+        let may_target = category_available_target(&may_plan, "trip");
+        assert_eq!(may_target.needed_this_month, Huf(9));
+        assert_eq!(may_target.due_month.as_deref(), Some("2027-04"));
+    }
+
+    #[test]
+    fn quarterly_refill_uses_cycle_opening_balance_and_prior_assignments() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database.create_category_group("g", "Savings", 0).unwrap();
+        database
+            .create_category("reserve", "g", "Reserve", 0)
+            .unwrap();
+        database
+            .create_account(&Account {
+                id: "cash".into(),
+                name: "Cash".into(),
+                kind: AccountKind::Cash,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        let december = PlanMonth::parse("2025-12").unwrap();
+        database
+            .set_monthly_assignment("reserve", &december, Huf(40))
+            .unwrap();
+        database
+            .set_category_target(
+                "reserve",
+                &PlanMonth::parse("2026-01").unwrap(),
+                Some(&CategoryTargetDefinition {
+                    behavior: "refill".into(),
+                    amount: Huf(100),
+                    due_kind: "last_day".into(),
+                    due_day: None,
+                    interval_months: 3,
+                    first_due_month: Some("2026-03".into()),
+                }),
+            )
+            .unwrap();
+        let january = PlanMonth::parse("2026-01").unwrap();
+        assert_eq!(
+            category_available_target(&database.plan_month(&january).unwrap(), "reserve")
+                .needed_this_month,
+            Huf(20)
+        );
+        database
+            .set_monthly_assignment("reserve", &january, Huf(20))
+            .unwrap();
+        let mut spending = Entry::manual(
+            "periodic-spend",
+            "cash",
+            CalendarDate::parse("2026-01-15").unwrap(),
+        );
+        spending.category_id = Some("reserve".into());
+        database.create_transaction(&spending, Huf(-30)).unwrap();
+        let february = PlanMonth::parse("2026-02").unwrap();
+        assert_eq!(
+            category_available_target(&database.plan_month(&february).unwrap(), "reserve")
+                .needed_this_month,
+            Huf(20)
+        );
+        database
+            .set_monthly_assignment("reserve", &february, Huf(20))
+            .unwrap();
+        let march = PlanMonth::parse("2026-03").unwrap();
+        assert_eq!(
+            category_available_target(&database.plan_month(&march).unwrap(), "reserve")
+                .needed_this_month,
+            Huf(20)
+        );
+        database
+            .set_monthly_assignment("reserve", &march, Huf(20))
+            .unwrap();
+        let april = PlanMonth::parse("2026-04").unwrap();
+        let april_plan = database.plan_month(&april).unwrap();
+        let next_cycle = category_available_target(&april_plan, "reserve");
+        assert_eq!(next_cycle.needed_this_month, Huf(10));
+        assert_eq!(next_cycle.due_month.as_deref(), Some("2026-06"));
+    }
+
+    #[test]
+    fn exact_period_due_month_is_included_before_cycle_resets() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database.create_category_group("g", "Savings", 0).unwrap();
+        database
+            .create_category("quarterly", "g", "Quarterly", 0)
+            .unwrap();
+        database
+            .create_category("yearly", "g", "Yearly", 1)
+            .unwrap();
+        database
+            .set_category_target(
+                "quarterly",
+                &PlanMonth::parse("2026-09").unwrap(),
+                Some(&CategoryTargetDefinition {
+                    behavior: "set_aside".into(),
+                    amount: Huf(300),
+                    due_kind: "last_day".into(),
+                    due_day: None,
+                    interval_months: 3,
+                    first_due_month: Some("2026-09".into()),
+                }),
+            )
+            .unwrap();
+        database
+            .set_category_target(
+                "yearly",
+                &PlanMonth::parse("2026-09").unwrap(),
+                Some(&CategoryTargetDefinition {
+                    behavior: "set_aside".into(),
+                    amount: Huf(1200),
+                    due_kind: "last_day".into(),
+                    due_day: None,
+                    interval_months: 12,
+                    first_due_month: Some("2026-09".into()),
+                }),
+            )
+            .unwrap();
+        database
+            .set_monthly_assignment("quarterly", &PlanMonth::parse("2026-09").unwrap(), Huf(100))
+            .unwrap();
+        database
+            .set_monthly_assignment("quarterly", &PlanMonth::parse("2026-10").unwrap(), Huf(100))
+            .unwrap();
+        let december = database
+            .plan_month(&PlanMonth::parse("2026-12").unwrap())
+            .unwrap();
+        let quarterly = category_available_target(&december, "quarterly");
+        assert_eq!(quarterly.due_month.as_deref(), Some("2026-12"));
+        assert_eq!(quarterly.needed_this_month, Huf(200));
+        let january = database
+            .plan_month(&PlanMonth::parse("2027-01").unwrap())
+            .unwrap();
+        let next_quarter = category_available_target(&january, "quarterly");
+        assert_eq!(next_quarter.due_month.as_deref(), Some("2027-03"));
+        assert_eq!(next_quarter.needed_this_month, Huf(100));
+        let september = database
+            .plan_month(&PlanMonth::parse("2027-09").unwrap())
+            .unwrap();
+        let yearly = category_available_target(&september, "yearly");
+        assert_eq!(yearly.due_month.as_deref(), Some("2027-09"));
+        assert_eq!(yearly.needed_this_month, Huf(1200));
+    }
+
+    #[test]
+    fn periodic_refill_opening_balance_respects_as_of_cutoff() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "cash".into(),
+                name: "Cash".into(),
+                kind: AccountKind::Cash,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Savings", 0).unwrap();
+        database
+            .create_category("reserve", "g", "Reserve", 0)
+            .unwrap();
+        database
+            .set_category_target(
+                "reserve",
+                &PlanMonth::parse("2026-02").unwrap(),
+                Some(&CategoryTargetDefinition {
+                    behavior: "refill".into(),
+                    amount: Huf(100),
+                    due_kind: "last_day".into(),
+                    due_day: None,
+                    interval_months: 3,
+                    first_due_month: Some("2026-04".into()),
+                }),
+            )
+            .unwrap();
+        let mut future_income = Entry::manual(
+            "future-income",
+            "cash",
+            CalendarDate::parse("2026-01-20").unwrap(),
+        );
+        future_income.category_id = Some("reserve".into());
+        database
+            .create_transaction(&future_income, Huf(80))
+            .unwrap();
+        let april = PlanMonth::parse("2026-04").unwrap();
+        let cutoff = CalendarDate::parse("2026-01-15").unwrap();
+        let plan = database.plan_month_as_of(&april, &cutoff).unwrap();
+        let target = category_available_target(&plan, "reserve");
+        assert_eq!(target.needed_this_month, Huf(100));
+    }
+
+    #[test]
+    fn periodic_to_go_counts_negative_assigned_in_earlier_and_due_months() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database.create_category_group("g", "Savings", 0).unwrap();
+        database
+            .create_category("periodic", "g", "Periodic", 0)
+            .unwrap();
+        database
+            .create_category("monthly", "g", "Monthly", 1)
+            .unwrap();
+        let january = PlanMonth::parse("2026-01").unwrap();
+        let february = PlanMonth::parse("2026-02").unwrap();
+        let march = PlanMonth::parse("2026-03").unwrap();
+        database
+            .set_category_target(
+                "periodic",
+                &january,
+                Some(&CategoryTargetDefinition {
+                    behavior: "set_aside".into(),
+                    amount: Huf(100),
+                    due_kind: "last_day".into(),
+                    due_day: None,
+                    interval_months: 3,
+                    first_due_month: Some("2026-03".into()),
+                }),
+            )
+            .unwrap();
+        database
+            .set_category_target(
+                "monthly",
+                &january,
+                Some(&CategoryTargetDefinition {
+                    behavior: "set_aside".into(),
+                    amount: Huf(100),
+                    due_kind: "last_day".into(),
+                    due_day: None,
+                    interval_months: 1,
+                    first_due_month: None,
+                }),
+            )
+            .unwrap();
+        database
+            .set_monthly_assignment("periodic", &january, Huf(60))
+            .unwrap();
+        database
+            .set_monthly_assignment("periodic", &february, Huf(-20))
+            .unwrap();
+        database
+            .set_monthly_assignment("monthly", &february, Huf(-20))
+            .unwrap();
+        database
+            .set_monthly_assignment("periodic", &march, Huf(-20))
+            .unwrap();
+
+        let february_plan = database.plan_month(&february).unwrap();
+        let periodic = category_available_target(&february_plan, "periodic");
+        assert_eq!(periodic.needed_this_month, Huf(20));
+        assert_eq!(periodic.funded, Huf(0));
+        assert_eq!(periodic.to_go, Huf(40));
+        assert_eq!(
+            february_plan
+                .categories
+                .iter()
+                .find(|row| row.category_id == "periodic")
+                .unwrap()
+                .assigned,
+            Huf(-20)
+        );
+        assert_eq!(
+            category_available_target(&february_plan, "monthly").to_go,
+            Huf(100)
+        );
+
+        let ready_before_snooze = february_plan.ready_to_assign;
+        database
+            .set_category_target_snoozed("periodic", &february, true)
+            .unwrap();
+        let snoozed_plan = database.plan_month(&february).unwrap();
+        let snoozed = category_available_target(&snoozed_plan, "periodic");
+        assert_eq!(snoozed.needed_this_month, Huf(0));
+        assert_eq!(snoozed.funded, Huf(0));
+        assert_eq!(snoozed.to_go, Huf(0));
+        assert_eq!(snoozed_plan.ready_to_assign, ready_before_snooze);
+        assert_eq!(
+            snoozed_plan
+                .categories
+                .iter()
+                .find(|row| row.category_id == "periodic")
+                .unwrap()
+                .assigned,
+            Huf(-20)
+        );
+        database
+            .set_category_target_snoozed("periodic", &february, false)
+            .unwrap();
+        database
+            .set_monthly_assignment("periodic", &february, Huf(20))
+            .unwrap();
+        let funded_plan = database.plan_month(&february).unwrap();
+        let funded = category_available_target(&funded_plan, "periodic");
+        assert_eq!(funded.funded, Huf(20));
+        assert_eq!(funded.to_go, Huf(0));
+
+        let due_plan = database.plan_month(&march).unwrap();
+        let due = category_available_target(&due_plan, "periodic");
+        assert_eq!(due.due_month.as_deref(), Some("2026-03"));
+        assert_eq!(due.needed_this_month, Huf(20));
+        assert_eq!(due.funded, Huf(0));
+        assert_eq!(due.to_go, Huf(40));
+        database
+            .set_monthly_assignment("periodic", &march, Huf(20))
+            .unwrap();
+        let completed_plan = database.plan_month(&march).unwrap();
+        let completed = category_available_target(&completed_plan, "periodic");
+        assert_eq!(completed.funded, Huf(20));
+        assert_eq!(completed.to_go, Huf(0));
+        assert_eq!(database.connection.query_row::<i64, _, _>(
+            "SELECT SUM(amount_huf) FROM category_month_assignments WHERE category_id='periodic' AND month BETWEEN '2026-01' AND '2026-03'",
+            [], |row| row.get(0)
+        ).unwrap(), 100);
+    }
+
+    #[test]
+    fn periodic_target_rejects_invalid_interval_and_first_due_month() {
+        let definition =
+            |interval_months, first_due_month: Option<&str>| CategoryTargetDefinition {
+                behavior: "set_aside".into(),
+                amount: Huf(100),
+                due_kind: "last_day".into(),
+                due_day: None,
+                interval_months,
+                first_due_month: first_due_month.map(str::to_owned),
+            };
+        let effective = PlanMonth::parse("2026-01").unwrap();
+        assert!(validate_target_definition(&definition(6, Some("2026-06")), &effective).is_err());
+        assert!(validate_target_definition(&definition(3, None), &effective).is_err());
+        assert!(validate_target_definition(&definition(12, Some("2025-12")), &effective).is_err());
+        assert!(validate_target_definition(&definition(1, Some("2026-02")), &effective).is_err());
+        assert!(
+            validate_target_definition(&definition(3, Some("2026-02-01")), &effective).is_err()
+        );
+    }
+
+    #[test]
+    fn periodic_revisions_and_tombstones_preserve_prior_month_views() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database.create_category_group("g", "Savings", 0).unwrap();
+        database.create_category("trip", "g", "Trip", 0).unwrap();
+        database
+            .set_category_target(
+                "trip",
+                &PlanMonth::parse("2026-01").unwrap(),
+                Some(&CategoryTargetDefinition {
+                    behavior: "set_aside".into(),
+                    amount: Huf(1200),
+                    due_kind: "last_day".into(),
+                    due_day: None,
+                    interval_months: 12,
+                    first_due_month: Some("2026-12".into()),
+                }),
+            )
+            .unwrap();
+        database
+            .set_category_target(
+                "trip",
+                &PlanMonth::parse("2026-06").unwrap(),
+                Some(&CategoryTargetDefinition {
+                    behavior: "refill".into(),
+                    amount: Huf(300),
+                    due_kind: "day".into(),
+                    due_day: Some(15),
+                    interval_months: 3,
+                    first_due_month: Some("2026-08".into()),
+                }),
+            )
+            .unwrap();
+        assert_eq!(
+            category_available_target(
+                &database
+                    .plan_month(&PlanMonth::parse("2026-05").unwrap())
+                    .unwrap(),
+                "trip"
+            )
+            .due_month
+            .as_deref(),
+            Some("2026-12")
+        );
+        assert_eq!(
+            category_available_target(
+                &database
+                    .plan_month(&PlanMonth::parse("2026-06").unwrap())
+                    .unwrap(),
+                "trip"
+            )
+            .due_month
+            .as_deref(),
+            Some("2026-08")
+        );
+        database
+            .set_category_target("trip", &PlanMonth::parse("2026-07").unwrap(), None)
+            .unwrap();
+        assert!(database
+            .plan_month(&PlanMonth::parse("2026-07").unwrap())
+            .unwrap()
+            .categories
+            .iter()
+            .find(|row| row.category_id == "trip")
+            .unwrap()
+            .target
+            .is_none());
+        assert_eq!(
+            category_available_target(
+                &database
+                    .plan_month(&PlanMonth::parse("2026-06").unwrap())
+                    .unwrap(),
+                "trip"
+            )
+            .due_month
+            .as_deref(),
+            Some("2026-08")
+        );
     }
 }

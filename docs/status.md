@@ -6,14 +6,16 @@ or owner-data validation run.
 
 ## Implemented slices
 
-- Schema migrations through version 8; typed integer-HUF ledger, linked transfers,
+- Schema migrations through version 10; typed integer-HUF ledger, linked transfers,
   editable register and basic reconciliation.
 - YNAB raw archive/row staging, explicit account mapping, conservative transfer
   pairing, duplicate signals and exact as-of reference comparison. Historical
   `Assigned` amounts from Budget rows can be imported by the core importer.
 - Monthly Plan assignments, category money moves, cash/credit handling and mapped
-  card-payment categories; monthly targets and month-specific target snoozes.
-- Monthly ordinary income/expense schedules with post, skip and deactivate actions.
+  card-payment categories; monthly, quarterly and yearly targets with explicit due
+  settings, monthly funding guidance and month-specific target snoozes.
+- Monthly, quarterly and yearly income/expense and linked transfer schedules with
+  post, skip and deactivate actions.
 - Spending, inflow/outflow, income/expense, income breakdown, balance/outflow over
   time and net-worth reports, plus deterministic historical-month forecasting.
 - Verified standalone SQLite backups before migrations, on demand, and before
@@ -98,6 +100,28 @@ checks. Startup recovery of an unreadable database, targets/schedules needed for
 daily use, installer verification and the full clean migration remain open.
 The manual readiness estimate has not been reassessed.
 
+On 2026-10-05, the owner confirmed that daily use requires both category targets
+and scheduled transactions, including transfers, with monthly, quarterly and
+yearly recurrence. Periodic targets now spread a period total through an explicit
+due month and show the remaining funding needed this month. Due dates come from
+target settings, never category names. Recurring transfers materialize and post
+linked uncleared legs together; skip/deactivate preserve posted history. Calendar
+recurrence clamps short months while retaining the original day. Forecast tests
+cover selected accounts and shared transfer-category filters. Schema 10 preserves
+existing monthly definitions, and older supported backups are upgraded in an
+isolated copy before restore/recovery, preserving the original backup.
+
+The change passed 122 Rust core tests, 73 frontend tests, formatting and frontend
+build checks. The standalone Windows rehearsal build passed and launched against
+the upgraded rehearsal budget; yearly target due-month and scheduled-transfer
+controls were inspected without saving new entries. A fresh schema-10 disposable
+owner-data candidate still matched all
+34 account balances, all 1,326 Assigned/Activity/Available rows, 1,734 historical
+account-month balances, 51 Net Worth totals and all supplied Income v Expense
+comparisons. Four unresolved zero-value transfer rows remain held and duplicate
+signals remain retained as before. Owner desktop rehearsal of the new targets and
+schedules remains open; weekly/custom recurrence remains deferred.
+
 The existing project record reports that the 2026-09-14 owner export matched all
 34 YNAB reference working balances exactly. Four zero-value transfer rows remain
 preserved in staging without affecting balances. This is historical evidence,
@@ -155,7 +179,7 @@ has proceeded, so older instructions to start that work only after v0.1 are
 sequencing intent, not an accurate description of today's implementation. No
 release tag existed at this review; tag only after owner-data validation.
 
-Full target frequencies, recurring transfers, automatic backup
+Weekly/custom target and schedule frequencies, automatic backup
 retention, remaining report value validation and installer packaging remain outside
 the implemented slices documented here. Consult topic requirements before choosing next work;
 do not treat this list as an exhaustive backlog.

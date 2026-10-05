@@ -22,7 +22,8 @@ Initialization errors leave the UI open with retry; database contents are not lo
 ## Storage, money and dates
 
 Schema version 1 contains the single budget's settings; later immutable migrations
-add the ledger, Plan, targets and monthly schedules through version 8. SQLite
+add the ledger, Plan, targets and schedules through version 10, including periodic
+targets and linked recurring transfers. SQLite
 `user_version` tracks the migration version. Upgrades reserve the write lock, save
 and verify a standalone SQLite backup, and apply migrations atomically. The desktop
 app also exposes an on-demand native backup. Both paths use SQLite's online backup
@@ -34,7 +35,9 @@ while retaining the verified backup. Backups are intentionally never deleted or
 overwritten. They protect against local mistakes or corruption, not disk loss, so
 the owner should copy an important backup elsewhere. Initialization refuses populated
 unversioned databases and unsupported versions. An open budget can restore a
-selected local backup through SQLite's online restore API. Restore validates the
+selected local backup through SQLite's online restore API. Supported historical
+backups are validated read-only and upgraded in an isolated temporary copy using
+the migration backup mechanism; the selected source is never rewritten. Restore validates the
 candidate's integrity, foreign keys, schema version and HUF budget identity,
 creates a verified snapshot of the current budget, then verifies the restored
 database. On failure it attempts to recover from the snapshot. Startup first

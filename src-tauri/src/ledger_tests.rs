@@ -92,6 +92,8 @@ fn monthly_schedule_posts_once_and_clamps_the_next_short_month() {
             memo: "Monthly rent".into(),
             flag_id: None,
             amount: Huf(-100),
+            interval_months: 1,
+            counterpart_account_id: None,
         })
         .unwrap();
     let january = database.scheduled_occurrences().unwrap();
@@ -143,6 +145,8 @@ fn deactivating_a_schedule_removes_pending_not_posted_occurrences() {
             memo: String::new(),
             flag_id: None,
             amount: Huf(-10),
+            interval_months: 1,
+            counterpart_account_id: None,
         })
         .unwrap();
     let first = database.scheduled_occurrences().unwrap().remove(0);
@@ -159,6 +163,543 @@ fn deactivating_a_schedule_removes_pending_not_posted_occurrences() {
             .working,
         Huf(-10)
     );
+}
+
+#[test]
+fn quarterly_schedule_keeps_its_original_day_after_short_month_clamp() {
+    let (_directory, mut database) = database();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-01-31"),
+            end_date: None,
+            payee_name: None,
+            category_id: None,
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-10),
+            interval_months: 3,
+            counterpart_account_id: None,
+        })
+        .unwrap();
+    let first = database.scheduled_occurrences().unwrap().remove(0);
+    assert_eq!(first.interval_months, 3);
+    assert_eq!(first.date, date("2026-01-31"));
+    database
+        .skip_scheduled_occurrence(&first.transaction_id)
+        .unwrap();
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].date,
+        date("2026-04-30")
+    );
+    let april = database.scheduled_occurrences().unwrap().remove(0);
+    database
+        .skip_scheduled_occurrence(&april.transaction_id)
+        .unwrap();
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].date,
+        date("2026-07-31")
+    );
+}
+
+#[test]
+fn yearly_schedule_preserves_february_29_anchor() {
+    let (_directory, mut database) = database();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2024-02-29"),
+            end_date: None,
+            payee_name: None,
+            category_id: None,
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-10),
+            interval_months: 12,
+            counterpart_account_id: None,
+        })
+        .unwrap();
+    let first = database.scheduled_occurrences().unwrap().remove(0);
+    database
+        .skip_scheduled_occurrence(&first.transaction_id)
+        .unwrap();
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].date,
+        date("2025-02-28")
+    );
+    let second = database.scheduled_occurrences().unwrap().remove(0);
+    database
+        .skip_scheduled_occurrence(&second.transaction_id)
+        .unwrap();
+    let third = database.scheduled_occurrences().unwrap().remove(0);
+    database
+        .skip_scheduled_occurrence(&third.transaction_id)
+        .unwrap();
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].date,
+        date("2027-02-28")
+    );
+    let fourth = database.scheduled_occurrences().unwrap().remove(0);
+    database
+        .skip_scheduled_occurrence(&fourth.transaction_id)
+        .unwrap();
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].date,
+        date("2028-02-29")
+    );
+}
+
+#[test]
+fn scheduled_transfer_entered_as_inflow_keeps_the_entered_side_sign() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("loan", AccountKind::Loan, 1))
+        .unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "loan".into(),
+            start_date: date("2026-02-15"),
+            end_date: None,
+            payee_name: None,
+            category_id: None,
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(200),
+            interval_months: 12,
+            counterpart_account_id: Some("cash".into()),
+        })
+        .unwrap();
+    let occurrence = database.scheduled_occurrences().unwrap().remove(0);
+    assert_eq!(occurrence.amount, Huf(200));
+    database
+        .post_scheduled_occurrence(&occurrence.transaction_id)
+        .unwrap();
+    assert_eq!(
+        database
+            .account_balance("loan", &date("2026-02-15"))
+            .unwrap()
+            .working,
+        Huf(200)
+    );
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-02-15"))
+            .unwrap()
+            .working,
+        Huf(-200)
+    );
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].date,
+        date("2027-02-15")
+    );
+}
+
+#[test]
+fn schedules_reject_unsupported_intervals_invalid_end_dates_and_self_transfers() {
+    let (_directory, mut database) = database();
+    let draft = |interval_months: i64,
+                 end_date: Option<CalendarDate>,
+                 counterpart_account_id: Option<String>| MonthlyScheduleDraft {
+        account_id: "cash".into(),
+        start_date: date("2026-01-31"),
+        end_date,
+        payee_name: None,
+        category_id: None,
+        memo: String::new(),
+        flag_id: None,
+        amount: Huf(-1),
+        interval_months,
+        counterpart_account_id,
+    };
+    assert!(matches!(
+        database.create_monthly_schedule(&draft(2, None, None)),
+        Err(LedgerError::InvalidValue(_))
+    ));
+    assert!(matches!(
+        database.create_monthly_schedule(&draft(1, Some(date("2026-01-30")), None)),
+        Err(LedgerError::InvalidValue(_))
+    ));
+    assert!(matches!(
+        database.create_monthly_schedule(&draft(1, None, Some("cash".into()))),
+        Err(LedgerError::InvalidValue(_))
+    ));
+}
+
+#[test]
+fn forecast_projects_quarterly_transfers_by_selected_legs() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("other", AccountKind::Cash, 1))
+        .unwrap();
+    database.create_category_group("group", "Group", 0).unwrap();
+    database
+        .create_category("food", "group", "Food", 0)
+        .unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-01-31"),
+            end_date: None,
+            payee_name: None,
+            category_id: None,
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-50),
+            interval_months: 3,
+            counterpart_account_id: Some("other".into()),
+        })
+        .unwrap();
+    let forecast = |account_ids: Vec<String>| {
+        database
+            .forecast(&ForecastInput {
+                as_of: date("2026-01-15"),
+                horizon_months: 4,
+                history_months: 3,
+                account_ids,
+                category_ids: vec![],
+                seed: "7".into(),
+            })
+            .unwrap()
+    };
+    let cash = forecast(vec!["cash".into()]);
+    assert!(cash
+        .percentile_paths
+        .iter()
+        .all(|path| path.balances == vec![Huf(0), Huf(-50), Huf(-50), Huf(-100), Huf(-100)]));
+    let other = forecast(vec!["other".into()]);
+    assert!(other
+        .percentile_paths
+        .iter()
+        .all(|path| path.balances == vec![Huf(0), Huf(50), Huf(50), Huf(100), Huf(100)]));
+    let both = forecast(vec!["cash".into(), "other".into()]);
+    assert!(both
+        .percentile_paths
+        .iter()
+        .all(|path| path.balances == vec![Huf(0); 5]));
+    let filtered_both = database
+        .forecast(&ForecastInput {
+            as_of: date("2026-01-15"),
+            horizon_months: 4,
+            history_months: 3,
+            account_ids: vec!["cash".into(), "other".into()],
+            category_ids: vec![Some("food".into())],
+            seed: "7".into(),
+        })
+        .unwrap();
+    assert!(filtered_both
+        .percentile_paths
+        .iter()
+        .all(|path| path.balances == vec![Huf(0); 5]));
+    let occurrence = database.scheduled_occurrences().unwrap().remove(0);
+    database
+        .post_scheduled_occurrence(&occurrence.transaction_id)
+        .unwrap();
+    let posted_filtered = database
+        .forecast(&ForecastInput {
+            as_of: date("2026-01-15"),
+            horizon_months: 4,
+            history_months: 3,
+            account_ids: vec!["cash".into(), "other".into()],
+            category_ids: vec![Some("food".into())],
+            seed: "7".into(),
+        })
+        .unwrap();
+    assert!(posted_filtered
+        .percentile_paths
+        .iter()
+        .all(|path| path.balances == vec![Huf(0); 5]));
+}
+
+#[test]
+fn forecast_category_filter_uses_shared_category_for_boundary_transfer_pairs() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("tracking", AccountKind::Tracking, 1))
+        .unwrap();
+    database.create_category_group("group", "Group", 0).unwrap();
+    database
+        .create_category("rent", "group", "Rent", 0)
+        .unwrap();
+    database
+        .create_category("food", "group", "Food", 1)
+        .unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-01-31"),
+            end_date: None,
+            payee_name: None,
+            category_id: Some("rent".into()),
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-50),
+            interval_months: 3,
+            counterpart_account_id: Some("tracking".into()),
+        })
+        .unwrap();
+    let forecast = |account_ids: Vec<String>, category_ids: Vec<Option<String>>| {
+        database
+            .forecast(&ForecastInput {
+                as_of: date("2026-01-15"),
+                horizon_months: 1,
+                history_months: 3,
+                account_ids,
+                category_ids,
+                seed: "7".into(),
+            })
+            .unwrap()
+    };
+    let cash_matching = forecast(vec!["cash".into()], vec![Some("rent".into())]);
+    assert_eq!(
+        cash_matching.percentile_paths[0].balances,
+        vec![Huf(0), Huf(-50)]
+    );
+    let cash_other = forecast(vec!["cash".into()], vec![Some("food".into())]);
+    assert_eq!(
+        cash_other.percentile_paths[0].balances,
+        vec![Huf(0), Huf(0)]
+    );
+    let both_matching = forecast(
+        vec!["cash".into(), "tracking".into()],
+        vec![Some("rent".into())],
+    );
+    assert_eq!(
+        both_matching.percentile_paths[0].balances,
+        vec![Huf(0), Huf(0)]
+    );
+    let both_other = forecast(
+        vec!["cash".into(), "tracking".into()],
+        vec![Some("food".into())],
+    );
+    assert_eq!(
+        both_other.percentile_paths[0].balances,
+        vec![Huf(0), Huf(0)]
+    );
+
+    let pending = database.scheduled_occurrences().unwrap().remove(0);
+    database
+        .post_scheduled_occurrence(&pending.transaction_id)
+        .unwrap();
+    let forecast_posted = |account_ids: Vec<String>, category_ids: Vec<Option<String>>| {
+        database
+            .forecast(&ForecastInput {
+                as_of: date("2026-01-15"),
+                horizon_months: 1,
+                history_months: 3,
+                account_ids,
+                category_ids,
+                seed: "7".into(),
+            })
+            .unwrap()
+    };
+    let posted_cash_matching = forecast_posted(vec!["cash".into()], vec![Some("rent".into())]);
+    assert_eq!(
+        posted_cash_matching.percentile_paths[0].balances,
+        vec![Huf(0), Huf(-50)]
+    );
+    let posted_cash_other = forecast_posted(vec!["cash".into()], vec![Some("food".into())]);
+    assert_eq!(
+        posted_cash_other.percentile_paths[0].balances,
+        vec![Huf(0), Huf(0)]
+    );
+    let posted_both_matching = forecast_posted(
+        vec!["cash".into(), "tracking".into()],
+        vec![Some("rent".into())],
+    );
+    assert_eq!(
+        posted_both_matching.percentile_paths[0].balances,
+        vec![Huf(0), Huf(0)]
+    );
+    let posted_both_other = forecast_posted(
+        vec!["cash".into(), "tracking".into()],
+        vec![Some("food".into())],
+    );
+    assert_eq!(
+        posted_both_other.percentile_paths[0].balances,
+        vec![Huf(0), Huf(0)]
+    );
+}
+
+#[test]
+fn forecast_projects_yearly_transfers_for_one_or_both_selected_accounts() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("other", AccountKind::Cash, 1))
+        .unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-01-31"),
+            end_date: None,
+            payee_name: None,
+            category_id: None,
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-30),
+            interval_months: 12,
+            counterpart_account_id: Some("other".into()),
+        })
+        .unwrap();
+    let forecast = |account_ids: Vec<String>| {
+        database
+            .forecast(&ForecastInput {
+                as_of: date("2025-12-31"),
+                horizon_months: 13,
+                history_months: 3,
+                account_ids,
+                category_ids: vec![],
+                seed: "7".into(),
+            })
+            .unwrap()
+    };
+    let cash = forecast(vec!["cash".into()]);
+    assert_eq!(cash.percentile_paths[0].balances[1], Huf(-30));
+    assert_eq!(cash.percentile_paths[0].balances[12], Huf(-30));
+    assert_eq!(cash.percentile_paths[0].balances[13], Huf(-60));
+    let both = forecast(vec!["cash".into(), "other".into()]);
+    assert!(both
+        .percentile_paths
+        .iter()
+        .all(|path| path.balances == vec![Huf(0); 14]));
+}
+
+#[test]
+fn scheduled_loan_to_cash_transfer_keeps_category_on_on_budget_leg_for_plan() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("loan", AccountKind::Loan, 1))
+        .unwrap();
+    database.create_category_group("fixed", "Fixed", 0).unwrap();
+    database
+        .create_category("loan-payment", "fixed", "Loan payment", 0)
+        .unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "loan".into(),
+            start_date: date("2026-02-15"),
+            end_date: None,
+            payee_name: None,
+            category_id: Some("loan-payment".into()),
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(200),
+            interval_months: 1,
+            counterpart_account_id: Some("cash".into()),
+        })
+        .unwrap();
+    let occurrence = database.scheduled_occurrences().unwrap().remove(0);
+    assert_eq!(occurrence.category_name.as_deref(), Some("Loan payment"));
+    database
+        .post_scheduled_occurrence(&occurrence.transaction_id)
+        .unwrap();
+    let plan = database
+        .plan_month_as_of(
+            &crate::plan::PlanMonth::parse("2026-02").unwrap(),
+            &date("2026-02-28"),
+        )
+        .unwrap();
+    assert_eq!(
+        plan.categories
+            .iter()
+            .find(|row| row.category_id == "loan-payment")
+            .unwrap()
+            .activity,
+        Huf(-200)
+    );
+}
+
+#[test]
+fn closed_schedule_counterpart_failure_rolls_back_skip_and_keeps_pending_pair() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("other", AccountKind::Cash, 1))
+        .unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-01-31"),
+            end_date: None,
+            payee_name: None,
+            category_id: None,
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-50),
+            interval_months: 3,
+            counterpart_account_id: Some("other".into()),
+        })
+        .unwrap();
+    let pending = database.scheduled_occurrences().unwrap().remove(0);
+    database.set_account_closed("other", true).unwrap();
+    assert!(matches!(
+        database.skip_scheduled_occurrence(&pending.transaction_id),
+        Err(LedgerError::InvalidValue(_))
+    ));
+    assert_eq!(database.scheduled_occurrences().unwrap().len(), 1);
+    assert_eq!(database.entries("cash").unwrap().len(), 1);
+    assert_eq!(database.entries("other").unwrap().len(), 1);
+}
+
+#[test]
+fn scheduled_transfer_posts_both_legs_and_skip_or_cancel_removes_both() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("other", AccountKind::Cash, 1))
+        .unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-01-31"),
+            end_date: None,
+            payee_name: None,
+            category_id: None,
+            memo: "move".into(),
+            flag_id: None,
+            amount: Huf(-50),
+            interval_months: 3,
+            counterpart_account_id: Some("other".into()),
+        })
+        .unwrap();
+    let first = database.scheduled_occurrences().unwrap().remove(0);
+    assert_eq!(first.transfer_account_name.as_deref(), Some("other"));
+    assert_eq!(database.entries("cash").unwrap().len(), 1);
+    assert_eq!(database.entries("other").unwrap().len(), 1);
+    database
+        .post_scheduled_occurrence(&first.transaction_id)
+        .unwrap();
+    assert_eq!(database.entries("cash").unwrap().len(), 2);
+    assert_eq!(database.entries("other").unwrap().len(), 2);
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-01-31"))
+            .unwrap()
+            .working,
+        Huf(-50)
+    );
+    assert_eq!(
+        database
+            .account_balance("other", &date("2026-01-31"))
+            .unwrap()
+            .working,
+        Huf(50)
+    );
+    let next = database.scheduled_occurrences().unwrap().remove(0);
+    database
+        .skip_scheduled_occurrence(&next.transaction_id)
+        .unwrap();
+    assert_eq!(database.entries("cash").unwrap().len(), 2);
+    assert_eq!(database.entries("other").unwrap().len(), 2);
+    let third = database.scheduled_occurrences().unwrap().remove(0);
+    database.deactivate_schedule(&third.schedule_id).unwrap();
+    assert!(database
+        .entries("cash")
+        .unwrap()
+        .iter()
+        .all(|entry| entry.entry.posting_state == PostingState::Posted));
+    assert!(database
+        .entries("other")
+        .unwrap()
+        .iter()
+        .all(|entry| entry.entry.posting_state == PostingState::Posted));
 }
 
 #[test]
@@ -1043,6 +1584,8 @@ fn forecast_projects_schedules_without_resampling_posted_occurrences() {
             memo: String::new(),
             flag_id: None,
             amount: Huf(-100),
+            interval_months: 1,
+            counterpart_account_id: None,
         })
         .unwrap();
     for _ in 0..4 {
@@ -1081,6 +1624,8 @@ fn forecast_counts_an_overdue_schedule_once_and_honors_its_end_date() {
             memo: String::new(),
             flag_id: None,
             amount: Huf(-100),
+            interval_months: 1,
+            counterpart_account_id: None,
         })
         .unwrap();
     let report = database
@@ -1130,6 +1675,8 @@ fn forecast_applies_account_and_expense_category_scope_to_schedules() {
                 memo: String::new(),
                 flag_id: None,
                 amount: Huf(amount),
+                interval_months: 1,
+                counterpart_account_id: None,
             })
             .unwrap();
     }

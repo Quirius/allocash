@@ -102,6 +102,12 @@ it("loads spending by payee with the selected report scope", async () => {
   expect(invoke).toHaveBeenCalledWith("get_spending_by_payee", { input });
 });
 
+it.each([3, 12] as const)("sends an explicit recurring target due month with a %i-month interval", async (intervalMonths) => {
+  const target = { behavior: "refill" as const, amount: "120000", dueKind: "day" as const, dueDay: 1, intervalMonths, firstDueMonth: "2027-09" };
+  await setCategoryTarget("annual-fee", "2026-10", target);
+  expect(invoke).toHaveBeenCalledWith("set_category_target", { input: { categoryId: "annual-fee", effectiveMonth: "2026-10", target } });
+});
+
 it("loads monthly inflow and outflow with the selected report scope", async () => {
   vi.mocked(isTauri).mockReturnValue(true);
   const input = { from: "2026-09-01", to: "2026-09-14", accountIds: ["cash"] };

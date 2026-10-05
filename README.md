@@ -152,7 +152,7 @@ Keep real exports and backups outside the repository, or under the ignored
 `private-data/` directory. Database files and ZIP/native backups are ignored too.
 Only anonymized fixtures should ever be committed.
 
-Fresh databases initialize at schema version 8. Existing databases are backed up
+Fresh databases initialize at schema version 10. Existing databases are backed up
 with SQLite's online backup API, checked for integrity, and then upgraded atomically.
 The desktop app can also create a verified native backup on demand. Backups live in
 a `backups/` folder beside the database. Each is a standalone, lossless SQLite file,
@@ -166,7 +166,8 @@ protection. Deleting a register entry or canceling a schedule first creates a
 verified safety snapshot; if that snapshot fails, Allocash makes no change. When
 the budget opens normally, the desktop app can restore a selected file from its
 local `backups/` folder. It validates the selected copy and saves the current
-budget before replacing it. If the live budget cannot open, the startup screen
+budget before replacing it. Supported older backups are upgraded in a temporary
+copy for restore or recovery, preserving the source backup. If the live budget cannot open, the startup screen
 can recover from a verified file in the same `backups/` folder. It preserves the
 unreadable database and its WAL sidecars in a separate folder before installing
 the backup. Copy an external backup into the displayed backups folder and select

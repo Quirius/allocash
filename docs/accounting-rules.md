@@ -119,8 +119,21 @@ inactive revision clears a target from that month forward.
 difference between its amount and the category's nonnegative opening Available
 amount. Both report Funding and To Go from that month's positive assigned amount;
 current-month spending and refunds do not alter progress. The initial target
-slice supports monthly targets with a day-of-month or last-day due marker; it
-does not auto-assign or support other frequencies.
+slice supports monthly, quarterly and yearly targets with a day-of-month or
+last-day due marker; targets never auto-assign money.
+
+Quarterly/yearly definitions store an explicit first due month. The first cycle
+starts at the revision's effective month and ends in that due month; later cycles
+repeat every three or twelve months. `Set aside another` requires new assignments
+equal to the full amount each cycle. `Refill up to` subtracts the cycle's positive
+opening Available balance from that total. Previous net assignments within the
+cycle reduce the remaining funding; spending during the cycle does not create
+another funding requirement. Needed This Month is the remaining amount divided
+by inclusive months through the due month, rounded up to whole HUF. Current-month
+positive Assigned supplies Funded, capped at Needed. For periodic targets, To Go
+subtracts signed current-month Assigned from Needed, clamped at zero, so removing
+money in the current month increases the remaining funding gap.
+Snoozed months show zero guidance, and later months catch up on remaining funding.
 
 A target can be snoozed for one category and one month. Snoozing retains the
 target definition but reports zero Needed, Funded and To Go for that month; it
@@ -143,18 +156,20 @@ Reconciled. Future, scheduled and already reconciled rows remain unchanged.
 An adjustment is an explicit fallback for genuinely missing history, not the
 normal way to resolve unmatched transaction states.
 
-## Monthly schedules
+## Recurring schedules
 
-The first scheduling slice supports ordinary monthly income and expense schedules,
-not recurring transfers. It materializes one uncleared, pending occurrence at a
-time. Posting explicitly turns that same row into posted ledger history and creates
-the next month (clamping dates such as the 31st to the month's last day); skipping
-records the skipped occurrence and advances instead. Pending rows are excluded
+Schedules support monthly, quarterly and yearly ordinary income/expenses and
+linked account transfers. They materialize one Uncleared, pending occurrence at
+a time, with both entries for a transfer. Posting explicitly turns that occurrence
+into posted ledger history and creates the next occurrence; skipping records the
+skipped occurrence and advances instead. Recurrence retains the start date's
+original day, clamping short months to their last day. Pending rows are excluded
 from balances and the Plan, and cannot be edited or deleted through the generic
 register actions.
 An optional end date prevents generation after its inclusive date. Canceling a
-schedule removes its pending occurrence but preserves every posted occurrence as
-ordinary ledger history.
+schedule removes its pending occurrence, including both linked transfer entries,
+but preserves every posted occurrence as ledger history. A budget-boundary
+transfer's category belongs to its on-budget entry regardless of the entered side.
 
 ## Spending reports
 
@@ -213,11 +228,14 @@ selected accounts' exact posted balance as of the chosen date, then samples whol
 completed historical months of posted, non-transfer ordinary activity. This keeps
 observed income/expense relationships and irregular months instead of adding
 average-based noise. Transfers remain in the starting balance but are never
-sampled as future activity. Active monthly schedules and early-posted future
+sampled as future activity. Active recurring schedules and early-posted future
 schedule occurrences are added deterministically, while schedule-origin history
 is excluded from the bootstrap to prevent double-counting. A category filter
-limits negative activity only, because income sources are payees rather than
-budget categories.
+limits negative ordinary activity only, because income sources are payees rather
+than budget categories. Scheduled transfer legs share their pair's category filter:
+categorized budget-boundary transfers must match the selected category, while
+uncategorized internal transfers retain both selected legs so filtering cannot
+create money. Account scope still determines which legs affect the projection.
 
 Net Worth is a separate as-of projection: it sums the signed posted working
 balances of every account kind, including closed, loan and tracking accounts.

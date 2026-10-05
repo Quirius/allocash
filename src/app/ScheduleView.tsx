@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { createMonthlySchedule, deactivateSchedule, loadScheduledOccurrences, postScheduledOccurrence, skipScheduledOccurrence, type AccountOverview, type ScheduledOccurrence, type TransactionFormOptions } from "../lib/desktop";
+import { deactivateSchedule, loadScheduledOccurrences, postScheduledOccurrence, skipScheduledOccurrence, type AccountOverview, type ScheduledOccurrence, type TransactionFormOptions, type RecurrenceMonths } from "../lib/desktop";
 import { formatDate, formatHuf, localCalendarDate, parseSignedHufInput } from "../lib/format";
+import { createScheduledPayeeEntry, isTransferPayee } from "../lib/transaction";
+import { recurrenceLabel } from "../lib/recurrence";
 
 export const SAFETY_BACKUP_ERROR = "Could not create the required safety backup. No changes were made.";
 
@@ -18,6 +20,9 @@ export function ScheduleView({ accounts, options }: { accounts: AccountOverview[
   const [categoryId, setCategoryId] = useState("");
   const [memo, setMemo] = useState("");
   const [amount, setAmount] = useState("");
+  const [intervalMonths, setIntervalMonths] = useState<RecurrenceMonths>(1);
+  const [kind, setKind] = useState<"transaction" | "transfer">("transaction");
+  const [counterpartId, setCounterpartId] = useState("");
   const activeAccounts = accounts.filter((account) => !account.closed);
   const selectedAccountId = activeAccounts.some((account) => account.id === accountId)
     ? accountId : activeAccounts[0]?.id ?? "";
@@ -43,11 +48,12 @@ export function ScheduleView({ accounts, options }: { accounts: AccountOverview[
       return;
     }
     try {
-      await createMonthlySchedule({ accountId: selectedAccountId, startDate, endDate: endDate || null, payeeName: payeeName || null, categoryId: categoryId || null, memo, flagId: null, amount: value.toString() });
+      if (kind === "transfer" && !counterpartId) throw new Error("Choose the other transfer account.");
+      await createScheduledPayeeEntry({ accountId: selectedAccountId, startDate, endDate: endDate || null, payeeName: kind === "transfer" ? null : payeeName || null, categoryId: categoryId || null, memo, flagId: null, amount: value.toString(), intervalMonths, counterpartAccountId: kind === "transfer" ? counterpartId : null }, accounts);
       setAmount("");
       await reload();
-    } catch {
-      setError("This monthly schedule could not be created.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "This schedule could not be created.");
     }
   }
   async function finish(id: string, post: boolean) {
@@ -68,17 +74,19 @@ export function ScheduleView({ accounts, options }: { accounts: AccountOverview[
   }
 
   return <section className="schedule-view">
-    <div className="plan-toolbar"><div><p className="eyebrow">SCHEDULED TRANSACTIONS</p><h2>Monthly schedules</h2></div></div>
+    <div className="plan-toolbar"><div><p className="eyebrow">SCHEDULED TRANSACTIONS</p><h2>Schedules</h2></div></div>
     {error && <p className="editor-error" role="alert">{error}</p>}
     <form className="schedule-form" onSubmit={save}>
-      <strong>New monthly schedule</strong>
+      <strong>New schedule</strong>
+      <div className="entry-kind" role="group" aria-label="Scheduled entry type"><button type="button" className={kind === "transaction" ? "active" : ""} onClick={() => setKind("transaction")}>Transaction</button><button type="button" className={kind === "transfer" ? "active" : ""} onClick={() => setKind("transfer")}>Transfer</button></div>
       <select aria-label="Account" value={selectedAccountId} onChange={(event) => setAccountId(event.target.value)} disabled={!activeAccounts.length}>
         {activeAccounts.length === 0 && <option value="">No open accounts</option>}
         {activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
       </select>
       <input aria-label="Start date" type="date" required value={startDate} onChange={(event) => setStartDate(event.target.value)} />
       <input aria-label="End date" type="date" value={endDate} min={startDate} onChange={(event) => setEndDate(event.target.value)} title="Optional end date" />
-      <input aria-label="Payee" value={payeeName} onChange={(event) => setPayeeName(event.target.value)} placeholder="Payee" />
+      <select aria-label="Repeat frequency" value={intervalMonths} onChange={(event) => setIntervalMonths(Number(event.target.value) as RecurrenceMonths)}><option value={1}>Monthly</option><option value={3}>Quarterly</option><option value={12}>Yearly</option></select>
+      {kind === "transfer" ? <select aria-label="Other transfer account" required value={counterpartId} onChange={(event) => setCounterpartId(event.target.value)}><option value="">Other account</option>{activeAccounts.filter((account) => account.id !== selectedAccountId).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select> : <><input aria-label="Payee" list="scheduled-payees" value={payeeName} onChange={(event) => setPayeeName(event.target.value)} placeholder="Payee or Transfer: account" /><datalist id="scheduled-payees">{activeAccounts.filter((account) => account.id !== selectedAccountId).map((account) => <option key={`transfer-${account.id}`} value={`Transfer: ${account.name}`} />)}{options.payees.filter((payee) => !isTransferPayee(payee.name)).map((payee) => <option key={payee.id} value={payee.name} />)}</datalist></>}
       <select aria-label="Category" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Uncategorized</option>{options.categories.map((category) => <option key={category.id} value={category.id}>{category.groupName} / {category.name}</option>)}</select>
       <input aria-label="Amount" required value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="HUF, - for outflow" inputMode="numeric" />
       <input aria-label="Memo" value={memo} onChange={(event) => setMemo(event.target.value)} placeholder="Memo" />
@@ -86,7 +94,7 @@ export function ScheduleView({ accounts, options }: { accounts: AccountOverview[
     </form>
     {items === null ? <div className="register-message">{error ? "Schedules unavailable." : "Loading schedules…"}</div> : <div className="schedule-list">
       {items.length === 0 ? <p>No pending scheduled transactions.</p> : items.map((item) => <div key={item.transactionId}>
-        <span><strong>{formatDate(item.date)}</strong> {item.accountName} · {item.payeeName ?? "No payee"}<small>{item.categoryName ?? "Uncategorized"}{item.memo && ` · ${item.memo}`}</small></span>
+        <span><strong>{formatDate(item.date)}</strong> {item.accountName} · {item.transferAccountName ? `Transfer: ${item.transferAccountName}` : item.payeeName ?? "No payee"}<small>{recurrenceLabel(item.intervalMonths)} · {item.categoryName ?? "Uncategorized"}{item.memo && ` · ${item.memo}`}</small></span>
         <b>{formatHuf(BigInt(item.amount))}</b>
         <button onClick={() => void finish(item.transactionId, true)}>Post</button>
         <button onClick={() => void finish(item.transactionId, false)}>Skip</button>

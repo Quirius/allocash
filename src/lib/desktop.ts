@@ -107,7 +107,8 @@ export interface ManualTransferInput {
   amount: string;
   direction: "outflow" | "inflow";
 }
-export interface MonthlyScheduleInput { accountId: string; startDate: string; endDate: string | null; payeeName: string | null; categoryId: string | null; memo: string; flagId: string | null; amount: string; }
+export type RecurrenceMonths = 1 | 3 | 12;
+export interface MonthlyScheduleInput { accountId: string; startDate: string; endDate: string | null; payeeName: string | null; categoryId: string | null; memo: string; flagId: string | null; amount: string; intervalMonths?: RecurrenceMonths; counterpartAccountId?: string | null; }
 export interface SpendingReportInput { from: string; to: string; accountIds: string[]; }
 export interface SpendingCategoryTotal { categoryId: string | null; groupName: string | null; categoryName: string; total: string; transactionCount: number; }
 export interface SpendingPayeeTotal { payeeName: string; total: string; transactionCount: number; }
@@ -132,7 +133,7 @@ export interface ForecastInput { asOf: string; horizonMonths: number; historyMon
 export interface ForecastPercentilePath { percentile: number; balances: string[]; }
 export interface ForecastReport { asOf: string; through: string; historyFrom: string; historyTo: string; seed: string; simulationCount: number; startingBalance: string; pointDates: string[]; percentilePaths: ForecastPercentilePath[]; assumptions: string[]; }
 export interface NetWorthReport { asOf: string; comparedTo: string | null; assets: string; debts: string; netWorth: string; change: string | null; }
-export interface ScheduledOccurrence { scheduleId: string; transactionId: string; accountName: string; date: string; payeeName: string | null; categoryName: string | null; memo: string; amount: string; }
+export interface ScheduledOccurrence { scheduleId: string; transactionId: string; accountName: string; date: string; payeeName: string | null; categoryName: string | null; memo: string; amount: string; intervalMonths: RecurrenceMonths; transferAccountName: string | null; }
 
 export interface RegisterEntryEdit {
   id: string;
@@ -160,8 +161,8 @@ export interface ReconciliationReview {
 export interface ReconciliationResult {
   review: ReconciliationReview; reconciledEntryCount: number; adjustmentTransactionId: string | null;
 }
-export interface CategoryTargetDefinition { behavior: "set_aside" | "refill"; amount: string; dueKind: "day" | "last_day"; dueDay: number | null; }
-export interface CategoryTargetProgress extends CategoryTargetDefinition { neededThisMonth: string; funded: string; toGo: string; snoozed: boolean; }
+export interface CategoryTargetDefinition { behavior: "set_aside" | "refill"; amount: string; dueKind: "day" | "last_day"; dueDay: number | null; intervalMonths?: RecurrenceMonths; firstDueMonth?: string | null; }
+export interface CategoryTargetProgress extends CategoryTargetDefinition { neededThisMonth: string; funded: string; toGo: string; snoozed: boolean; dueMonth: string | null; }
 export interface PlanCategory { groupId: string; groupName: string; categoryId: string; categoryName: string; assigned: string; activity: string; available: string; target: CategoryTargetProgress | null; }
 export interface CreditPaymentCategory { accountId: string; accountName: string; categoryId: string | null; }
 export interface PlanSnapshot { month: string; readyToAssign: string; categories: PlanCategory[]; creditPaymentCategories: CreditPaymentCategory[]; }

@@ -9,6 +9,7 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
+use tempfile::TempDir;
 
 pub type DatabaseResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -43,6 +44,14 @@ pub struct NativeRestoreReceipt {
 #[serde(rename_all = "camelCase")]
 pub struct NativeRecoveryReceipt {
     pub preserved_data_path: String,
+}
+
+/// A validated current-schema backup. Older supported backups are migrated in
+/// a private temporary copy; retaining this value keeps that copy alive while
+/// SQLite reads it during restore or recovery.
+struct PreparedBackup {
+    path: PathBuf,
+    _temporary: Option<TempDir>,
 }
 
 impl Database {
@@ -121,9 +130,11 @@ impl Database {
         // the application's own backups folder and exclude symlinks.
         let candidate = Self::validated_backup_path(&self.path, name)?;
         let safety = self.create_backup("before-restore")?;
-        let result =
-            self.connection
-                .restore("main", &candidate, None::<fn(rusqlite::backup::Progress)>);
+        let result = self.connection.restore(
+            "main",
+            &candidate.path,
+            None::<fn(rusqlite::backup::Progress)>,
+        );
         if result.is_ok() && Self::verify_connection(&self.connection).is_ok() {
             return Ok(NativeRestoreReceipt {
                 safety_backup_path: safety.path,
@@ -169,11 +180,18 @@ impl Database {
             .prefix("allocash-recovery-")
             .suffix(".partial")
             .tempfile_in(parent)?;
-        let source =
-            Connection::open_with_flags(&candidate, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let source = Connection::open_with_flags(
+            &candidate.path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?;
         source.backup("main", pending.path(), None)?;
         drop(source);
-        Self::verify_restore_candidate(pending.path())?;
+        let recovered_copy = Connection::open_with_flags(
+            pending.path(),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?;
+        Self::verify_connection(&recovered_copy)?;
+        drop(recovered_copy);
         pending.as_file().sync_all()?;
 
         let files = Self::database_files(path)?
@@ -251,7 +269,7 @@ impl Database {
             .join("backups"))
     }
 
-    fn validated_backup_path(path: &Path, name: &str) -> DatabaseResult<PathBuf> {
+    fn validated_backup_path(path: &Path, name: &str) -> DatabaseResult<PreparedBackup> {
         if !name.starts_with("allocash-")
             || !name.ends_with(".sqlite3")
             || !name
@@ -260,18 +278,74 @@ impl Database {
         {
             return Err("Invalid backup name.".into());
         }
-        let candidate = Self::backup_directory_at(path)?.join(name);
+        let backup_directory = Self::backup_directory_at(path)?;
+        let directory_metadata = std::fs::symlink_metadata(&backup_directory)?;
+        if !directory_metadata.is_dir() || directory_metadata.file_type().is_symlink() {
+            return Err("The backups folder is not a regular directory.".into());
+        }
+        let candidate = backup_directory.join(name);
         if !std::fs::symlink_metadata(&candidate)?.file_type().is_file() {
             return Err("The selected backup is not a regular file.".into());
         }
-        Self::verify_restore_candidate(&candidate)?;
-        Ok(candidate)
+        let version = Self::verify_supported_backup(&candidate)?;
+        if version == SCHEMA_VERSION {
+            Self::verify_connection(&Connection::open_with_flags(
+                &candidate,
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            )?)?;
+            return Ok(PreparedBackup {
+                path: candidate,
+                _temporary: None,
+            });
+        }
+
+        // Upgrade only an isolated copy. The original backup remains untouched
+        // and the migration mechanism verifies its own pre-upgrade snapshot.
+        let temporary = tempfile::tempdir_in(&backup_directory)?;
+        let upgraded_path = temporary.path().join("upgraded.sqlite3");
+        let source =
+            Connection::open_with_flags(&candidate, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        source.backup("main", &upgraded_path, None)?;
+        drop(source);
+        let mut upgraded = Connection::open(&upgraded_path)?;
+        upgraded.pragma_update(None, "foreign_keys", "ON")?;
+        migrations::initialize(&mut upgraded, Some(&upgraded_path))?;
+        Self::verify_connection(&upgraded)?;
+        drop(upgraded);
+        Ok(PreparedBackup {
+            path: upgraded_path,
+            _temporary: Some(temporary),
+        })
     }
 
-    fn verify_restore_candidate(path: &Path) -> DatabaseResult<()> {
+    /// Performs source validation without a writable open, before any copy or
+    /// migration can occur. Supported historical schemas are then upgraded on
+    /// an isolated copy and subjected to exact-current validation.
+    fn verify_supported_backup(path: &Path) -> DatabaseResult<i64> {
         let connection =
             Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        Self::verify_connection(&connection)
+        let integrity: String = connection.query_row("PRAGMA quick_check", [], |row| row.get(0))?;
+        let version: i64 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if integrity != "ok" || !(1..=SCHEMA_VERSION).contains(&version) {
+            return Err("The backup has invalid data or an unsupported schema version.".into());
+        }
+        if connection
+            .prepare("PRAGMA foreign_key_check")?
+            .query([])?
+            .next()?
+            .is_some()
+        {
+            return Err("The backup failed foreign key validation.".into());
+        }
+        let (count, currency): (i64, String) = connection.query_row(
+            "SELECT COUNT(*), COALESCE(MAX(currency), '') FROM budget_settings WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if count != 1 || currency != "HUF" {
+            return Err("The backup is not an Allocash HUF budget.".into());
+        }
+        Ok(version)
     }
 
     fn verify_connection(connection: &Connection) -> DatabaseResult<()> {
@@ -287,6 +361,51 @@ impl Database {
             .is_some()
         {
             return Err("The backup failed foreign key validation.".into());
+        }
+        // `user_version` alone cannot prove that a database still has the
+        // tables its migration chain is expected to produce.
+        for table in [
+            "accounts",
+            "budget_settings",
+            "category_groups",
+            "categories",
+            "category_month_assignments",
+            "category_month_moves",
+            "category_target_revisions",
+            "category_target_snoozes",
+            "credit_payment_categories",
+            "flags",
+            "import_batches",
+            "import_rows",
+            "payees",
+            "schedule_occurrences",
+            "schedules",
+            "transactions",
+            "transfers",
+        ] {
+            let exists: bool = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name=?1)",
+                [table],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err("The backup is missing required budget data.".into());
+            }
+        }
+        for (table, column) in [
+            ("category_target_revisions", "interval_months"),
+            ("category_target_revisions", "first_due_month"),
+            ("schedules", "interval_months"),
+            ("schedules", "counterpart_account_id"),
+        ] {
+            let exists: bool = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info(?1) WHERE name=?2)",
+                [table, column],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err("The backup is missing required budget data.".into());
+            }
         }
         let (count, currency): (i64, String) = connection.query_row(
             "SELECT COUNT(*), COALESCE(MAX(currency), '') FROM budget_settings WHERE id = 1",
@@ -356,7 +475,7 @@ mod tests {
         drop(database);
         let reopened = Database::open(&path).unwrap();
         assert_eq!(reopened.info().unwrap().name, "Test budget");
-        assert_eq!(reopened.info().unwrap().schema_version, 8);
+        assert_eq!(reopened.info().unwrap().schema_version, SCHEMA_VERSION);
     }
 
     #[test]
@@ -549,8 +668,10 @@ mod tests {
         database
             .create_monthly_schedule(&MonthlyScheduleDraft {
                 account_id: "cash".into(),
+                counterpart_account_id: None,
                 start_date: date("2026-09-10"),
                 end_date: None,
+                interval_months: 1,
                 payee_name: Some("Rent".into()),
                 category_id: None,
                 memo: "September".into(),

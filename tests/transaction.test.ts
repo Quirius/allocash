@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
-import { createPayeeEntry } from "../src/lib/transaction";
+import { createPayeeEntry, createScheduledPayeeEntry } from "../src/lib/transaction";
 import type { AccountOverview, ManualTransactionInput } from "../src/lib/desktop";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn() }));
@@ -46,4 +46,18 @@ it("keeps ordinary payees and their categories unchanged", async () => {
   const ordinary = { ...draft, payeeName: "Shop" };
   await createPayeeEntry(ordinary, accounts);
   expect(invoke).toHaveBeenCalledExactlyOnceWith("create_manual_transaction", { input: ordinary });
+});
+
+it.each([3, 12] as const)("schedules a transfer payee every %i months through the linked-transfer schedule input", async (intervalMonths) => {
+  await createScheduledPayeeEntry({ accountId: "bank", startDate: "2026-10-05", endDate: null, payeeName: "Transfer: Cash", categoryId: "loan", memo: "Recurring", flagId: null, amount: "-1000", intervalMonths }, accounts);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("create_monthly_schedule", { input: {
+    accountId: "bank", startDate: "2026-10-05", endDate: null, payeeName: null,
+    categoryId: "loan", memo: "Recurring", flagId: null, amount: "-1000",
+    intervalMonths, counterpartAccountId: "cash",
+  } });
+});
+
+it("rejects an unresolved transfer payee without creating an ordinary schedule", async () => {
+  await expect(createScheduledPayeeEntry({ accountId: "bank", startDate: "2026-10-05", endDate: null, payeeName: "Transfer: Missing", categoryId: null, memo: "", flagId: null, amount: "1000", intervalMonths: 3 }, accounts)).rejects.toThrow();
+  expect(invoke).not.toHaveBeenCalled();
 });
