@@ -5,15 +5,17 @@ User instructions take precedence; the root AGENTS.md provider note is advisory 
 
 ## Delegation
 
-- When GPT-6 Astra coordinates, use GPT-6 Sol and Luna subagents extensively when
-  their skills fit and delegation improves overall usage efficiency. Delegate
-  parallel, independent work where useful; keep trivial tasks local when setup
-  and review would cost more than the work. Do not claim unmeasured savings.
-- Prefer **GPT-6 Luna low** (`gpt-6-luna`) for bounded searches, docs and
-  mechanical changes; **GPT-6 Sol medium** (`gpt-6-sol`) for implementation,
-  debugging and review. Reserve **GPT-6 Sol high or GPT-6 Astra**
-  (`gpt-6-astra`) for hard or ambiguous architecture, accounting, schema or Plan
-  logic, and for a concrete lower-model failure. Use the lowest sufficient effort.
+- Prefer **GPT-6.1 Sol** (`gpt-6.1-sol`) or **GPT-6 Astra** (`gpt-6-astra`)
+  as the main coordinator. Both should use **GPT-6 Luna** (`gpt-6-luna`)
+  subagents for coding, light work, and independent critical review wherever needed
+  to improve token efficiency. Keep Luna scopes bounded, with clear ownership,
+  minimal context, and concrete acceptance checks. The main coordinator should
+  focus on broader decisions and especially heavy tasks, retaining responsibility
+  for integration and final validation. Escalate difficult or unresolved work to
+  the coordinator. Keep trivial work local only when delegation overhead would
+  outweigh the expected savings; never claim unmeasured token savings.
+- Use the lowest sufficient reasoning effort. Parallelize independent work when
+  useful, accounting for setup, context transfer, coordination and review costs.
 - Give each worker a bounded deliverable, fresh minimal context, explicit owned
   files, relevant rules/skills and an acceptance check. Parallel workers must
   have nonoverlapping edit scopes. Avoid whole-chat copies and recursive

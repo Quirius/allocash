@@ -74,12 +74,12 @@ pushes; pushed files alone do not mean Project HQ synchronized.
 
 ## Execution and completion
 
-- Suggested root: **GPT-6 Astra, low reasoning** (owner's "light"); treat as an
-  advisory hint, not a requirement. When Astra coordinates, use GPT-6 Sol and
-  Luna subagents extensively where their skills fit and delegation improves
-  overall usage efficiency; handle trivial work directly. For delegation or
-  consequential financial review, load
-  [agent-operations.md](agent-operations.md#delegation).
+- Prefer **GPT-6.1 Sol** or **GPT-6 Astra** as the main coordinator. Use
+  **GPT-6 Luna** subagents for coding, light work, and independent critical review
+  wherever needed to improve token efficiency. The coordinator focuses on broader
+  decisions and especially heavy tasks, and owns integration and final validation.
+  Follow [agent-operations.md](agent-operations.md#delegation) for bounded delegation.
+  Other available suitable models may proceed without blocking work.
 - If subagents are available, prefer **GPT-6 subagents**. Do not substitute
   GPT-5.6 merely as a fallback. If a requested override is unavailable, proceed
   with the available model and report the limitation when relevant.
