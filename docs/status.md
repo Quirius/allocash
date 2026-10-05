@@ -87,6 +87,17 @@ assets. The corrected Plan workflow still needs owner retesting; reconciliation,
 recovery and the full rehearsal remain open. The manual readiness estimate is
 unchanged.
 
+Later on 2026-10-05, the owner confirmed the corrected Plan money moves,
+including negative balances. Clearing and reconciliation passed when exercised
+with posted transactions through the selected as-of date; future-dated entries
+remain excluded by the existing contract. The owner also confirmed that a
+verified backup removed a subsequent test transaction on restore, returned the
+account/category balances to their prior values, and persisted after closing
+and reopening the standalone rehearsal app. These are owner-reported desktop
+checks. Startup recovery of an unreadable database, targets/schedules needed for
+daily use, installer verification and the full clean migration remain open.
+The manual readiness estimate has not been reassessed.
+
 The existing project record reports that the 2026-09-14 owner export matched all
 34 YNAB reference working balances exactly. Four zero-value transfer rows remain
 preserved in staging without affecting balances. This is historical evidence,
