@@ -246,7 +246,7 @@ impl Database {
         month: &PlanMonth,
         amount: Huf,
     ) -> LedgerResult<()> {
-        self.move_monthly_money_with_cutoff(from_category_id, to_category_id, month, amount, None)
+        self.move_monthly_money_with_cutoff(from_category_id, to_category_id, month, amount)
     }
 
     pub fn move_monthly_money_as_of(
@@ -255,15 +255,9 @@ impl Database {
         to_category_id: &str,
         month: &PlanMonth,
         amount: Huf,
-        as_of: &CalendarDate,
+        _as_of: &CalendarDate,
     ) -> LedgerResult<()> {
-        self.move_monthly_money_with_cutoff(
-            from_category_id,
-            to_category_id,
-            month,
-            amount,
-            Some(as_of),
-        )
+        self.move_monthly_money_with_cutoff(from_category_id, to_category_id, month, amount)
     }
 
     fn move_monthly_money_with_cutoff(
@@ -272,7 +266,6 @@ impl Database {
         to_category_id: &str,
         month: &PlanMonth,
         amount: Huf,
-        as_of: Option<&CalendarDate>,
     ) -> LedgerResult<()> {
         if from_category_id == to_category_id || amount.0 <= 0 {
             return Err(LedgerError::InvalidValue(
@@ -289,11 +282,6 @@ impl Database {
         )?;
         if count != 2 {
             return Err(LedgerError::NotFound);
-        }
-        if category_available_for(&transaction, from_category_id, month, as_of)?.0 < amount.0 {
-            return Err(LedgerError::InvalidValue(
-                "Cannot move more than this category has available.",
-            ));
         }
         let id: String = transaction.query_row(
             "SELECT 'category-move-' || lower(hex(randomblob(16)))",
@@ -789,19 +777,6 @@ fn target_snoozes_for(
         .collect::<Result<_, _>>()?)
 }
 
-fn category_available_for(
-    connection: &rusqlite::Connection,
-    category_id: &str,
-    month: &PlanMonth,
-    as_of: Option<&CalendarDate>,
-) -> LedgerResult<Huf> {
-    narrow(
-        *derive_plan(connection, month, as_of)?
-            .available
-            .get(category_id)
-            .unwrap_or(&0),
-    )
-}
 fn narrow(value: i128) -> LedgerResult<Huf> {
     i64::try_from(value)
         .map(Huf)
@@ -873,7 +848,7 @@ mod tests {
         assert_eq!(on_date.ready_to_assign, Huf(100));
         assert_eq!(on_date.categories[0].activity, Huf(-40));
         assert_eq!(on_date.categories[0].available, Huf(60));
-        assert!(database
+        database
             .move_monthly_money_as_of(
                 "food",
                 "other",
@@ -881,7 +856,7 @@ mod tests {
                 Huf(80),
                 &CalendarDate::parse("2026-09-10").unwrap(),
             )
-            .is_err());
+            .unwrap();
     }
 
     #[test]
@@ -945,7 +920,98 @@ mod tests {
     }
 
     #[test]
-    fn moving_money_keeps_ready_to_assign_constant_and_rolls_category_available() {
+    fn moving_money_can_make_source_negative_and_reverse_without_changing_ledger_or_rta() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "cash".into(),
+                name: "Cash".into(),
+                kind: AccountKind::Cash,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("a", "g", "Food", 0).unwrap();
+        database.create_category("b", "g", "Fun", 1).unwrap();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("a", &month, Huf(100))
+            .unwrap();
+        let income = Entry::manual("income", "cash", CalendarDate::parse("2026-09-01").unwrap());
+        database.create_transaction(&income, Huf(500)).unwrap();
+        let mut spend = Entry::manual("spend", "cash", CalendarDate::parse("2026-09-02").unwrap());
+        spend.category_id = Some("a".into());
+        database.create_transaction(&spend, Huf(-150)).unwrap();
+        let initial_balance = database
+            .account_balance("cash", &CalendarDate::parse("2026-09-30").unwrap())
+            .unwrap();
+        let initial = database.plan_month(&month).unwrap();
+        assert_eq!(initial.ready_to_assign, Huf(400));
+        assert_eq!(category_available(&initial, "a"), Huf(-50));
+        assert_eq!(
+            initial
+                .categories
+                .iter()
+                .find(|c| c.category_id == "a")
+                .unwrap()
+                .assigned,
+            Huf(100)
+        );
+
+        database
+            .move_monthly_money("a", "b", &month, Huf(175))
+            .unwrap();
+        let moved = database.plan_month(&month).unwrap();
+        assert_eq!(moved.ready_to_assign, initial.ready_to_assign);
+        assert_eq!(category_available(&moved, "a"), Huf(-225));
+        assert_eq!(category_available(&moved, "b"), Huf(175));
+        assert_eq!(
+            moved
+                .categories
+                .iter()
+                .find(|c| c.category_id == "a")
+                .unwrap()
+                .assigned,
+            Huf(-75)
+        );
+        assert_eq!(
+            database
+                .account_balance("cash", &CalendarDate::parse("2026-09-30").unwrap())
+                .unwrap(),
+            initial_balance
+        );
+
+        database
+            .move_monthly_money("b", "a", &month, Huf(175))
+            .unwrap();
+        let restored = database.plan_month(&month).unwrap();
+        assert_eq!(restored.ready_to_assign, initial.ready_to_assign);
+        assert_eq!(category_available(&restored, "a"), Huf(-50));
+        assert_eq!(category_available(&restored, "b"), Huf(0));
+        assert_eq!(
+            restored
+                .categories
+                .iter()
+                .find(|c| c.category_id == "a")
+                .unwrap()
+                .assigned,
+            Huf(100)
+        );
+        assert_eq!(
+            database
+                .account_balance("cash", &CalendarDate::parse("2026-09-30").unwrap())
+                .unwrap(),
+            initial_balance
+        );
+        assert!(database
+            .move_monthly_money("a", "a", &month, Huf(1))
+            .is_err());
+    }
+
+    #[test]
+    fn move_overflow_rolls_back_both_assignments_and_move_record() {
         let directory = tempfile::tempdir().unwrap();
         let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
         database.create_category_group("g", "Living", 0).unwrap();
@@ -953,25 +1019,45 @@ mod tests {
         database.create_category("b", "g", "Fun", 1).unwrap();
         let month = PlanMonth::parse("2026-09").unwrap();
         database
-            .set_monthly_assignment("a", &month, Huf(1000))
+            .set_monthly_assignment("a", &month, Huf(1))
             .unwrap();
         database
-            .move_monthly_money("a", "b", &month, Huf(250))
+            .set_monthly_assignment("b", &month, Huf(i64::MAX))
             .unwrap();
-        let plan = database.plan_month(&month).unwrap();
-        assert_eq!(plan.ready_to_assign, Huf(-1000));
-        assert_eq!(plan.categories[0].available, Huf(750));
-        assert_eq!(plan.categories[1].available, Huf(250));
-        assert!(database
-            .move_monthly_money("a", "b", &month, Huf(751))
-            .is_err());
+
+        assert!(matches!(
+            database.move_monthly_money("a", "b", &month, Huf(1)),
+            Err(LedgerError::AmountOverflow)
+        ));
         assert_eq!(
-            database.plan_month(&month).unwrap().categories[0].available,
-            Huf(750)
+            database
+                .plan_month(&month)
+                .unwrap()
+                .categories
+                .iter()
+                .find(|c| c.category_id == "a")
+                .unwrap()
+                .assigned,
+            Huf(1)
         );
-        assert!(database
-            .move_monthly_money("a", "a", &month, Huf(1))
-            .is_err());
+        assert_eq!(
+            database
+                .plan_month(&month)
+                .unwrap()
+                .categories
+                .iter()
+                .find(|c| c.category_id == "b")
+                .unwrap()
+                .assigned,
+            Huf(i64::MAX)
+        );
+        let move_count: i64 = database
+            .connection
+            .query_row("SELECT COUNT(*) FROM category_month_moves", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(move_count, 0);
     }
 
     #[test]

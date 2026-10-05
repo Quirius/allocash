@@ -75,6 +75,18 @@ payee-routing tests, 18 IPC tests, the existing paired-transfer Rust regression
 and frontend build passed. The corrected transfer workflow still needs owner
 retesting; Plan moves, reconciliation, recovery and the full rehearsal remain open.
 
+The owner subsequently confirmed that transfer-payee entry works. The Plan
+rehearsal found that Assigned inputs retained stale values after money moves,
+and requested moves that can leave negative category balances. Assigned inputs
+now refresh from persisted assignments, moves may exceed source Available, and
+negative Assigned/Available values have green highlights. All 16 Plan tests,
+Rust formatting and frontend build passed, including negative moves, reversal,
+unchanged Ready to Assign/account balances and overflow rollback. The
+standalone rehearsal build also passed and launched with embedded frontend
+assets. The corrected Plan workflow still needs owner retesting; reconciliation,
+recovery and the full rehearsal remain open. The manual readiness estimate is
+unchanged.
+
 The existing project record reports that the 2026-09-14 owner export matched all
 34 YNAB reference working balances exactly. Four zero-value transfer rows remain
 preserved in staging without affecting balances. This is historical evidence,

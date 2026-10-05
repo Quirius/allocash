@@ -82,6 +82,13 @@ Each closed month carries positive category money forward and resets a negative
 category balance. Cash overspending reduces Ready to Assign in the next month;
 credit overspending is card debt and does not reduce Ready to Assign.
 
+A category money move atomically subtracts from the source month's Assigned
+and adds to the destination month's Assigned. Moves require two distinct valid
+categories and a positive integer HUF amount, but may exceed source Available.
+Negative assignments and availability are allowed; checked arithmetic still
+rejects overflow without applying either side. Ready to Assign is unchanged in
+the moved month, while existing overspending/rollover rules still apply later.
+
 YNAB's `Inflow: Ready to Assign` category remains on imported ledger entries for
 the register. Plan routes its cash activity into the separate Ready to Assign
 balance rather than showing it as a spendable category. A transfer between

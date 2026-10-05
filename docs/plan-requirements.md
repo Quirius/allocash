@@ -123,6 +123,11 @@ Requirements:
 
 Do not reconstruct historical Plan solely from current balances if imported YNAB Plan data contains historical assignment state. Preserve source history.
 
+Money moves change the selected month's Assigned amounts in both categories;
+Available is recalculated and Ready to Assign is unchanged. A positive move may
+exceed the source category's Available amount, leaving Assigned or Available
+negative. Negative Assigned and Available values are highlighted in green.
+
 ## Category structure
 
 Preserve exact final order from imported YNAB data.

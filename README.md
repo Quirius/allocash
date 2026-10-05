@@ -122,6 +122,11 @@ Allocash budget. Copy the candidate into that app's `backups/` folder, select
 it appears in the selector. Use the rehearsal budget for workflow
 checks; this candidate is not a final migration approval.
 
+For a rehearsal executable that works without a running development server, use
+`npm run tauri build -- --no-bundle --config src-tauri/tauri.rehearsal.conf.json`
+and open `src-tauri/target/release/allocash.exe`. The debug executable requires
+the development server started by `npm run rehearse:desktop`.
+
 Rust checks require a Rust toolchain; the desktop build also requires the Windows
 build prerequisites. Installer packaging is deferred; this step builds a desktop
 executable only. Frontend integration follows
