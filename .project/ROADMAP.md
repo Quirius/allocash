@@ -166,13 +166,16 @@ plans:
     priority: "high"
     due_date: "2026-10-08"
     completed_at: null
-    details: "The owner reported ordinary entry/edit/delete success in the isolated owner-data rehearsal. Transfer payee entry exposed an ordinary-transaction routing defect; the fix is pushed and needs owner retesting. Continue Plan moves, reconciliation and targets/schedules actually relied on; fix migration-blocking workflow gaps only."
+    details: "The owner reported ordinary entry/edit/delete and corrected transfer-payee entry success. Plan rehearsal exposed stale Assigned inputs and requested negative category moves; both corrections are pushed and need owner retesting in the standalone rehearsal app. Continue reconciliation and targets/schedules actually relied on; fix migration-blocking workflow gaps only."
     acceptance_criteria:
       - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
       - "Non-essential feature expansion is deferred until after migration."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "74aaf667d7d3fbee0404cb51b1ea44c2e1f0f99c"
+        note: "Records transfer success and checked Plan corrections; full workflow rehearsal remains open."
       - path: "docs/status.md"
         ref: "c29d19244355f68c5fe10604909037bf37f0fb18"
         note: "Records owner-reported ordinary workflow success and checked transfer-payee correction; full workflow rehearsal remains open."

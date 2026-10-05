@@ -10,15 +10,16 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Retest transfer payee entry in the owner-data rehearsal, then exercise Plan moves, reconciliation and backup/recovery before installer packaging and final migration."
-updated_at: "2026-10-05T18:04:44Z"
+next_action: "Retest Assigned refresh and negative category money moves in the updated standalone rehearsal app, then exercise reconciliation and backup/recovery before installer packaging and final migration."
+updated_at: "2026-10-05T18:28:59Z"
 source:
   branch: "main"
-  commit: "c29d19244355f68c5fe10604909037bf37f0fb18"
-  verified_at: "2026-10-05T18:04:44Z"
+  commit: "74aaf667d7d3fbee0404cb51b1ea44c2e1f0f99c"
+  verified_at: "2026-10-05T18:28:59Z"
 summary:
   completed:
-    - "The owner-data candidate passed exact account, Plan and supplied report comparisons. The owner reported restore, backup creation and ordinary entry/edit/delete success. A transfer-payee rehearsal defect is fixed with 10 routing tests, 18 IPC tests, the paired-transfer Rust regression and frontend build passing; owner retest remains open."
+    - "Plan money moves now refresh Assigned inputs and may leave Assigned/Available negative, with green highlights. All 16 Plan tests, formatting, frontend and standalone rehearsal builds passed; owner Plan retest remains open."
+    - "The owner-data candidate passed exact account, Plan and supplied report comparisons. The owner reported restore, backup creation, ordinary entry/edit/delete and corrected transfer-payee entry success."
     - "The YNAB verifier can produce a non-overwriting native rehearsal candidate after explicit mappings and matching references. An anonymized end-to-end import produced a candidate; a mismatched reference produced none. The isolated Windows rehearsal build launched under its own data folder without creating the normal app folder."
     - "Startup recovery can install a verified local backup while preserving an unreadable database and WAL sidecars; healthy databases are refused. Disposable corruption and schema tests passed within 99 desktop Rust tests, alongside 58 frontend tests and the frontend build."
     - "An open budget can restore a validated local backup after saving a verified copy of its current state; a WAL-backed round trip and invalid-source tests passed within 96 Rust tests, alongside 58 frontend tests and the frontend build."
@@ -42,6 +43,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "74aaf667d7d3fbee0404cb51b1ea44c2e1f0f99c"
+    note: "Records owner-confirmed transfer correction, Plan Assigned refresh and negative moves, 16 passing Plan tests, standalone build/launch and remaining owner retest."
   - path: "docs/status.md"
     ref: "c29d19244355f68c5fe10604909037bf37f0fb18"
     note: "Records verified owner-data candidate preparation, owner-reported workflow checks, transfer-payee fix, automated checks and remaining rehearsal limits."
