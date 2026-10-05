@@ -128,8 +128,26 @@ and open `src-tauri/target/release/allocash.exe`. The debug executable requires
 the development server started by `npm run rehearse:desktop`.
 
 Rust checks require a Rust toolchain; the desktop build also requires the Windows
-build prerequisites. Installer packaging is deferred; this step builds a desktop
-executable only. Frontend integration follows
+build prerequisites. To package an English, per-user NSIS installer, run this on
+Windows from the repository root:
+
+```powershell
+npm run tauri build -- --config src-tauri/tauri.installer.conf.json
+```
+
+The setup executable is written under
+`src-tauri/target/release/bundle/nsis/` (with the app version and architecture in
+its filename). This installer uses the existing Allocash identity and installs
+without administrator access. It skips WebView2 setup so installation works
+offline on systems that already have WebView2 Runtime. Windows 11 normally
+includes the runtime; a system without it must install WebView2 separately before
+Allocash can open. The standard Tauri installer mode downloads a bootstrapper,
+while embedding the offline runtime adds about 127 MB; neither behavior is used
+for this lean installer. See the [Tauri Windows installer guide](https://v2.tauri.app/distribute/windows-installer/)
+for WebView2 modes and NSIS options.
+
+The command builds the release app and NSIS package; it does not verify an actual
+installation or first launch. Frontend integration follows
 [Tauri's Vite guide](https://v2.tauri.app/start/frontend/vite/).
 
 The database/ledger tests can run without Tauri or a webview using `npm run test:core`.
@@ -173,6 +191,26 @@ unreadable database and its WAL sidecars in a separate folder before installing
 the backup. Copy an external backup into the displayed backups folder and select
 Find local backups when needed. Keep an external copy of an important backup;
 automatic retention is still future work.
+
+For a synthetic desktop startup-recovery check, use the separate recovery-check
+identity. Its profile must not already exist; preparation refuses existing paths:
+
+```powershell
+cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --example recovery_check -- prepare "$env:LOCALAPPDATA\com.quirius.allocash.recoverycheck"
+npm run tauri build -- --no-bundle --config src-tauri/tauri.recovery-check.conf.json
+```
+
+Open the resulting release executable, select the fixture's local backup and
+recover. Close the recovery-check app before running:
+
+```powershell
+cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --example recovery_check -- verify "$env:LOCALAPPDATA\com.quirius.allocash.recoverycheck"
+```
+
+Verification checks the restored synthetic balance and reopen, unchanged backup
+bytes, and preservation of the unreadable database and WAL. This identity is
+separate from both the normal and owner-rehearsal budgets. The fixture remains
+on disk for inspection; do not point preparation at a real budget.
 
 ## Git convention
 

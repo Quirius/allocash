@@ -1,5 +1,25 @@
 # Implementation and validation status
 
+On 2026-10-05, the owner confirmed the upcoming-entry editing correction and
+requested the next step. A separate synthetic desktop profile then passed the
+unreadable-database startup recovery workflow: selecting its verified backup
+restored the expected account balance, and closing/reopening the desktop retained
+it. The recovery-check example verified the selected backup was byte-for-byte
+unchanged and both unreadable database and WAL bytes were preserved exactly.
+The owner rehearsal budget was not used or changed. The reusable fixture refuses
+an existing preparation directory; its separate Tauri identity and commands are
+documented in the README. Example compilation, Rust formatting, frontend build
+and native recovery-check build passed.
+
+An English, per-user x64 NSIS installer was also built successfully with the
+normal `com.quirius.allocash` identity. The setup artifact is approximately
+2.9 MB, unsigned, and skips WebView2 installation, requiring the existing runtime.
+Installer build-time downloads were hash-validated by Tauri. Installation and
+first launch remain unverified; this is packaging evidence, not a completed
+release or final clean migration. The manual migration-readiness estimate remains
+76/100, and register responsiveness and upcoming deletion still need owner
+feedback.
+
 Documentation reviewed against the checkout on 2026-09-24, including the recorded
 2026-09-23 build verification below. This review is not a fresh application test
 or owner-data validation run.
