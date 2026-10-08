@@ -192,6 +192,9 @@ plans:
     blocked_by: []
     evidence:
       - path: "docs/status.md"
+        ref: "1b92b314f98159736782e852d7edaf367bf654fd"
+        note: "Records otherwise-positive owner feedback and corrected future repeating-draft date, installed with passing tests/builds; owner retest remains open."
+      - path: "docs/status.md"
         ref: "6b2bdeed42f9692cec0ed03f510d94d98a30432d"
         note: "Records the additional owner-requested date/repeat and repeating-draft workflow, installed and checked, with owner interaction confirmation open."
       - path: "docs/status.md"

@@ -10,15 +10,16 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Confirm the integrated date/repeat picker and Make repeating draft cancel/save behavior, then continue the verified clean-candidate desktop rehearsal and recreate required rules."
-updated_at: "2026-10-08T18:17:24Z"
+next_action: "Confirm Make repeating defaults one month from today and verify draft cancel/save behavior, then continue the verified clean-candidate desktop rehearsal and recreate required rules."
+updated_at: "2026-10-08T18:24:53Z"
 source:
   branch: "main"
-  commit: "6b2bdeed42f9692cec0ed03f510d94d98a30432d"
-  verified_at: "2026-10-08T18:17:24Z"
+  commit: "1b92b314f98159736782e852d7edaf367bf654fd"
+  verified_at: "2026-10-08T18:24:53Z"
 summary:
   completed:
-    - "Repeat now lives inside the date/calendar dropdown with Never default. Make repeating opens an unsaved monthly draft one calendar month after the stored transaction, preserving details and transfer destination identity. Nine date/draft, 22 routing, 24 IPC and the register identity test passed with formatting, frontend/native installer builds and independent review. The installed app was upgraded and reopened; installation preserved database bytes. Owner interaction confirmation remains open."
+    - "The owner said the repeat workflow looked good and requested a future default date. Make repeating now defaults one month after today, with Monthly selected and original history untouched. All ten date/draft tests and frontend/native installer builds passed. The installed app was upgraded and reopened; database bytes were unchanged by installation."
+    - "Repeat now lives inside the date/calendar dropdown with Never default. Make repeating opens an unsaved monthly draft one calendar month after today, preserving details and transfer destination identity. Nine date/draft, 22 routing, 24 IPC and the register identity test passed with formatting, frontend/native installer builds and independent review. The installed app was upgraded and reopened; installation preserved database bytes. Owner interaction confirmation remains open."
     - "A clean schema-10 candidate was regenerated from the owner-confirmed current export. All 34 account balances, 1,326 Plan rows, 1,734 historical account-month balances, 51 Net Worth totals and supplied Income v Expense comparisons match. Integrity and foreign keys passed; an identical candidate copy is in the installed-app backup list. Four zero-value transfer rows and 43 duplicate signals remain preserved."
     - "The owner accepted the unified upcoming display, closing the migration-critical daily-workflow checks, and confirmed YNAB is unchanged since the October 4 export. The original export was recovered from preserved archive bytes and its hash matches the approved mappings; installed-budget read-only integrity and foreign-key checks passed."
     - "The owner restored the verified rehearsal candidate into the installed app and confirmed register responsiveness and upcoming deletion. Future imported rows exposed a display gap; the register now groups and mutes all pending schedules and future ordinary entries above history, without a separate Scheduled tab. Focused tests, frontend/native installer builds and independent review passed; the installed app was upgraded and reopened with database bytes unchanged by installation."
@@ -55,6 +56,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "1b92b314f98159736782e852d7edaf367bf654fd"
+    note: "Records owner feedback, one-month-from-today default, ten passing tests, builds and installed upgrade; corrected-default confirmation remains open."
   - path: "docs/status.md"
     ref: "6b2bdeed42f9692cec0ed03f510d94d98a30432d"
     note: "Records date/repeat integration, draft-only Make repeating, transfer identity exposure, tests/review/builds and verified installed upgrade; owner interaction checks remain open."
