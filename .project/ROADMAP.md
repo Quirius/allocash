@@ -184,13 +184,16 @@ plans:
     priority: "high"
     due_date: "2026-10-08"
     completed_at: null
-    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation, a target/scheduled transfer, register Date/Repeat entry and the upcoming editing correction. Register rendering is paged and upcoming deletion is implemented with passing checks. The owner confirmed responsiveness and upcoming deletion in the installed app. A requested unified upcoming display now groups pending schedules and future ordinary rows above history and removes the Scheduled tab; tests, review, package build and installed upgrade passed. The owner accepted the revised display on October 8; those daily-workflow checks are verified. The owner subsequently requested integrated date/repeat and Make repeating drafts; this additional workflow is implemented, tested and installed, with owner calendar/cancel/save confirmation remaining before this expanded gate closes."
+    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation, a target/scheduled transfer, register Date/Repeat entry and the upcoming editing correction. Register rendering is paged and upcoming deletion is implemented with passing checks. The owner confirmed responsiveness and upcoming deletion in the installed app. A requested unified upcoming display now groups pending schedules and future ordinary rows above history and removes the Scheduled tab; tests, review, package build and installed upgrade passed. The owner accepted the revised display on October 8; those daily-workflow checks are verified. The owner subsequently requested integrated date/repeat and Make repeating drafts; this additional workflow and the refined next-available-original-day default with preserved month-end anchors are implemented, tested and installed, with owner calendar/cancel/save confirmation remaining before this expanded gate closes."
     acceptance_criteria:
       - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
       - "Non-essential feature expansion is deferred until after migration."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "7f4df8e9a52b3e1377507813dea5caf15e94a604"
+        note: "Records the next available original day, month-end anchor preservation, automated checks and installed upgrade; owner calendar/cancel/save checks remain open."
       - path: "docs/status.md"
         ref: "c31efa8900146ed612f371a754a285bee57359a6"
         note: "Records the owner-clarified original-date basis for repeating drafts, tested and installed; owner retest remains open."
