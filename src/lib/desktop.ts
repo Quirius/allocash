@@ -55,6 +55,7 @@ export interface RegisterEntry {
   amount: string;
   transferId: string | null;
   transferAccountName: string | null;
+  transferAccountId?: string | null;
   scheduleId?: string | null;
   repeatIntervalMonths?: 0 | 1 | 3 | 12 | null;
 }

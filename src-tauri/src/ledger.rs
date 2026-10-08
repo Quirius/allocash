@@ -304,6 +304,7 @@ pub struct RegisterEntry {
     pub amount: Huf,
     pub transfer_id: Option<String>,
     pub transfer_account_name: Option<String>,
+    pub transfer_account_id: Option<String>,
     pub schedule_id: Option<String>,
     pub repeat_interval_months: Option<i64>,
 }
@@ -944,7 +945,7 @@ impl Database {
     pub fn register_entries(&self, account_id: &str) -> LedgerResult<Vec<RegisterEntry>> {
         ensure_account(&self.connection, account_id)?;
         let mut query = self.connection.prepare(
-            "SELECT le.id,le.transaction_date,p.name,CASE WHEN le.posting_state='scheduled' THEN COALESCE(le.category_id,peer.category_id) ELSE le.category_id END,cg.name,c.name,le.memo,le.flag_id,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,le.transfer_id,transfer_account.name,o.schedule_id,CASE WHEN s.end_date=s.start_date THEN 0 ELSE s.interval_months END
+            "SELECT le.id,le.transaction_date,p.name,CASE WHEN le.posting_state='scheduled' THEN COALESCE(le.category_id,peer.category_id) ELSE le.category_id END,cg.name,c.name,le.memo,le.flag_id,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,le.transfer_id,transfer_account.name,o.schedule_id,CASE WHEN s.end_date=s.start_date THEN 0 ELSE s.interval_months END,peer.account_id
              FROM ledger_entries le
              LEFT JOIN payees p ON p.id=le.payee_id
              LEFT JOIN transactions peer ON peer.transfer_id=le.transfer_id AND peer.id<>le.id
@@ -983,6 +984,7 @@ impl Database {
                     amount: Huf(row.get(13)?),
                     transfer_id: row.get(14)?,
                     transfer_account_name: row.get(15)?,
+                    transfer_account_id: row.get(18)?,
                     schedule_id: row.get(16)?,
                     repeat_interval_months: row.get(17)?,
                 })

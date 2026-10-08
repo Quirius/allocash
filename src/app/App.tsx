@@ -15,7 +15,7 @@ import {
 } from "../lib/desktop";
 import { formatDate, formatHuf, localCalendarDate } from "../lib/format";
 import { partitionRegisterEntries } from "../lib/register";
-import { RegisterEntryEditor, TransactionComposer } from "./TransactionEditor";
+import { draftFromPostedEntry, RegisterEntryEditor, TransactionComposer, type TransactionDraft } from "./TransactionEditor";
 import { ReconciliationEditor } from "./ReconciliationEditor";
 import { PlanView } from "./PlanView";
 import { ReportsView } from "./ReportsView";
@@ -361,7 +361,7 @@ function AccountRegister({
   onRetry: () => void;
   onChanged: () => Promise<void>;
 }) {
-  const [editor, setEditor] = useState<"new" | "reconcile" | RegisterEntry | null>(null);
+  const [editor, setEditor] = useState<"new" | "reconcile" | RegisterEntry | { kind: "duplicate"; key: number; draft: TransactionDraft } | null>(null);
   const [scheduleAction, setScheduleAction] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [registerPage, setRegisterPage] = useState(0);
@@ -392,6 +392,7 @@ function AccountRegister({
   useEffect(() => {
     setRegisterPage(0);
     setUpcomingPage(0);
+    setEditor(null);
   }, [account.id]);
 
   useEffect(() => {
@@ -454,16 +455,21 @@ function AccountRegister({
           onCancel={() => setEditor(null)}
         />
       )}
+      {typeof editor === "object" && editor !== null && "kind" in editor && editor.kind === "duplicate" && <TransactionComposer
+        key={`duplicate-${editor.key}`} account={account} accounts={accounts} options={options} initialDraft={editor.draft}
+        onSaved={onChanged} onCancel={() => setEditor(null)}
+      />}
       {editor === "reconcile" && (
         <ReconciliationEditor account={account} onSaved={onChanged} onCancel={() => setEditor(null)} />
       )}
-      {editor && editor !== "new" && editor !== "reconcile" && (
+      {editor && typeof editor === "object" && !("kind" in editor) && (
         <RegisterEntryEditor
           key={editor.id}
           entry={editor}
           account={account}
           accounts={accounts}
           options={options}
+          onMakeRepeating={() => { try { const draft = draftFromPostedEntry(editor, account.id, accounts); setEditor({ kind: "duplicate", key: Date.now(), draft }); } catch (cause) { setScheduleError(cause instanceof Error ? cause.message : "Could not prepare this repeating entry."); } }}
           onSaved={onChanged}
           onCancel={() => setEditor(null)}
         />

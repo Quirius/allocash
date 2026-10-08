@@ -8,8 +8,48 @@ import {
   type RegisterEntry,
   type TransactionFormOptions,
 } from "../lib/desktop";
-import { localCalendarDate, parseHufInput } from "../lib/format";
+import { formatDate, localCalendarDate, parseHufInput, parseSignedHufInput } from "../lib/format";
 import { createPayeeEntry, createScheduledPayeeEntry, isTransferPayee, scheduleForEntry, type EntryRepeat } from "../lib/transaction";
+import { DateRepeatPicker, nextCalendarMonth } from "./DateRepeatPicker";
+
+export interface TransactionDraft {
+  kind: "transaction" | "transfer";
+  date: string;
+  repeat: EntryRepeat;
+  payee: string;
+  categoryId: string;
+  counterpartId: string;
+  memo: string;
+  flagId: string;
+  outflow: string;
+  inflow: string;
+}
+
+export function draftFromPostedEntry(entry: RegisterEntry, sourceAccountId: string, accounts: AccountOverview[]): TransactionDraft {
+  let counterpartId = "";
+  if (entry.transferId) {
+    if (entry.transferAccountId) {
+      const counterpart = accounts.find((account) => account.id === entry.transferAccountId);
+      if (!counterpart || counterpart.id === sourceAccountId) throw new Error("The transfer destination account is unavailable.");
+      if (counterpart.closed) throw new Error("The transfer destination is closed and cannot receive a new schedule.");
+      counterpartId = counterpart.id;
+    } else {
+      const matches = accounts.filter((account) => account.id !== sourceAccountId && account.name === entry.transferAccountName);
+      if (matches.length !== 1) throw new Error("The transfer destination cannot be identified uniquely.");
+      if (matches[0]!.closed) throw new Error("The transfer destination is closed and cannot receive a new schedule.");
+      counterpartId = matches[0]!.id;
+    }
+  }
+  const amount = BigInt(entry.amount);
+  const magnitude = (amount < 0n ? -amount : amount).toString();
+  return {
+    kind: entry.transferId ? "transfer" : "transaction",
+    date: nextCalendarMonth(entry.date), repeat: "monthly",
+    payee: entry.payeeName || "", categoryId: entry.categoryId || "", counterpartId,
+    memo: entry.memo, flagId: entry.flagId || "",
+    outflow: amount < 0n ? magnitude : "", inflow: amount >= 0n ? magnitude : "",
+  };
+}
 
 function errorText(error: unknown): string {
   if (typeof error === "string" && error !== RECONCILED_CONFIRMATION_REQUIRED) return error;
@@ -17,7 +57,7 @@ function errorText(error: unknown): string {
   return "The transaction could not be saved.";
 }
 
-function signedAmount(outflow: string, inflow: string) {
+export function signedAmount(outflow: string, inflow: string) {
   if (outflow.trim() && inflow.trim()) {
     throw new Error("Enter either an outflow or an inflow, not both.");
   }
@@ -25,8 +65,9 @@ function signedAmount(outflow: string, inflow: string) {
     throw new Error("Enter an outflow or inflow amount.");
   }
   if (outflow.trim()) {
-    const amount = parseHufInput(outflow);
-    return { amount: (-amount).toString(), positive: amount.toString(), direction: "outflow" as const };
+    const amount = parseSignedHufInput(`-${outflow.trim()}`);
+    if (amount >= 0n) throw new Error("The amount must be greater than zero.");
+    return { amount: amount.toString(), positive: (-amount).toString(), direction: "outflow" as const };
   }
   const amount = parseHufInput(inflow);
   return { amount: amount.toString(), positive: amount.toString(), direction: "inflow" as const };
@@ -36,25 +77,27 @@ export function TransactionComposer({
   account,
   accounts,
   options,
+  initialDraft,
   onSaved,
   onCancel,
 }: {
   account: AccountOverview;
   accounts: AccountOverview[];
   options: TransactionFormOptions;
+  initialDraft?: TransactionDraft;
   onSaved: () => Promise<void>;
   onCancel: () => void;
 }) {
-  const [kind, setKind] = useState<"transaction" | "transfer">("transaction");
-  const [date, setDate] = useState(localCalendarDate());
-  const [repeat, setRepeat] = useState<EntryRepeat>("never");
-  const [payee, setPayee] = useState("");
-  const [categoryId, setCategoryId] = useState("");
-  const [counterpartId, setCounterpartId] = useState("");
-  const [memo, setMemo] = useState("");
-  const [flagId, setFlagId] = useState("");
-  const [outflow, setOutflow] = useState("");
-  const [inflow, setInflow] = useState("");
+  const [kind, setKind] = useState<"transaction" | "transfer">(initialDraft?.kind ?? "transaction");
+  const [date, setDate] = useState(initialDraft?.date ?? localCalendarDate());
+  const [repeat, setRepeat] = useState<EntryRepeat>(initialDraft?.repeat ?? "never");
+  const [payee, setPayee] = useState(initialDraft?.payee ?? "");
+  const [categoryId, setCategoryId] = useState(initialDraft?.categoryId ?? "");
+  const [counterpartId, setCounterpartId] = useState(initialDraft?.counterpartId ?? "");
+  const [memo, setMemo] = useState(initialDraft?.memo ?? "");
+  const [flagId, setFlagId] = useState(initialDraft?.flagId ?? "");
+  const [outflow, setOutflow] = useState(initialDraft?.outflow ?? "");
+  const [inflow, setInflow] = useState(initialDraft?.inflow ?? "");
   const [status, setStatus] = useState<"editing" | "saving">("editing");
   const [error, setError] = useState<string | null>(null);
 
@@ -69,11 +112,13 @@ export function TransactionComposer({
     event.preventDefault();
     setError(null);
     try {
+      formatDate(date);
       const parsed = signedAmount(outflow, inflow);
       setStatus("saving");
       const schedule = scheduleForEntry(date, repeat, localCalendarDate());
       if (kind === "transfer") {
         if (!counterpartId) throw new Error("Choose the other transfer account.");
+        if (BigInt(parsed.positive) > 9223372036854775807n) throw new Error("Transfer amounts must fit the supported positive HUF range.");
         if (schedule) {
           await createScheduledPayeeEntry({ accountId: account.id, counterpartAccountId: counterpartId, startDate: date, endDate: schedule.endDate,
             payeeName: null, categoryId: categoryId || null, memo, flagId: flagId || null, amount: parsed.amount, intervalMonths: schedule.intervalMonths }, accounts);
@@ -124,10 +169,7 @@ export function TransactionComposer({
       </div>
 
       <div className="editor-fields">
-        <label>Date<input required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
-        <label>Repeat<select value={repeat} onChange={(event) => setRepeat(event.target.value as EntryRepeat)}>
-          <option value="never">Never</option><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="yearly">Yearly</option>
-        </select></label>
+        <DateRepeatPicker date={date} onDateChange={setDate} repeat={repeat} onRepeatChange={setRepeat} disabled={status === "saving"} />
         {kind === "transaction" ? <>
           <label>Payee
             <input
@@ -146,6 +188,7 @@ export function TransactionComposer({
           <label>Category
             <select disabled={transferPayee && !scheduled} value={transferPayee && !scheduled ? "" : categoryId} onChange={(event) => setCategoryId(event.target.value)}>
               <option value="">Uncategorized</option>
+              {categoryId && !options.categories.some((option) => option.id === categoryId) && <option value={categoryId}>{categoryId === initialDraft?.categoryId ? "Existing hidden category" : "Unavailable category"}</option>}
               {options.categories.map((option) => (
                 <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>
               ))}
@@ -161,6 +204,7 @@ export function TransactionComposer({
         )}
         {(kind === "transfer" && scheduled) && <label>Category
           <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Uncategorized</option>
+            {categoryId && !options.categories.some((option) => option.id === categoryId) && <option value={categoryId}>{categoryId === initialDraft?.categoryId ? "Existing hidden category" : "Unavailable category"}</option>}
             {options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}
           </select>
         </label>}
@@ -192,6 +236,7 @@ export function RegisterEntryEditor({
   account,
   accounts,
   options,
+  onMakeRepeating,
   onSaved,
   onCancel,
 }: {
@@ -199,6 +244,7 @@ export function RegisterEntryEditor({
   account: AccountOverview;
   accounts: AccountOverview[];
   options: TransactionFormOptions;
+  onMakeRepeating: () => void;
   onSaved: () => Promise<void>;
   onCancel: () => void;
 }) {
@@ -212,7 +258,7 @@ export function RegisterEntryEditor({
   const [memo, setMemo] = useState(entry.memo);
   const [flagId, setFlagId] = useState(entry.flagId || "");
   const [clearedState, setClearedState] = useState(entry.clearedState);
-  const scheduled = !!entry.scheduleId;
+  const scheduled = !!entry.scheduleId && entry.postingState === "scheduled";
   const [repeatIntervalMonths, setRepeatIntervalMonths] = useState<0 | 1 | 3 | 12>(
     entry.repeatIntervalMonths === 1 || entry.repeatIntervalMonths === 3 || entry.repeatIntervalMonths === 12 ? entry.repeatIntervalMonths : 0,
   );
@@ -223,6 +269,7 @@ export function RegisterEntryEditor({
     setError(null);
     setSaving(true);
     try {
+      formatDate(date);
       const positive = parseHufInput(amount);
       await updateRegisterEntry({
         id: entry.id,
@@ -302,12 +349,10 @@ export function RegisterEntryEditor({
               <option key={option.id} value={option.id}>{option.name}{option.closed ? " (closed)" : ""}</option>)}
           </select>
         </label>}
-        <label>Date<input autoFocus={!!entry.transferId} required type="date" value={date} onChange={(event) => setDate(event.target.value)} /></label>
-        {scheduled && <label>Repeat
-          <select value={repeatIntervalMonths} onChange={(event) => setRepeatIntervalMonths(Number(event.target.value) as 0 | 1 | 3 | 12)}>
-            <option value={0}>Never</option><option value={1}>Monthly</option><option value={3}>Quarterly</option><option value={12}>Yearly</option>
-          </select>
-        </label>}
+        <div className="editor-date-field">
+        <DateRepeatPicker date={date} onDateChange={setDate} {...(scheduled ? { repeat: repeatIntervalMonths === 1 ? "monthly" as const : repeatIntervalMonths === 3 ? "quarterly" as const : repeatIntervalMonths === 12 ? "yearly" as const : "never" as const, onRepeatChange: (value: EntryRepeat) => setRepeatIntervalMonths(value === "monthly" ? 1 : value === "quarterly" ? 3 : value === "yearly" ? 12 : 0) } : {})} disabled={saving} />
+          {entry.postingState === "posted" && entry.date <= localCalendarDate() && <button type="button" className="secondary" disabled={saving} onClick={onMakeRepeating}>Make repeating</button>}
+        </div>
         {!entry.transferId && <label>Payee
           <input list={`edit-payees-${entry.id}`} value={payee} onChange={(event) => setPayee(event.target.value)} />
           <datalist id={`edit-payees-${entry.id}`}>
@@ -344,7 +389,7 @@ export function RegisterEntryEditor({
         </label>
       </div>
       <div className="editor-footer">
-        <button type="button" className="danger" disabled={saving} onClick={remove}>Delete</button>
+        <div className="edit-actions"><button type="button" className="danger" disabled={saving} onClick={remove}>Delete</button></div>
         <p className={error ? "form-error" : "form-hint"} role={error ? "alert" : undefined}>{error || (entry.transferId ? "Amount changes update both linked sides." : "Memo-only edits never require reconciliation confirmation.")}</p>
         <div><button type="button" className="secondary" onClick={onCancel}>Cancel</button><button type="submit" disabled={saving}>{saving ? "Saving…" : "Save changes"}</button></div>
       </div>

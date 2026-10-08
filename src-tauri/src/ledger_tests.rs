@@ -2053,11 +2053,15 @@ fn account_overviews_and_register_rows_resolve_display_data() {
     assert_eq!(purchase.flag_color.as_deref(), Some("orange"));
     assert_eq!(purchase.cleared_state, ClearedState::Reconciled);
     assert_eq!(purchase.amount, Huf(-2500));
+    assert_eq!(purchase.transfer_account_id, None);
     let payment = register
         .iter()
         .find(|transaction| transaction.id == "payment-out")
         .unwrap();
     assert_eq!(payment.transfer_account_name.as_deref(), Some("other"));
+    assert_eq!(payment.transfer_account_id.as_deref(), Some("other"));
+    let counterpart = database.register_entries("other").unwrap();
+    assert_eq!(counterpart[0].transfer_account_id.as_deref(), Some("cash"));
 }
 
 #[test]

@@ -95,6 +95,8 @@ Scheduled transaction:
 - defaults to ****Uncleared****
 - is entered in the register using Date and Repeat, without requiring a separate
   scheduler menu
+- Repeat belongs inside the date/calendar dropdown, with Never as the new-entry
+  default; monthly, quarterly and yearly remain the supported migration frequencies
 - a future date with Repeat Never creates one pending occurrence; Monthly,
   Quarterly and Yearly repeat from the selected date
 - can be posted or skipped directly in either account's register; a scheduled
@@ -112,6 +114,15 @@ transactions through today. Imported future rows retain their cleared state and
 ordinary transaction identity; displaying them as upcoming does not invent a
 recurrence rule or change financial posting semantics. Pending schedules retain
 their register Edit, Post and Skip actions.
+
+A posted transaction through today offers Make repeating below its date in the
+editor. It opens a separate new draft copied from the stored transaction, dated
+one calendar month later (clamped for shorter months), with Monthly selected.
+Payee, category, memo, flag and signed amount are preserved; transfers preserve
+their selected account and counterpart. Opening or canceling the draft performs
+no writes and never changes the original transaction or its reconciled state.
+Only saving creates the new recurring entry, using the normal atomic schedule
+and linked-transfer paths.
 
 Transfer counterpart:
 

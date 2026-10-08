@@ -1,5 +1,25 @@
 # Implementation and validation status
 
+On 2026-10-08, the owner requested Repeat inside the date/calendar dropdown and
+a Make repeating action for past transactions. New entries default to Never;
+pending schedule editing retains its existing frequency. Make repeating below
+the stored transaction's date opens a separate composer draft dated one calendar
+month later with Monthly selected, clamping short months. The draft copies
+payee/category/memo/flag and signed amount; linked transfers resolve their
+counterpart by the stored account identity, including duplicate account names.
+Opening or canceling the draft has no IPC write path; only Save creates the new
+entry through the existing schedule/atomic transfer commands. The original
+transaction is not edited. Switching register accounts closes an unsaved editor.
+The supported migration choices remain Never, Monthly, Quarterly and Yearly.
+Nine date/draft tests, 22 routing tests, 24 IPC tests, the core register identity
+test and Rust formatting passed. Independent review found no remaining concrete
+blocker. Frontend and per-user NSIS builds passed. The installed app was closed
+normally, upgraded with exit code 0 and reopened into a responsive window;
+database bytes were unchanged by installation. Installed executable verification
+matched the built app apart from the expected NSIS bundle marker. Owner calendar,
+draft-cancel and draft-save desktop checks remain open; helper tests and code
+review do not establish rendered desktop interaction success.
+
 On 2026-10-08, the matching October 4 Net Worth and Income v Expense references
 were located and the current verifier reran a clean import from the unchanged
 owner-confirmed export with the approved account/card mappings. It created a new

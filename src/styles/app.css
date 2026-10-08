@@ -130,6 +130,21 @@ details { border-top: 1px solid #323d49; padding-top: 16px; margin-top: 20px; fo
 .editor-fields input, .editor-fields select { width: 100%; min-width: 0; height: 34px; border: 1px solid #45554e; border-radius: 5px; padding: 6px 9px; background: #111a17; color: #e1e8e4; font: 12px "Segoe UI", system-ui, sans-serif; text-transform: none; }
 .compact .editor-fields input, .compact .editor-fields select { border-color: #455867; background: #131c23; }
 .editor-fields input::placeholder { color: #68756f; }
+.date-repeat-picker { position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; color: #9eaca5; font-size: 10px; font-weight: 600; letter-spacing: .35px; text-transform: uppercase; }
+.date-picker-trigger { width: 100%; height: 34px; padding: 6px 9px; border-color: #45554e; background: #111a17; color: #e1e8e4; font: 12px "Segoe UI", system-ui, sans-serif; text-align: left; }
+.date-repeat-popover { position: absolute; top: calc(100% + 6px); left: 0; z-index: 5; width: 260px; padding: 12px; border: 1px solid #52695d; border-radius: 7px; background: #18231e; box-shadow: 0 10px 28px #0009; text-transform: none; letter-spacing: 0; }
+.calendar-navigation { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; color: #d9e5dd; font-size: 12px; }
+.calendar-navigation button { min-width: 42px; padding: 3px; background: #202d26; color: #dce9e0; font-size: 10px; }
+.calendar-keyboard-date, .calendar-repeat { display: grid; gap: 5px; margin: 8px 0; color: #9eaca5; font-size: 10px; }
+.calendar-keyboard-date input, .calendar-repeat select { width: 100%; height: 32px; border: 1px solid #45554e; border-radius: 5px; padding: 5px 8px; background: #111a17; color: #e1e8e4; font: 12px "Segoe UI", system-ui, sans-serif; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; text-align: center; }
+.calendar-weekday { padding: 4px 0; color: #899c90; font-size: 9px; }
+.calendar-grid button { padding: 5px 0; border-color: transparent; background: transparent; color: #d5e1d9; font-size: 11px; }
+.calendar-grid button:hover, .calendar-grid button[aria-pressed="true"] { border-color: #54866f; background: #315b49; color: #eff9f2; }
+.calendar-done { display: block; width: 100%; margin-top: 8px; background: #315b49; border-color: #54866f; color: #e2f2e8; font-size: 11px; }
+.compact .date-picker-trigger { border-color: #455867; background: #131c23; }
+.compact .date-repeat-popover { background: #18232d; border-color: #455867; }
+.edit-actions { margin-right: auto; }
 .editor-fields .memo-field, .editor-fields .wide-field { grid-column: span 2; }
 .editor-footer { display: flex; align-items: center; justify-content: flex-end; gap: 16px; margin-top: 16px; }
 .editor-footer p { flex: 1; margin: 0; font-size: 11px; line-height: 1.5; }
@@ -196,3 +211,6 @@ details { border-top: 1px solid #323d49; padding-top: 16px; margin-top: 20px; fo
   .workspace-header { padding-block: 22px; }
   .empty-state { padding-top: 34px; }
 }
+
+.editor-date-field { display: flex; flex-direction: column; gap: 8px; }
+.editor-date-field > button { align-self: flex-start; font-size: 11px; padding: 6px 8px; }
