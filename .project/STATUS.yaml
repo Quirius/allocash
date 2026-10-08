@@ -10,15 +10,16 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Verify installer installation and first launch, confirm register responsiveness and upcoming deletion, then rehearse the final clean migration."
-updated_at: "2026-10-05T21:05:49Z"
+next_action: "Confirm register responsiveness and upcoming deletion, then rehearse the final clean migration."
+updated_at: "2026-10-08T15:34:24Z"
 source:
   branch: "main"
-  commit: "208165612a2370be70c81441a71b4664e5cd9aa3"
-  verified_at: "2026-10-05T21:05:49Z"
+  commit: "dab87706b3a1726d65be8efe1289ead0c25ddd4c"
+  verified_at: "2026-10-08T15:34:24Z"
 summary:
   completed:
-    - "Synthetic native desktop startup recovery passed, including desktop reopen, unchanged source backup and exact preservation of unreadable database/WAL bytes. The owner rehearsal budget was untouched. The per-user x64 NSIS installer built successfully; installation and first launch remain open."
+    - "The per-user x64 installer completed with exit code 0; installed executable, uninstall registration and Start menu shortcut were verified. The installed app opened a responsive native window, and the owner confirmed the normal app screen. Installation and first launch are verified."
+    - "Synthetic native desktop startup recovery passed, including desktop reopen, unchanged source backup and exact preservation of unreadable database/WAL bytes. The owner rehearsal budget was untouched. The per-user x64 NSIS installer built successfully; installation and first launch subsequently passed on 2026-10-08."
     - "Upcoming scheduled entries now use the register editor with Date/Repeat and other fields. Edits update pending/future instances while preserving posted history, paired transfers and original recurrence anchors. Delete cancels repeats through the safety-backup path. 129 core tests, 24 IPC tests and the standalone build passed; owner edit/delete rehearsal remains open."
     - "The owner confirmed register Date/Repeat worked but reported heavy lag. Register rendering is now bounded to 100 rows per page with full history accessible; frontend and standalone builds passed and desktop navigation was inspected. Owner responsiveness retesting remains open."
     - "The owner reported the new target and scheduled transfer worked, then clarified register-based Date/Repeat entry. The composer now supports Never/Monthly/Quarterly/Yearly, one-time future entries and atomic Post/Skip from either transfer leg. 22 routing tests, 48 ledger tests and the standalone build passed; desktop controls were inspected."
@@ -42,13 +43,16 @@ summary:
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
     - "Upcoming editing received owner confirmation; upcoming deletion and register responsiveness still need owner feedback before the daily budgeting gate closes."
-    - "Native desktop backup/restore passed the owner rehearsal and synthetic desktop startup recovery passed. Installer installation/first launch and a full clean migration still need verification before 2026-10-21."
+    - "Native desktop backup/restore passed the owner rehearsal and synthetic desktop startup recovery passed. A full clean migration still needs verification before 2026-10-21."
     - "The one-time desktop import handoff currently uses the verifier and a manual candidate copy into the rehearsal backup folder; no in-app YNAB import flow has been rehearsed."
     - "Spending by Payee, other report filters, forecast values, and broader schedule/target coverage remain secondary unless they block the owner's real migration workflow."
   blockers: []
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "dab87706b3a1726d65be8efe1289ead0c25ddd4c"
+    note: "Records successful installation, installed artifacts, responsive native window launch and owner-confirmed normal app screen."
   - path: "docs/status.md"
     ref: "208165612a2370be70c81441a71b4664e5cd9aa3"
     note: "Records owner upcoming-edit confirmation, synthetic desktop recovery/reopen and preserved bytes, successful installer packaging and the remaining installation/release gates."

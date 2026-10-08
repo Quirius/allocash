@@ -134,7 +134,7 @@ plans:
     priority: "high"
     due_date: "2026-10-21"
     completed_at: null
-    details: "The normal per-user x64 NSIS installer builds, with installation and first launch still unverified. Native restore/recovery is verified, and the October export matches account balances, Plan rows and supplied report references. Installer verification, final clean migration and final owner-data checks remain before the 2026-10-21 release; 2026-10-22 through 2026-10-30 is emergency-only contingency."
+    details: "The normal per-user x64 NSIS installer built and installed successfully; the installed app opened a responsive window and the owner confirmed the normal app screen. Installation and first launch are verified. Native restore/recovery is verified, and the October export matches account balances, Plan rows and supplied report references. Final clean migration and final owner-data checks remain before the 2026-10-21 release; 2026-10-22 through 2026-10-30 is emergency-only contingency."
     acceptance_criteria:
       - "A Windows installer is built and verified."
       - "The final YNAB export imports with account balances, Plan months, and reports verified."
@@ -143,6 +143,9 @@ plans:
       - "allocash-plan-003"
       - "allocash-plan-004"
     evidence:
+      - path: "docs/status.md"
+        ref: "dab87706b3a1726d65be8efe1289ead0c25ddd4c"
+        note: "Records successful installation and owner-confirmed normal first-launch screen; final migration and release remain open."
       - path: "docs/status.md"
         ref: "7868acb046a922e8a9399b87f4d66af19bb6331c"
         note: "Records matched supplied report references and the remaining release gates."
