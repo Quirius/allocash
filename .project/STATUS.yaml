@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Restore the verified clean candidate in the installed app, check account/Plan/report views, recreate required targets and recurrence rules, then verify a native backup and reopen."
-updated_at: "2026-10-08T17:57:06Z"
+next_action: "Confirm the integrated date/repeat picker and Make repeating draft cancel/save behavior, then continue the verified clean-candidate desktop rehearsal and recreate required rules."
+updated_at: "2026-10-08T18:17:24Z"
 source:
   branch: "main"
-  commit: "8755ec653a9896d6d1969c4b2e4750e8de364ce8"
-  verified_at: "2026-10-08T17:57:06Z"
+  commit: "6b2bdeed42f9692cec0ed03f510d94d98a30432d"
+  verified_at: "2026-10-08T18:17:24Z"
 summary:
   completed:
+    - "Repeat now lives inside the date/calendar dropdown with Never default. Make repeating opens an unsaved monthly draft one calendar month after the stored transaction, preserving details and transfer destination identity. Nine date/draft, 22 routing, 24 IPC and the register identity test passed with formatting, frontend/native installer builds and independent review. The installed app was upgraded and reopened; installation preserved database bytes. Owner interaction confirmation remains open."
     - "A clean schema-10 candidate was regenerated from the owner-confirmed current export. All 34 account balances, 1,326 Plan rows, 1,734 historical account-month balances, 51 Net Worth totals and supplied Income v Expense comparisons match. Integrity and foreign keys passed; an identical candidate copy is in the installed-app backup list. Four zero-value transfer rows and 43 duplicate signals remain preserved."
     - "The owner accepted the unified upcoming display, closing the migration-critical daily-workflow checks, and confirmed YNAB is unchanged since the October 4 export. The original export was recovered from preserved archive bytes and its hash matches the approved mappings; installed-budget read-only integrity and foreign-key checks passed."
     - "The owner restored the verified rehearsal candidate into the installed app and confirmed register responsiveness and upcoming deletion. Future imported rows exposed a display gap; the register now groups and mutes all pending schedules and future ordinary entries above history, without a separate Scheduled tab. Focused tests, frontend/native installer builds and independent review passed; the installed app was upgraded and reopened with database bytes unchanged by installation."
@@ -45,6 +46,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
+    - "The newly requested date/repeat dropdown and Make repeating draft are installed; owner calendar, cancel-without-change and saved-draft checks remain open."
     - "Register responsiveness and upcoming deletion received owner confirmation. The owner accepted the installed unified upcoming display; the daily-workflow gate is verified. Clean import/reference rerun passed; owner desktop restore, view comparisons, required target/recurrence recreation and native backup/reopen remain open."
     - "Native desktop backup/restore passed the owner rehearsal and synthetic desktop startup recovery passed. A full clean migration still needs verification before 2026-10-21; the owner confirmed the existing October 4 export remains current."
     - "The one-time desktop import handoff currently uses the verifier and a manual candidate copy into the rehearsal backup folder; no in-app YNAB import flow has been rehearsed."
@@ -53,6 +55,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "6b2bdeed42f9692cec0ed03f510d94d98a30432d"
+    note: "Records date/repeat integration, draft-only Make repeating, transfer identity exposure, tests/review/builds and verified installed upgrade; owner interaction checks remain open."
   - path: "docs/status.md"
     ref: "8755ec653a9896d6d1969c4b2e4750e8de364ce8"
     note: "Records exact clean candidate comparisons, preserved zero-value rows and duplicate signals, validated candidate staging and remaining desktop/configuration rehearsal gates."

@@ -178,19 +178,22 @@ plans:
         note: "Records the dated check sequence and successful native desktop build."
   - id: "allocash-plan-007"
     title: "Close migration-critical daily workflow gaps"
-    state: "completed"
+    state: "planned"
     window: "This week"
     window_as_of: "2026-10-04"
     priority: "high"
     due_date: "2026-10-08"
-    completed_at: "2026-10-08T16:08:01Z"
-    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation, a target/scheduled transfer, register Date/Repeat entry and the upcoming editing correction. Register rendering is paged and upcoming deletion is implemented with passing checks. The owner confirmed responsiveness and upcoming deletion in the installed app. A requested unified upcoming display now groups pending schedules and future ordinary rows above history and removes the Scheduled tab; tests, review, package build and installed upgrade passed. The owner accepted the revised display on October 8; required daily-workflow checks are verified."
+    completed_at: null
+    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation, a target/scheduled transfer, register Date/Repeat entry and the upcoming editing correction. Register rendering is paged and upcoming deletion is implemented with passing checks. The owner confirmed responsiveness and upcoming deletion in the installed app. A requested unified upcoming display now groups pending schedules and future ordinary rows above history and removes the Scheduled tab; tests, review, package build and installed upgrade passed. The owner accepted the revised display on October 8; those daily-workflow checks are verified. The owner subsequently requested integrated date/repeat and Make repeating drafts; this additional workflow is implemented, tested and installed, with owner calendar/cancel/save confirmation remaining before this expanded gate closes."
     acceptance_criteria:
       - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
       - "Non-essential feature expansion is deferred until after migration."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "6b2bdeed42f9692cec0ed03f510d94d98a30432d"
+        note: "Records the additional owner-requested date/repeat and repeating-draft workflow, installed and checked, with owner interaction confirmation open."
       - path: "docs/status.md"
         ref: "348a12e67733f10d8dd8375560b642f9aa822ab5"
         note: "Records owner acceptance of the revised display after responsiveness and deletion checks, closing the daily-workflow gate."
