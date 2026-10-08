@@ -111,7 +111,7 @@ export interface ManualTransferInput {
   direction: "outflow" | "inflow";
 }
 export type RecurrenceMonths = 1 | 3 | 12;
-export interface MonthlyScheduleInput { accountId: string; startDate: string; endDate: string | null; payeeName: string | null; categoryId: string | null; memo: string; flagId: string | null; amount: string; intervalMonths?: RecurrenceMonths; counterpartAccountId?: string | null; }
+export interface MonthlyScheduleInput { accountId: string; startDate: string; dayOfMonth?: number; endDate: string | null; payeeName: string | null; categoryId: string | null; memo: string; flagId: string | null; amount: string; intervalMonths?: RecurrenceMonths; counterpartAccountId?: string | null; }
 export interface SpendingReportInput { from: string; to: string; accountIds: string[]; }
 export interface SpendingCategoryTotal { categoryId: string | null; groupName: string | null; categoryName: string; total: string; transactionCount: number; }
 export interface SpendingPayeeTotal { payeeName: string; total: string; transactionCount: number; }

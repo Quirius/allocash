@@ -1,5 +1,24 @@
 # Implementation and validation status
 
+On 2026-10-08, the owner refined Make repeating to use the next available
+occurrence of the original day of month in the current or next month, clamping
+29/30/31 to the last available day. The implementation selects strictly after
+today: a day still ahead uses this month, otherwise the following month.
+Monthly remains the default and the original transaction remains untouched.
+The copied draft retains its original day anchor even if the proposed date
+clamps; saving February 28 with a 31st anchor therefore advances to March 31.
+Changing the proposed date uses the newly selected day instead. Schedule input
+accepts an optional dayOfMonth with validated 1-31 bounds and a matching clamped
+start date; omitted values retain existing behavior and no schema change is
+required. Sixteen date/draft, 23 routing and 24 IPC tests passed, alongside three
+monthly-schedule and three scheduled-transfer core tests. Invalid anchors are
+rejected before writes. Formatting, frontend build, per-user NSIS build and
+independent review passed. The installed app was upgraded with exit code 0 and
+reopened into a responsive native window. Installation preserved database bytes;
+the installed executable matches the release build after the expected NSIS marker
+change. Owner confirmation of the refined default and the clean desktop migration
+rehearsal remain open.
+
 On 2026-10-08, the owner clarified that Make repeating must default to one
 calendar month after the original transaction date, not after today. The interim
 today-based change was reverted. Monthly remains selected; month-end dates clamp

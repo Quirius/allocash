@@ -11,9 +11,15 @@ function dayCount(month: string) {
 function dateInMonth(month: string, day: number) { return `${month}-${day.toString().padStart(2, "0")}`; }
 function safeFormatDate(date: string) { try { return formatDate(date); } catch { return "Choose date"; } }
 
-export function nextCalendarMonth(date: string): string {
-  const nextMonth = shiftCalendarMonth(monthOf(date), 1);
-  return dateInMonth(nextMonth, Math.min(Number(date.slice(8)), dayCount(nextMonth)));
+export function nextRepeatDate(originalDate: string, today: string): string {
+  formatDate(originalDate);
+  formatDate(today);
+  const originalDay = Number(originalDate.slice(8));
+  const thisMonth = today.slice(0, 7);
+  const current = dateInMonth(thisMonth, Math.min(originalDay, dayCount(thisMonth)));
+  if (current > today) return current;
+  const nextMonth = shiftCalendarMonth(thisMonth, 1);
+  return dateInMonth(nextMonth, Math.min(originalDay, dayCount(nextMonth)));
 }
 
 export function DateRepeatPicker({ date, onDateChange, repeat, onRepeatChange, disabled = false }:

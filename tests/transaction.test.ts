@@ -94,3 +94,12 @@ it("schedules an explicit transfer with its selected category", async () => {
   await createScheduledPayeeEntry({ accountId: "bank", counterpartAccountId: "cash", startDate: "2026-10-05", endDate: null, payeeName: null, categoryId: "loan", memo: "Recurring", flagId: "orange", amount: "-1000", intervalMonths: 12 }, accounts);
   expect(invoke).toHaveBeenCalledExactlyOnceWith("create_monthly_schedule", { input: expect.objectContaining({ counterpartAccountId: "cash", categoryId: "loan", intervalMonths: 12, amount: "-1000", flagId: "orange" }) });
 });
+
+it("preserves a copied month-end anchor in the schedule IPC payload", async () => {
+  await createScheduledPayeeEntry({ accountId: "bank", startDate: "2026-02-28", dayOfMonth: 31,
+    endDate: null, payeeName: "Rent", categoryId: "bills", memo: "", flagId: null,
+    amount: "-1000", intervalMonths: 1 }, accounts);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("create_monthly_schedule", { input: expect.objectContaining({
+    startDate: "2026-02-28", dayOfMonth: 31, intervalMonths: 1,
+  }) });
+});

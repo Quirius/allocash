@@ -117,7 +117,10 @@ their register Edit, Post and Skip actions.
 
 A posted transaction through today offers Make repeating below its date in the
 editor. It opens a separate new draft copied from the stored transaction, dated
-one calendar month after the original transaction date (clamped for shorter months), with Monthly selected.
+the next occurrence strictly after today of the original day in the current or
+next month, with Monthly selected. If that day is unavailable, use the last day
+of that month. Keep the original day as the recurrence anchor when this default
+date is saved; changing the draft date selects a new anchor.
 Payee, category, memo, flag and signed amount are preserved; transfers preserve
 their selected account and counterpart. Opening or canceling the draft performs
 no writes and never changes the original transaction or its reconciled state.

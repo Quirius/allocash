@@ -86,6 +86,7 @@ fn monthly_schedule_posts_once_and_clamps_the_next_short_month() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2026-01-31"),
+            day_of_month: None,
             end_date: None,
             payee_name: Some("Rent".into()),
             category_id: None,
@@ -133,12 +134,70 @@ fn monthly_schedule_posts_once_and_clamps_the_next_short_month() {
 }
 
 #[test]
+fn monthly_schedule_preserves_explicit_day_anchor_across_clamped_start_dates() {
+    let (_directory, mut database) = database();
+    for (start_date, expected_next) in [("2026-02-28", "2026-03-31"), ("2024-02-29", "2024-03-31")]
+    {
+        database
+            .create_monthly_schedule(&MonthlyScheduleDraft {
+                account_id: "cash".into(),
+                start_date: date(start_date),
+                day_of_month: Some(31),
+                end_date: None,
+                payee_name: None,
+                category_id: None,
+                memo: String::new(),
+                flag_id: None,
+                amount: Huf(-100),
+                interval_months: 1,
+                counterpart_account_id: None,
+            })
+            .unwrap();
+        let occurrence = database.scheduled_occurrences().unwrap().remove(0);
+        database
+            .post_scheduled_occurrence(&occurrence.transaction_id)
+            .unwrap();
+        assert_eq!(
+            database.scheduled_occurrences().unwrap()[0].date,
+            date(expected_next)
+        );
+    }
+}
+
+#[test]
+fn monthly_schedule_rejects_inconsistent_or_out_of_range_day_anchor_atomically() {
+    let (_directory, mut database) = database();
+    for (start_date, day_of_month) in [
+        ("2026-02-27", Some(31)),
+        ("2026-02-28", Some(0)),
+        ("2026-02-28", Some(32)),
+    ] {
+        let result = database.create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date(start_date),
+            day_of_month,
+            end_date: None,
+            payee_name: None,
+            category_id: None,
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-100),
+            interval_months: 1,
+            counterpart_account_id: None,
+        });
+        assert!(matches!(result, Err(LedgerError::InvalidValue(_))));
+        assert!(database.scheduled_occurrences().unwrap().is_empty());
+    }
+}
+
+#[test]
 fn deactivating_a_schedule_removes_pending_not_posted_occurrences() {
     let (_directory, mut database) = database();
     database
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2026-09-10"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: None,
@@ -177,6 +236,7 @@ fn one_off_future_entries_finish_once_from_either_transfer_leg() {
                 .create_monthly_schedule(&MonthlyScheduleDraft {
                     account_id: "cash".into(),
                     start_date: date("2026-11-05"),
+                    day_of_month: None,
                     end_date: Some(date("2026-11-05")),
                     payee_name: None,
                     category_id: None,
@@ -241,6 +301,7 @@ fn quarterly_schedule_keeps_its_original_day_after_short_month_clamp() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2026-01-31"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: None,
@@ -278,6 +339,7 @@ fn yearly_schedule_preserves_february_29_anchor() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2024-02-29"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: None,
@@ -328,6 +390,7 @@ fn scheduled_transfer_entered_as_inflow_keeps_the_entered_side_sign() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "loan".into(),
             start_date: date("2026-02-15"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: None,
@@ -371,6 +434,7 @@ fn schedules_reject_unsupported_intervals_invalid_end_dates_and_self_transfers()
                  counterpart_account_id: Option<String>| MonthlyScheduleDraft {
         account_id: "cash".into(),
         start_date: date("2026-01-31"),
+        day_of_month: None,
         end_date,
         payee_name: None,
         category_id: None,
@@ -408,6 +472,7 @@ fn forecast_projects_quarterly_transfers_by_selected_legs() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2026-01-31"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: None,
@@ -496,6 +561,7 @@ fn forecast_category_filter_uses_shared_category_for_boundary_transfer_pairs() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2026-01-31"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: Some("rent".into()),
@@ -599,6 +665,7 @@ fn forecast_projects_yearly_transfers_for_one_or_both_selected_accounts() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2026-01-31"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: None,
@@ -646,6 +713,7 @@ fn scheduled_loan_to_cash_transfer_keeps_category_on_on_budget_leg_for_plan() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "loan".into(),
             start_date: date("2026-02-15"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: Some("loan-payment".into()),
@@ -687,6 +755,7 @@ fn closed_schedule_counterpart_failure_rolls_back_skip_and_keeps_pending_pair() 
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2026-01-31"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: None,
@@ -718,6 +787,7 @@ fn scheduled_transfer_posts_both_legs_and_skip_or_cancel_removes_both() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2026-01-31"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: None,
@@ -1647,6 +1717,7 @@ fn forecast_projects_schedules_without_resampling_posted_occurrences() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2025-10-31"),
+            day_of_month: None,
             end_date: None,
             payee_name: Some("Rent".into()),
             category_id: None,
@@ -1687,6 +1758,7 @@ fn forecast_counts_an_overdue_schedule_once_and_honors_its_end_date() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2025-10-31"),
+            day_of_month: None,
             end_date: Some(date("2026-02-28")),
             payee_name: None,
             category_id: None,
@@ -1738,6 +1810,7 @@ fn forecast_applies_account_and_expense_category_scope_to_schedules() {
             .create_monthly_schedule(&MonthlyScheduleDraft {
                 account_id: account_id.into(),
                 start_date: date("2026-01-31"),
+                day_of_month: None,
                 end_date: None,
                 payee_name: None,
                 category_id: category_id.map(str::to_owned),
@@ -2340,6 +2413,7 @@ fn upcoming_ordinary_register_edits_reschedule_and_preserve_one_off_semantics() 
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2026-09-15"),
+            day_of_month: None,
             end_date: Some(date("2026-09-15")),
             payee_name: Some("Shop".into()),
             category_id: Some("c".into()),
@@ -2405,6 +2479,7 @@ fn upcoming_transfer_edit_from_peer_keeps_sign_category_and_both_dates() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2026-09-12"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: Some("c".into()),
@@ -2469,6 +2544,7 @@ fn memo_edit_on_clamped_occurrence_preserves_original_day_anchor() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2027-01-31"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: None,
@@ -2520,6 +2596,7 @@ fn invalid_upcoming_edits_leave_occurrence_and_template_unchanged() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2026-09-10"),
+            day_of_month: None,
             end_date: Some(date("2026-10-01")),
             payee_name: None,
             category_id: None,
@@ -2589,6 +2666,7 @@ fn converting_later_repeating_occurrence_to_never_sets_one_off_anchor() {
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2027-01-31"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: None,
@@ -2666,6 +2744,7 @@ fn deleting_either_pending_scheduled_transfer_leg_cancels_template_and_keeps_pos
         .create_monthly_schedule(&MonthlyScheduleDraft {
             account_id: "cash".into(),
             start_date: date("2026-09-10"),
+            day_of_month: None,
             end_date: None,
             payee_name: None,
             category_id: None,

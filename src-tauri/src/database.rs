@@ -670,6 +670,7 @@ mod tests {
                 account_id: "cash".into(),
                 counterpart_account_id: None,
                 start_date: date("2026-09-10"),
+                day_of_month: None,
                 end_date: None,
                 interval_months: 1,
                 payee_name: Some("Rent".into()),

@@ -359,6 +359,8 @@ pub struct ManualTransactionDraft {
 pub struct MonthlyScheduleDraft {
     pub account_id: String,
     pub start_date: CalendarDate,
+    #[serde(default)]
+    pub day_of_month: Option<u32>,
     pub end_date: Option<CalendarDate>,
     pub payee_name: Option<String>,
     pub category_id: Option<String>,
@@ -1904,6 +1906,19 @@ impl Database {
     }
 
     pub fn create_monthly_schedule(&mut self, draft: &MonthlyScheduleDraft) -> LedgerResult<()> {
+        let start_day = calendar_day(&draft.start_date)?;
+        let day = match draft.day_of_month {
+            Some(day @ 1..=31) => {
+                let year: i32 = draft.start_date.0[..4].parse().unwrap();
+                let month: u32 = draft.start_date.0[5..7].parse().unwrap();
+                if start_day != i64::from(day).min(days_in_month(year, month) as i64) {
+                    return Err(LedgerError::InvalidValue("Invalid monthly schedule."));
+                }
+                i64::from(day)
+            }
+            Some(_) => return Err(LedgerError::InvalidValue("Invalid monthly schedule.")),
+            None => start_day,
+        };
         if draft.amount.0 == 0
             || ![1, 3, 12].contains(&draft.interval_months)
             || draft.counterpart_account_id.as_deref() == Some(draft.account_id.as_str())
@@ -1923,7 +1938,6 @@ impl Database {
         }
         let schedule_id = random_id(&transaction, "monthly-schedule")?;
         let payee_id = resolve_payee(&transaction, draft.payee_name.as_deref())?;
-        let day = calendar_day(&draft.start_date)?;
         transaction.execute("INSERT INTO schedules (id,account_id,payee_id,category_id,memo,flag_id,amount_huf,start_date,day_of_month,end_date,interval_months,counterpart_account_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)", params![schedule_id,draft.account_id,payee_id,draft.category_id,draft.memo.trim(),draft.flag_id,draft.amount.0,draft.start_date.as_str(),day,draft.end_date.as_ref().map(CalendarDate::as_str),draft.interval_months,draft.counterpart_account_id])?;
         materialize_occurrence(&transaction, &schedule_id, &draft.start_date)?;
         transaction.commit()?;

@@ -10,12 +10,13 @@ import {
 } from "../lib/desktop";
 import { formatDate, localCalendarDate, parseHufInput, parseSignedHufInput } from "../lib/format";
 import { createPayeeEntry, createScheduledPayeeEntry, isTransferPayee, scheduleForEntry, type EntryRepeat } from "../lib/transaction";
-import { DateRepeatPicker, nextCalendarMonth } from "./DateRepeatPicker";
+import { DateRepeatPicker, nextRepeatDate } from "./DateRepeatPicker";
 
 export interface TransactionDraft {
   kind: "transaction" | "transfer";
   date: string;
   repeat: EntryRepeat;
+  repeatDayOfMonth?: number;
   payee: string;
   categoryId: string;
   counterpartId: string;
@@ -25,7 +26,7 @@ export interface TransactionDraft {
   inflow: string;
 }
 
-export function draftFromPostedEntry(entry: RegisterEntry, sourceAccountId: string, accounts: AccountOverview[]): TransactionDraft {
+export function draftFromPostedEntry(entry: RegisterEntry, sourceAccountId: string, accounts: AccountOverview[], today = localCalendarDate()): TransactionDraft {
   let counterpartId = "";
   if (entry.transferId) {
     if (entry.transferAccountId) {
@@ -44,7 +45,7 @@ export function draftFromPostedEntry(entry: RegisterEntry, sourceAccountId: stri
   const magnitude = (amount < 0n ? -amount : amount).toString();
   return {
     kind: entry.transferId ? "transfer" : "transaction",
-    date: nextCalendarMonth(entry.date), repeat: "monthly",
+    date: nextRepeatDate(entry.date, today), repeat: "monthly", repeatDayOfMonth: Number(entry.date.slice(8)),
     payee: entry.payeeName || "", categoryId: entry.categoryId || "", counterpartId,
     memo: entry.memo, flagId: entry.flagId || "",
     outflow: amount < 0n ? magnitude : "", inflow: amount >= 0n ? magnitude : "",
@@ -116,12 +117,13 @@ export function TransactionComposer({
       const parsed = signedAmount(outflow, inflow);
       setStatus("saving");
       const schedule = scheduleForEntry(date, repeat, localCalendarDate());
+      const dayOfMonth = initialDraft && date === initialDraft.date && repeat !== "never" ? initialDraft.repeatDayOfMonth : undefined;
       if (kind === "transfer") {
         if (!counterpartId) throw new Error("Choose the other transfer account.");
         if (BigInt(parsed.positive) > 9223372036854775807n) throw new Error("Transfer amounts must fit the supported positive HUF range.");
         if (schedule) {
           await createScheduledPayeeEntry({ accountId: account.id, counterpartAccountId: counterpartId, startDate: date, endDate: schedule.endDate,
-            payeeName: null, categoryId: categoryId || null, memo, flagId: flagId || null, amount: parsed.amount, intervalMonths: schedule.intervalMonths }, accounts);
+            payeeName: null, categoryId: categoryId || null, memo, flagId: flagId || null, amount: parsed.amount, intervalMonths: schedule.intervalMonths, ...(dayOfMonth ? { dayOfMonth } : {}) }, accounts);
         } else {
           await createManualTransfer({
             accountId: account.id,
@@ -143,7 +145,7 @@ export function TransactionComposer({
           flagId: flagId || null,
           amount: parsed.amount,
         };
-        if (schedule) await createScheduledPayeeEntry({ ...input, startDate: date, endDate: schedule.endDate, intervalMonths: schedule.intervalMonths }, accounts);
+        if (schedule) await createScheduledPayeeEntry({ ...input, startDate: date, endDate: schedule.endDate, intervalMonths: schedule.intervalMonths, ...(dayOfMonth ? { dayOfMonth } : {}) }, accounts);
         else await createPayeeEntry(input, accounts);
       }
       await onSaved();
