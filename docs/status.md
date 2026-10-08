@@ -1,9 +1,19 @@
 # Implementation and validation status
 
-On 2026-10-08, the owner said the integrated repeat workflow looked good but
-requested a future default date when making a transaction repeat. The draft now
-defaults to one calendar month after today, rather than after the historical
-source transaction's date. Monthly remains selected, short months clamp, and
+On 2026-10-08, the owner clarified that Make repeating must default to one
+calendar month after the original transaction date, not after today. The interim
+today-based change was reverted. Monthly remains selected; month-end dates clamp
+to the following month's final day. All ten date/draft tests passed, including
+an original January 31, 2023 transaction defaulting to February 28, 2023 even
+when today is October 8, 2026. Original identity and reconciliation state remain
+unchanged. Frontend and per-user NSIS builds passed. The installed app was
+upgraded with exit code 0 and reopened into a responsive window; installation
+preserved database bytes and the executable matches the packaged build. Owner
+confirmation of this clarified date default remains open.
+
+After the owner's initial date-default feedback on 2026-10-08, an interim
+implementation defaulted to one calendar month after today. The subsequent
+clarification above supersedes that interpretation. Monthly remains selected, short months clamp, and
 the original transaction is unchanged. All ten date/draft tests passed,
 including an old reconciled transaction defaulting from October 8 to November 8.
 Frontend and per-user NSIS builds passed. The installed app was upgraded with
