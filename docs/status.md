@@ -1,5 +1,16 @@
 # Implementation and validation status
 
+On 2026-10-08, the existing per-user x64 NSIS package installed successfully
+in silent mode with exit code 0. The installed executable, version 0.1.0
+uninstall registration and Start menu shortcut were verified. The installed
+executable launched into a responsive native window titled Allocash. Package
+SHA-256: `513277c338d3ccbfa2a10f686fdbc0f292dbbb1396105d20cda81be1f7336d5a`.
+The Computer Use connection was unavailable, so window contents and normal
+workspace rendering remain unverified pending owner feedback. This confirms
+installation and process/window launch, not full first-launch usability or a
+completed release. Register responsiveness, upcoming deletion and the full clean
+migration rehearsal remain open; the manual readiness estimate is unchanged.
+
 On 2026-10-05, the owner confirmed the upcoming-entry editing correction and
 requested the next step. A separate synthetic desktop profile then passed the
 unreadable-database startup recovery workflow: selecting its verified backup
