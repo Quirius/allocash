@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Locate the existing report references and rerun a clean migration using the October 4 export, confirmed current by the owner."
-updated_at: "2026-10-08T16:08:01Z"
+next_action: "Restore the verified clean candidate in the installed app, check account/Plan/report views, recreate required targets and recurrence rules, then verify a native backup and reopen."
+updated_at: "2026-10-08T17:57:06Z"
 source:
   branch: "main"
-  commit: "348a12e67733f10d8dd8375560b642f9aa822ab5"
-  verified_at: "2026-10-08T16:08:01Z"
+  commit: "8755ec653a9896d6d1969c4b2e4750e8de364ce8"
+  verified_at: "2026-10-08T17:57:06Z"
 summary:
   completed:
+    - "A clean schema-10 candidate was regenerated from the owner-confirmed current export. All 34 account balances, 1,326 Plan rows, 1,734 historical account-month balances, 51 Net Worth totals and supplied Income v Expense comparisons match. Integrity and foreign keys passed; an identical candidate copy is in the installed-app backup list. Four zero-value transfer rows and 43 duplicate signals remain preserved."
     - "The owner accepted the unified upcoming display, closing the migration-critical daily-workflow checks, and confirmed YNAB is unchanged since the October 4 export. The original export was recovered from preserved archive bytes and its hash matches the approved mappings; installed-budget read-only integrity and foreign-key checks passed."
     - "The owner restored the verified rehearsal candidate into the installed app and confirmed register responsiveness and upcoming deletion. Future imported rows exposed a display gap; the register now groups and mutes all pending schedules and future ordinary entries above history, without a separate Scheduled tab. Focused tests, frontend/native installer builds and independent review passed; the installed app was upgraded and reopened with database bytes unchanged by installation."
     - "The per-user x64 installer completed with exit code 0; installed executable, uninstall registration and Start menu shortcut were verified. The installed app opened a responsive native window, and the owner confirmed the normal app screen. Installation and first launch are verified."
@@ -44,7 +45,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
-    - "Register responsiveness and upcoming deletion received owner confirmation. The owner accepted the installed unified upcoming display; the daily-workflow gate is verified. Clean import/reference rerun is pending the location of the existing report TSV files."
+    - "Register responsiveness and upcoming deletion received owner confirmation. The owner accepted the installed unified upcoming display; the daily-workflow gate is verified. Clean import/reference rerun passed; owner desktop restore, view comparisons, required target/recurrence recreation and native backup/reopen remain open."
     - "Native desktop backup/restore passed the owner rehearsal and synthetic desktop startup recovery passed. A full clean migration still needs verification before 2026-10-21; the owner confirmed the existing October 4 export remains current."
     - "The one-time desktop import handoff currently uses the verifier and a manual candidate copy into the rehearsal backup folder; no in-app YNAB import flow has been rehearsed."
     - "Spending by Payee, other report filters, forecast values, and broader schedule/target coverage remain secondary unless they block the owner's real migration workflow."
@@ -52,6 +53,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "8755ec653a9896d6d1969c4b2e4750e8de364ce8"
+    note: "Records exact clean candidate comparisons, preserved zero-value rows and duplicate signals, validated candidate staging and remaining desktop/configuration rehearsal gates."
   - path: "docs/status.md"
     ref: "348a12e67733f10d8dd8375560b642f9aa822ab5"
     note: "Records owner display acceptance and current-source confirmation, recovered archive hash and installed-budget integrity checks; clean import/reference rerun remains pending report-file locations."

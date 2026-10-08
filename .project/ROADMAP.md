@@ -235,7 +235,7 @@ plans:
     priority: "high"
     due_date: "2026-10-19"
     completed_at: null
-    details: "A checked candidate output and isolated desktop identity now provide a safe handoff from the verifier to a rehearsal budget. Perform the clean rehearsal from the October 4 export, confirmed unchanged/current by the owner on October 8, verify balances, recent Plan state, migration-critical reports, and native backup/restore behavior in the desktop app, then record every blocking discrepancy. No owner-data desktop rehearsal is complete yet."
+    details: "A checked candidate output and isolated desktop identity now provide a safe handoff from the verifier to a rehearsal budget. Perform the clean rehearsal from the October 4 export, confirmed unchanged/current by the owner on October 8, verify balances, recent Plan state, migration-critical reports, and native backup/restore behavior in the desktop app, then record every blocking discrepancy. The clean candidate rerun passed all supplied references on October 8 and is staged in the installed app backup list. Owner clean-candidate restore, view comparisons, required target/recurrence recreation and native backup/reopen remain open; the full rehearsal is not complete."
     acceptance_criteria:
       - "The confirmed-current export imports without unresolved migration-blocking errors."
       - "Current account balances and recent Plan values match the verified source."
@@ -245,6 +245,9 @@ plans:
       - "allocash-plan-003"
       - "allocash-plan-007"
     evidence:
+      - path: "docs/status.md"
+        ref: "8755ec653a9896d6d1969c4b2e4750e8de364ce8"
+        note: "Records regenerated clean candidate and exact references; owner desktop and missing-rule recreation checks remain open."
       - path: "docs/status.md"
         ref: "c872f44c20a63db5c68d5138e18b2f07adcfda4c"
         note: "Records the checked candidate handoff and isolated build; owner-data rehearsal and UI workflow checks remain open."
