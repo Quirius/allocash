@@ -1,5 +1,17 @@
 # Implementation and validation status
 
+On 2026-10-08, the owner accepted the revised upcoming register display and
+confirmed that YNAB has not changed since the October 4 export. That export is
+therefore the owner's current migration source; a newer export is not required
+for this rehearsal while the source remains unchanged. Register responsiveness,
+upcoming deletion and the unified display now have owner confirmation.
+The original ZIP was recovered from the candidate's preserved import archive,
+with SHA-256 matching the approved mappings. The installed schema-10 budget
+passed read-only SQLite integrity and foreign-key checks and retains that archive.
+A separate clean import and independent reference rerun remain pending the
+location of the previously supplied Net Worth and Income v Expense TSV files.
+No new candidate or live-budget replacement was performed in this check.
+
 On 2026-10-08, the owner restored the verified October 4 rehearsal candidate
 into the installed app and confirmed register responsiveness and upcoming-entry
 deletion. The owner then identified future imported Uncleared rows that were
