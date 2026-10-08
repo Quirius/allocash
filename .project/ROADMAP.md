@@ -178,19 +178,22 @@ plans:
         note: "Records the dated check sequence and successful native desktop build."
   - id: "allocash-plan-007"
     title: "Close migration-critical daily workflow gaps"
-    state: "planned"
+    state: "completed"
     window: "This week"
     window_as_of: "2026-10-04"
     priority: "high"
     due_date: "2026-10-08"
-    completed_at: null
-    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation, a target/scheduled transfer, register Date/Repeat entry and the upcoming editing correction. Register rendering is paged and upcoming deletion is implemented with passing checks. The owner confirmed responsiveness and upcoming deletion in the installed app. A requested unified upcoming display now groups pending schedules and future ordinary rows above history and removes the Scheduled tab; tests, review, package build and installed upgrade passed. Confirm the revised display before closing the daily-workflow gate."
+    completed_at: "2026-10-08T16:08:01Z"
+    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation, a target/scheduled transfer, register Date/Repeat entry and the upcoming editing correction. Register rendering is paged and upcoming deletion is implemented with passing checks. The owner confirmed responsiveness and upcoming deletion in the installed app. A requested unified upcoming display now groups pending schedules and future ordinary rows above history and removes the Scheduled tab; tests, review, package build and installed upgrade passed. The owner accepted the revised display on October 8; required daily-workflow checks are verified."
     acceptance_criteria:
       - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
       - "Non-essential feature expansion is deferred until after migration."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "348a12e67733f10d8dd8375560b642f9aa822ab5"
+        note: "Records owner acceptance of the revised display after responsiveness and deletion checks, closing the daily-workflow gate."
       - path: "docs/status.md"
         ref: "4ffd2775029e8d6b350fcb87a8eebba73ba8152d"
         note: "Records confirmed responsiveness/deletion, upcoming-display correction and installed upgrade; owner display confirmation remains open."
@@ -232,9 +235,9 @@ plans:
     priority: "high"
     due_date: "2026-10-19"
     completed_at: null
-    details: "A checked candidate output and isolated desktop identity now provide a safe handoff from the verifier to a rehearsal budget. Perform the clean rehearsal from a fresh YNAB export, verify balances, recent Plan state, migration-critical reports, and native backup/restore behavior in the desktop app, then record every blocking discrepancy. No owner-data desktop rehearsal is complete yet."
+    details: "A checked candidate output and isolated desktop identity now provide a safe handoff from the verifier to a rehearsal budget. Perform the clean rehearsal from the October 4 export, confirmed unchanged/current by the owner on October 8, verify balances, recent Plan state, migration-critical reports, and native backup/restore behavior in the desktop app, then record every blocking discrepancy. No owner-data desktop rehearsal is complete yet."
     acceptance_criteria:
-      - "A fresh export imports without unresolved migration-blocking errors."
+      - "The confirmed-current export imports without unresolved migration-blocking errors."
       - "Current account balances and recent Plan values match the verified source."
       - "A native backup is created and successfully restored."
       - "All blocking discrepancies are either fixed or explicitly escalated before the release candidate."
