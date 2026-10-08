@@ -10,18 +10,19 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Confirm register responsiveness and upcoming deletion, then rehearse the final clean migration."
-updated_at: "2026-10-08T15:34:24Z"
+next_action: "Confirm the unified upcoming register display, then rehearse the final clean migration from a fresh YNAB export."
+updated_at: "2026-10-08T15:51:07Z"
 source:
   branch: "main"
-  commit: "dab87706b3a1726d65be8efe1289ead0c25ddd4c"
-  verified_at: "2026-10-08T15:34:24Z"
+  commit: "4ffd2775029e8d6b350fcb87a8eebba73ba8152d"
+  verified_at: "2026-10-08T15:51:07Z"
 summary:
   completed:
+    - "The owner restored the verified rehearsal candidate into the installed app and confirmed register responsiveness and upcoming deletion. Future imported rows exposed a display gap; the register now groups and mutes all pending schedules and future ordinary entries above history, without a separate Scheduled tab. Focused tests, frontend/native installer builds and independent review passed; the installed app was upgraded and reopened with database bytes unchanged by installation."
     - "The per-user x64 installer completed with exit code 0; installed executable, uninstall registration and Start menu shortcut were verified. The installed app opened a responsive native window, and the owner confirmed the normal app screen. Installation and first launch are verified."
     - "Synthetic native desktop startup recovery passed, including desktop reopen, unchanged source backup and exact preservation of unreadable database/WAL bytes. The owner rehearsal budget was untouched. The per-user x64 NSIS installer built successfully; installation and first launch subsequently passed on 2026-10-08."
-    - "Upcoming scheduled entries now use the register editor with Date/Repeat and other fields. Edits update pending/future instances while preserving posted history, paired transfers and original recurrence anchors. Delete cancels repeats through the safety-backup path. 129 core tests, 24 IPC tests and the standalone build passed; owner edit/delete rehearsal remains open."
-    - "The owner confirmed register Date/Repeat worked but reported heavy lag. Register rendering is now bounded to 100 rows per page with full history accessible; frontend and standalone builds passed and desktop navigation was inspected. Owner responsiveness retesting remains open."
+    - "Upcoming scheduled entries now use the register editor with Date/Repeat and other fields. Edits update pending/future instances while preserving posted history, paired transfers and original recurrence anchors. Delete cancels repeats through the safety-backup path. 129 core tests, 24 IPC tests and the standalone build passed; owner editing and deletion subsequently passed; revised upcoming display confirmation remains open."
+    - "The owner confirmed register Date/Repeat worked but reported heavy lag. Register rendering is now bounded to 100 rows per page with full history accessible; frontend and standalone builds passed and desktop navigation was inspected. Owner responsiveness retesting subsequently passed on 2026-10-08."
     - "The owner reported the new target and scheduled transfer worked, then clarified register-based Date/Repeat entry. The composer now supports Never/Monthly/Quarterly/Yearly, one-time future entries and atomic Post/Skip from either transfer leg. 22 routing tests, 48 ledger tests and the standalone build passed; desktop controls were inspected."
     - "Owner-required monthly, quarterly and yearly category targets and income/expense/transfer schedules are implemented. Periodic targets use explicit due settings and spread funding over months. Schema-10 upgrades and older-backup restore preserve existing data; 122 core tests, 73 frontend tests and the standalone desktop build passed. Existing owner export comparisons remain exact."
     - "The owner confirmed corrected Plan money moves, date-eligible clearing/reconciliation and native backup restore that reverted a test entry and persisted after reopening. Startup recovery and remaining required daily workflows remain open."
@@ -42,7 +43,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
-    - "Upcoming editing received owner confirmation; upcoming deletion and register responsiveness still need owner feedback before the daily budgeting gate closes."
+    - "Register responsiveness and upcoming deletion received owner confirmation. The revised unified upcoming display is implemented and installed; owner visual confirmation remains before the daily-workflow gate closes."
     - "Native desktop backup/restore passed the owner rehearsal and synthetic desktop startup recovery passed. A full clean migration still needs verification before 2026-10-21."
     - "The one-time desktop import handoff currently uses the verifier and a manual candidate copy into the rehearsal backup folder; no in-app YNAB import flow has been rehearsed."
     - "Spending by Payee, other report filters, forecast values, and broader schedule/target coverage remain secondary unless they block the owner's real migration workflow."
@@ -50,6 +51,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "4ffd2775029e8d6b350fcb87a8eebba73ba8152d"
+    note: "Records owner-confirmed installed-budget workflow checks, unified upcoming display, passed tests/build/review and installed upgrade; revised-display confirmation and fresh-export rehearsal remain open."
   - path: "docs/status.md"
     ref: "dab87706b3a1726d65be8efe1289ead0c25ddd4c"
     note: "Records successful installation, installed artifacts, responsive native window launch and owner-confirmed normal app screen."

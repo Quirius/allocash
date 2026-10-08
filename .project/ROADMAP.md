@@ -184,13 +184,16 @@ plans:
     priority: "high"
     due_date: "2026-10-08"
     completed_at: null
-    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation, a target/scheduled transfer, register Date/Repeat entry and the upcoming editing correction. Register rendering is paged and upcoming deletion is implemented with passing checks. Confirm responsiveness and upcoming deletion before closing the daily-workflow gate."
+    details: "The owner confirmed ordinary entry/edit/delete, transfers, Plan moves, clearing/reconciliation, a target/scheduled transfer, register Date/Repeat entry and the upcoming editing correction. Register rendering is paged and upcoming deletion is implemented with passing checks. The owner confirmed responsiveness and upcoming deletion in the installed app. A requested unified upcoming display now groups pending schedules and future ordinary rows above history and removes the Scheduled tab; tests, review, package build and installed upgrade passed. Confirm the revised display before closing the daily-workflow gate."
     acceptance_criteria:
       - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
       - "Non-essential feature expansion is deferred until after migration."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "4ffd2775029e8d6b350fcb87a8eebba73ba8152d"
+        note: "Records confirmed responsiveness/deletion, upcoming-display correction and installed upgrade; owner display confirmation remains open."
       - path: "docs/status.md"
         ref: "208165612a2370be70c81441a71b4664e5cd9aa3"
         note: "Records owner confirmation of upcoming editing, with responsiveness and upcoming deletion feedback still open."
