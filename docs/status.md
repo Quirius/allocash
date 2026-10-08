@@ -1,5 +1,28 @@
 # Implementation and validation status
 
+On 2026-10-08, the owner reported an incorrect large negative Ready to Assign
+balance in the October Plan. Investigation reproduced it on an isolated copy of
+the installed budget. The calculation omitted credit-to-cash advances, surplus
+from cash payments that made credit balances positive, and credit Ready to Assign
+inflows that crossed above zero. It also classified payment-category cash
+overspending before applying the month's automatic funding/payment deltas.
+The corrected derivation counts only newly available funds, subtracts the part
+of an advance drawn from an already-funded positive card balance, and applies
+payment deltas before classifying closed-month cash overspending. A chronological
+prepass uses exactly the eligible posted/as-of entries, so coverage is independent
+of iteration order and future ordinary entries cannot affect an older snapshot.
+The eligible cash leg determines when an advance contributes; if its debit leg is
+outside the view, no positive-balance coverage is inferred from that excluded leg.
+The captured budget's October Ready to Assign now computes as zero. Assigned,
+Activity, Available, targets and credit mappings are identical across 51 monthly
+snapshots before and after the correction. No imported history, assignments or
+schema were rewritten. All 137 core tests passed, including focused regressions
+for advances, positive credit funding and payment-category rollover. Formatting and independent review passed. Frontend and per-user NSIS builds
+passed. The installed app was upgraded with exit code 0 and reopened into a
+responsive native window. Installation preserved database bytes; the executable
+matches the packaged build, and the reopened budget matches the diagnostic copy
+across all tables. Owner screen confirmation remains open.
+
 On 2026-10-08, the owner refined Make repeating to use the next available
 occurrence of the original day of month in the current or next month, clamping
 29/30/31 to the last available day. The implementation selects strictly after

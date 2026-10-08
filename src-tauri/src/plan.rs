@@ -495,26 +495,63 @@ fn derive_plan(
          WHERE t.posting_state='posted' AND t.transaction_date<?1 AND (?2 IS NULL OR t.transaction_date<=?2) AND a.kind IN ('cash','credit')
          ORDER BY t.transaction_date,source.source_file,source.row_number,t.id",
     )?;
-    let mut rows = entries.query(params![
-        target.next_start(),
-        as_of.map(CalendarDate::as_str)
-    ])?;
-    while let Some(row) = rows.next()? {
-        let category_id: Option<String> = row.get(0)?;
-        let amount = i128::from(row.get::<_, i64>(1)?);
-        let date: String = row.get(2)?;
-        let kind: String = row.get(3)?;
-        let account_id: String = row.get(4)?;
-        let transfer_id: Option<String> = row.get(5)?;
-        let counterpart_kind: Option<String> = row.get(6)?;
+    let entries = entries
+        .query_map(
+            params![target.next_start(), as_of.map(CalendarDate::as_str)],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                ))
+            },
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Credit-to-cash transfers are RTA income only to the extent that they
+    // increase borrowing. Precompute how much of each credit debit consumes
+    // an existing positive card balance, using only entries in this as-of view.
+    let mut transfer_positive_balance_coverage = BTreeMap::<String, i128>::new();
+    let mut coverage_credit_balances = BTreeMap::<String, i128>::new();
+    for (_, raw_amount, _, kind, account_id, transfer_id, counterpart_kind) in &entries {
+        if kind != "credit" {
+            continue;
+        }
+        let amount = i128::from(*raw_amount);
+        let balance = coverage_credit_balances
+            .entry(account_id.clone())
+            .or_default();
+        let covered = if amount < 0 {
+            (-amount).min((*balance).max(0))
+        } else {
+            0
+        };
+        if amount < 0 && counterpart_kind.as_deref() == Some("cash") {
+            if let Some(transfer_id) = transfer_id {
+                transfer_positive_balance_coverage.insert(transfer_id.clone(), covered);
+            }
+        }
+        *balance = checked_add(*balance, amount)?;
+    }
+
+    for (category_id, raw_amount, date, kind, account_id, transfer_id, counterpart_kind) in entries
+    {
+        let amount = i128::from(raw_amount);
+        let mut credit_positive_balance_delta = 0i128;
         let positive_balance_portion = if kind == "credit" {
             let balance = credit_balances.entry(account_id.clone()).or_default();
+            let before = *balance;
             let covered = if amount < 0 {
-                (-amount).min((*balance).max(0))
+                (-amount).min(before.max(0))
             } else {
                 0
             };
             *balance = checked_add(*balance, amount)?;
+            credit_positive_balance_delta = checked_sub((*balance).max(0), before.max(0))?;
             covered
         } else {
             0
@@ -523,12 +560,23 @@ fn derive_plan(
         let month_activity = months.entry(month.to_owned()).or_default();
         if transfer_id.is_some() {
             if kind == "credit" && amount > 0 && counterpart_kind.as_deref() == Some("cash") {
+                month_activity.ready_income =
+                    checked_add(month_activity.ready_income, credit_positive_balance_delta)?;
                 if let Some(payment_category) = payment_categories.get(&account_id) {
                     let delta = month_activity
                         .payment_deltas
                         .entry(payment_category.clone())
                         .or_default();
                     *delta = checked_add(*delta, -amount)?;
+                }
+            }
+            if kind == "cash" && amount > 0 && counterpart_kind.as_deref() == Some("credit") {
+                if let Some(transfer_id) = transfer_id.as_ref() {
+                    let covered = *transfer_positive_balance_coverage
+                        .get(transfer_id)
+                        .unwrap_or(&0);
+                    month_activity.ready_income =
+                        checked_add(month_activity.ready_income, checked_sub(amount, covered)?)?;
                 }
             }
             if !matches!(counterpart_kind.as_deref(), Some("tracking" | "loan")) {
@@ -541,6 +589,9 @@ fn derive_plan(
         {
             if kind == "cash" {
                 month_activity.ready_income = checked_add(month_activity.ready_income, amount)?;
+            } else if kind == "credit" {
+                month_activity.ready_income =
+                    checked_add(month_activity.ready_income, credit_positive_balance_delta)?;
             }
         } else if let Some(category_id) = category_id {
             let category = month_activity.categories.entry(category_id).or_default();
@@ -565,6 +616,9 @@ fn derive_plan(
             }
         } else if kind == "cash" {
             month_activity.ready_income = checked_add(month_activity.ready_income, amount)?;
+        } else if kind == "credit" {
+            month_activity.ready_income =
+                checked_add(month_activity.ready_income, credit_positive_balance_delta)?;
         }
     }
 
@@ -594,6 +648,7 @@ fn derive_plan(
         ready_income = checked_add(ready_income, month_ready_income)?;
         let mut category_ids: BTreeSet<String> = month_categories.keys().cloned().collect();
         category_ids.extend(payment_deltas.keys().cloned());
+        let mut month_credit_overspending = BTreeMap::<String, i128>::new();
         for category_id in category_ids {
             let entry = month_categories.get(&category_id);
             let assignment = entry.map_or(0, |value| value.assignment);
@@ -670,14 +725,11 @@ fn derive_plan(
                 }
             }
             let raw_available = checked_sub(checked_sub(pool, cash_spend)?, total_credit_spend)?;
-            let cash_overspending = checked_sub((-raw_available).max(0), credit_overspending)?;
             available.insert(category_id.clone(), raw_available);
+            month_credit_overspending.insert(category_id.clone(), credit_overspending);
             if is_target {
                 target_assigned.insert(category_id.clone(), assignment);
                 target_activity.insert(category_id, normal_activity);
-            } else {
-                closed_cash_overspending =
-                    checked_add(closed_cash_overspending, cash_overspending)?;
             }
         }
         // A mapped card purchase moves only its funded portion into the payment
@@ -695,6 +747,12 @@ fn derive_plan(
         for (category_id, delta) in payment_deltas {
             let current_available = available.entry(category_id).or_default();
             *current_available = checked_add(*current_available, delta)?;
+        }
+        for (category_id, value) in &available {
+            let negative_available = (-*value).max(0);
+            let credit_overspending = *month_credit_overspending.get(category_id).unwrap_or(&0);
+            let cash_overspending = checked_sub(negative_available, credit_overspending)?.max(0);
+            closed_cash_overspending = checked_add(closed_cash_overspending, cash_overspending)?;
         }
         for value in available.values_mut() {
             *value = (*value).max(0);
@@ -1227,7 +1285,7 @@ mod tests {
     }
 
     #[test]
-    fn credit_and_transfer_rows_do_not_inflate_ready_to_assign() {
+    fn cash_and_uncategorized_positive_credit_inflows_fund_ready_to_assign() {
         let directory = tempfile::tempdir().unwrap();
         let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
         database
@@ -1265,7 +1323,250 @@ mod tests {
                 .plan_month(&PlanMonth::parse("2026-09").unwrap())
                 .unwrap()
                 .ready_to_assign,
-            Huf(1000)
+            Huf(1500)
+        );
+    }
+
+    #[test]
+    fn credit_ready_to_assign_tracks_only_positive_balance_changes() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "card".into(),
+                name: "Card".into(),
+                kind: AccountKind::Credit,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database
+            .create_category_group("inflow", "Inflow", 0)
+            .unwrap();
+        database
+            .create_category("rta", "inflow", "Ready to Assign", 0)
+            .unwrap();
+        for (id, date, amount) in [
+            ("opening-debt", "2026-09-01", -100),
+            ("income", "2026-09-02", 150),
+            ("adjustment", "2026-09-03", -25),
+        ] {
+            let mut entry = Entry::manual(id, "card", CalendarDate::parse(date).unwrap());
+            entry.category_id = Some("rta".into());
+            database.create_transaction(&entry, Huf(amount)).unwrap();
+        }
+        let month = PlanMonth::parse("2026-09").unwrap();
+        let after_income = database
+            .plan_month_as_of(&month, &CalendarDate::parse("2026-09-02").unwrap())
+            .unwrap();
+        assert_eq!(after_income.ready_to_assign, Huf(50));
+        let after_adjustment = database
+            .plan_month_as_of(&month, &CalendarDate::parse("2026-09-03").unwrap())
+            .unwrap();
+        assert_eq!(after_adjustment.ready_to_assign, Huf(25));
+    }
+
+    #[test]
+    fn cash_to_card_overpayment_adds_surplus_but_keeps_full_payment_delta() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        for (id, kind, sort_order) in [
+            ("cash", AccountKind::Cash, 0),
+            ("card", AccountKind::Credit, 1),
+        ] {
+            database
+                .create_account(&Account {
+                    id: id.into(),
+                    name: id.into(),
+                    kind,
+                    sort_order,
+                    closed: false,
+                })
+                .unwrap();
+        }
+        database
+            .create_category_group("payments", "Payments", 0)
+            .unwrap();
+        database
+            .create_category("payment", "payments", "Card payment", 0)
+            .unwrap();
+        database
+            .set_credit_payment_category("card", Some("payment"))
+            .unwrap();
+        database
+            .create_transaction(
+                &Entry::manual(
+                    "opening-debt",
+                    "card",
+                    CalendarDate::parse("2026-09-01").unwrap(),
+                ),
+                Huf(-100),
+            )
+            .unwrap();
+        let payment = TransferDraft::manual(
+            "overpayment",
+            Huf(150),
+            Entry::manual(
+                "cash-leg",
+                "cash",
+                CalendarDate::parse("2026-09-02").unwrap(),
+            ),
+            Entry::manual(
+                "card-leg",
+                "card",
+                CalendarDate::parse("2026-09-02").unwrap(),
+            ),
+            Direction::Outflow,
+        );
+        database.create_transfer(&payment).unwrap();
+
+        let september = PlanMonth::parse("2026-09").unwrap();
+        let september_plan = database.plan_month(&september).unwrap();
+        assert_eq!(september_plan.ready_to_assign, Huf(50));
+        assert_eq!(category_available(&september_plan, "payment"), Huf(-150));
+        let october_plan = database
+            .plan_month(&PlanMonth::parse("2026-10").unwrap())
+            .unwrap();
+        assert_eq!(october_plan.ready_to_assign, Huf(-100));
+    }
+
+    #[test]
+    fn cash_advance_uses_linked_credit_coverage_only_when_debit_is_in_cutoff() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        for (id, kind, sort_order) in [
+            ("cash", AccountKind::Cash, 0),
+            ("card", AccountKind::Credit, 1),
+        ] {
+            database
+                .create_account(&Account {
+                    id: id.into(),
+                    name: id.into(),
+                    kind,
+                    sort_order,
+                    closed: false,
+                })
+                .unwrap();
+        }
+        database
+            .create_category_group("inflow", "Inflow", 0)
+            .unwrap();
+        database
+            .create_category("rta", "inflow", "Ready to Assign", 0)
+            .unwrap();
+        let mut opening_credit = Entry::manual(
+            "opening-credit",
+            "card",
+            CalendarDate::parse("2026-09-01").unwrap(),
+        );
+        opening_credit.category_id = Some("rta".into());
+        database
+            .create_transaction(&opening_credit, Huf(100))
+            .unwrap();
+        let advance = TransferDraft::manual(
+            "advance",
+            Huf(150),
+            Entry::manual(
+                "card-leg",
+                "card",
+                CalendarDate::parse("2026-09-04").unwrap(),
+            ),
+            Entry::manual(
+                "cash-leg",
+                "cash",
+                CalendarDate::parse("2026-09-02").unwrap(),
+            ),
+            Direction::Outflow,
+        );
+        database.create_transfer(&advance).unwrap();
+
+        let month = PlanMonth::parse("2026-09").unwrap();
+        let before_credit_debit = database
+            .plan_month_as_of(&month, &CalendarDate::parse("2026-09-02").unwrap())
+            .unwrap();
+        assert_eq!(before_credit_debit.ready_to_assign, Huf(250));
+        assert_eq!(
+            database
+                .account_balance("cash", &CalendarDate::parse("2026-09-02").unwrap())
+                .unwrap()
+                .working,
+            Huf(150)
+        );
+        let after_credit_debit = database
+            .plan_month_as_of(&month, &CalendarDate::parse("2026-09-04").unwrap())
+            .unwrap();
+        assert_eq!(after_credit_debit.ready_to_assign, Huf(150));
+        assert_eq!(
+            database
+                .account_balance("card", &CalendarDate::parse("2026-09-04").unwrap())
+                .unwrap()
+                .working,
+            Huf(-50)
+        );
+        database
+            .connection
+            .execute(
+                "UPDATE transactions SET posting_state='scheduled',cleared_state='uncleared' WHERE id='card-leg'",
+                [],
+            )
+            .unwrap();
+        let with_unposted_credit_debit = database
+            .plan_month_as_of(&month, &CalendarDate::parse("2026-09-04").unwrap())
+            .unwrap();
+        assert_eq!(with_unposted_credit_debit.ready_to_assign, Huf(250));
+    }
+
+    #[test]
+    fn credit_to_tracking_transfer_counts_only_new_positive_card_balance_as_rta() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        for (id, kind, sort_order) in [
+            ("card", AccountKind::Credit, 0),
+            ("tracking", AccountKind::Tracking, 1),
+        ] {
+            database
+                .create_account(&Account {
+                    id: id.into(),
+                    name: id.into(),
+                    kind,
+                    sort_order,
+                    closed: false,
+                })
+                .unwrap();
+        }
+        database
+            .create_transaction(
+                &Entry::manual(
+                    "opening-debt",
+                    "card",
+                    CalendarDate::parse("2026-09-01").unwrap(),
+                ),
+                Huf(-100),
+            )
+            .unwrap();
+        let transfer = TransferDraft::manual(
+            "tracking-to-card",
+            Huf(150),
+            Entry::manual(
+                "card-leg",
+                "card",
+                CalendarDate::parse("2026-09-02").unwrap(),
+            ),
+            Entry::manual(
+                "tracking-leg",
+                "tracking",
+                CalendarDate::parse("2026-09-02").unwrap(),
+            ),
+            Direction::Inflow,
+        );
+        database.create_transfer(&transfer).unwrap();
+
+        assert_eq!(
+            database
+                .plan_month(&PlanMonth::parse("2026-09").unwrap())
+                .unwrap()
+                .ready_to_assign,
+            Huf(50)
         );
     }
 
@@ -1409,7 +1710,7 @@ mod tests {
                 .plan_month(&PlanMonth::parse("2026-10").unwrap())
                 .unwrap()
                 .ready_to_assign,
-            Huf(-60)
+            Huf(-20)
         );
     }
 
@@ -1534,6 +1835,112 @@ mod tests {
                 .available,
             Huf(200)
         );
+    }
+
+    #[test]
+    fn card_funding_offsets_negative_payment_assignment_before_rta_rollover() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "card".into(),
+                name: "Card".into(),
+                kind: AccountKind::Credit,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        database
+            .create_category("payment", "g", "Card payment", 1)
+            .unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &september, Huf(100))
+            .unwrap();
+        database
+            .set_monthly_assignment("payment", &september, Huf(-100))
+            .unwrap();
+        database
+            .set_credit_payment_category("card", Some("payment"))
+            .unwrap();
+        let mut purchase = Entry::manual(
+            "purchase",
+            "card",
+            CalendarDate::parse("2026-09-10").unwrap(),
+        );
+        purchase.category_id = Some("food".into());
+        database.create_transaction(&purchase, Huf(-100)).unwrap();
+
+        let september_plan = database.plan_month(&september).unwrap();
+        assert_eq!(category_available(&september_plan, "food"), Huf(0));
+        assert_eq!(category_available(&september_plan, "payment"), Huf(0));
+        let october_plan = database
+            .plan_month(&PlanMonth::parse("2026-10").unwrap())
+            .unwrap();
+        assert_eq!(october_plan.ready_to_assign, Huf(0));
+    }
+
+    #[test]
+    fn unfunded_cash_card_payment_reduces_next_month_rta() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        for (id, kind, sort_order) in [
+            ("cash", AccountKind::Cash, 0),
+            ("card", AccountKind::Credit, 1),
+        ] {
+            database
+                .create_account(&Account {
+                    id: id.into(),
+                    name: id.into(),
+                    kind,
+                    sort_order,
+                    closed: false,
+                })
+                .unwrap();
+        }
+        database.create_category_group("g", "Living", 0).unwrap();
+        database
+            .create_category("payment", "g", "Card payment", 0)
+            .unwrap();
+        database
+            .set_credit_payment_category("card", Some("payment"))
+            .unwrap();
+        database
+            .create_transaction(
+                &Entry::manual(
+                    "opening-debt",
+                    "card",
+                    CalendarDate::parse("2026-09-01").unwrap(),
+                ),
+                Huf(-100),
+            )
+            .unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        let transfer = TransferDraft::manual(
+            "card-payment",
+            Huf(100),
+            Entry::manual(
+                "cash-leg",
+                "cash",
+                CalendarDate::parse("2026-09-10").unwrap(),
+            ),
+            Entry::manual(
+                "card-leg",
+                "card",
+                CalendarDate::parse("2026-09-10").unwrap(),
+            ),
+            Direction::Outflow,
+        );
+        database.create_transfer(&transfer).unwrap();
+
+        let september_plan = database.plan_month(&september).unwrap();
+        assert_eq!(category_available(&september_plan, "payment"), Huf(-100));
+        let october_plan = database
+            .plan_month(&PlanMonth::parse("2026-10").unwrap())
+            .unwrap();
+        assert_eq!(october_plan.ready_to_assign, Huf(-100));
     }
 
     #[test]

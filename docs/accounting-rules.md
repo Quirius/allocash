@@ -80,7 +80,10 @@ source `Activity` and `Available` values for later comparison; Plan activity and
 balances continue to be derived from posted ledger entries and account mappings.
 Each closed month carries positive category money forward and resets a negative
 category balance. Cash overspending reduces Ready to Assign in the next month;
-credit overspending is card debt and does not reduce Ready to Assign.
+credit overspending is card debt and does not reduce Ready to Assign. Closed-month
+cash overspending is classified after automatic card-payment funding and payment
+deltas, so a payment category covered within that month is not counted as
+uncovered cash spending.
 
 A category money move atomically subtracts from the source month's Assigned
 and adds to the destination month's Assigned. Moves require two distinct valid
@@ -91,12 +94,19 @@ the moved month, while existing overspending/rollover rules still apply later.
 
 YNAB's `Inflow: Ready to Assign` category remains on imported ledger entries for
 the register. Plan routes its cash activity into the separate Ready to Assign
-balance rather than showing it as a spendable category. A transfer between
-on-budget accounts remains outside category activity. When a
+balance rather than showing it as a spendable category. Credit inflows categorized
+to Ready to Assign, or left uncategorized, fund it only to the extent that they
+increase a positive card balance; reducing card debt alone does not create spendable money. A cash-to-card
+payment that creates a positive card balance also adds that surplus to Ready to
+Assign. Credit-to-cash advances add the cash inflow to Ready to Assign, excluding
+the part drawn from an existing positive card balance, which was already funded.
+The cash leg retains its own posted date and as-of eligibility. Transfers between
+on-budget accounts remain outside ordinary category activity. When a
 posted transfer crosses between a cash/credit account and a tracking/loan account,
 the on-budget leg uses its source category for Plan activity; an uncategorized or
-Ready to Assign cash leg changes Ready to Assign. The off-budget leg never funds
-categories.
+Ready to Assign cash leg changes Ready to Assign. An equivalent credit leg funds
+Ready to Assign only through its positive-balance change. The off-budget leg never
+funds categories.
 
 Within a category/month, cash spending and the portions of card purchases
 covered by positive card balances have first claim on the category's available
@@ -107,6 +117,12 @@ overspending. Card refunds reverse the payment movement. A
 posted cash-to-credit transfer reduces the
 mapped payment category without changing Ready to Assign. Scheduled rows and
 transfers wholly within or outside the budget do not affect Plan activity.
+
+The cash-advance and positive-card-balance rules follow YNAB's documented
+[cash advance](https://support.ynab.com/en_us/credit-card-cash-advances-an-overview-Hy6PmlOC9)
+and [positive balance](https://support.ynab.com/en_us/credit-cards-with-a-positive-balance-an-overview-By_H6uzJo)
+behavior. Imported history and assignments remain unchanged; these are derived
+Plan calculations.
 
 ## Plan targets
 
