@@ -25,7 +25,7 @@ export interface TransactionDraft {
   inflow: string;
 }
 
-export function draftFromPostedEntry(entry: RegisterEntry, sourceAccountId: string, accounts: AccountOverview[]): TransactionDraft {
+export function draftFromPostedEntry(entry: RegisterEntry, sourceAccountId: string, accounts: AccountOverview[], today = localCalendarDate()): TransactionDraft {
   let counterpartId = "";
   if (entry.transferId) {
     if (entry.transferAccountId) {
@@ -44,7 +44,7 @@ export function draftFromPostedEntry(entry: RegisterEntry, sourceAccountId: stri
   const magnitude = (amount < 0n ? -amount : amount).toString();
   return {
     kind: entry.transferId ? "transfer" : "transaction",
-    date: nextCalendarMonth(entry.date), repeat: "monthly",
+    date: nextCalendarMonth(today), repeat: "monthly",
     payee: entry.payeeName || "", categoryId: entry.categoryId || "", counterpartId,
     memo: entry.memo, flagId: entry.flagId || "",
     outflow: amount < 0n ? magnitude : "", inflow: amount >= 0n ? magnitude : "",

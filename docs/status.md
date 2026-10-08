@@ -1,5 +1,16 @@
 # Implementation and validation status
 
+On 2026-10-08, the owner said the integrated repeat workflow looked good but
+requested a future default date when making a transaction repeat. The draft now
+defaults to one calendar month after today, rather than after the historical
+source transaction's date. Monthly remains selected, short months clamp, and
+the original transaction is unchanged. All ten date/draft tests passed,
+including an old reconciled transaction defaulting from October 8 to November 8.
+Frontend and per-user NSIS builds passed. The installed app was upgraded with
+exit code 0 and reopened into a responsive window; database bytes were unchanged
+by installation and the executable matched the packaged build. Owner confirmation
+of the corrected default and the clean migration desktop rehearsal remain open.
+
 On 2026-10-08, the owner requested Repeat inside the date/calendar dropdown and
 a Make repeating action for past transactions. New entries default to Never;
 pending schedule editing retains its existing frequency. Make repeating below

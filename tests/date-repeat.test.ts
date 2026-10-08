@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import type { AccountOverview, RegisterEntry } from "../src/lib/desktop";
 import { draftFromPostedEntry, signedAmount } from "../src/app/TransactionEditor";
 import { nextCalendarMonth } from "../src/app/DateRepeatPicker";
@@ -21,7 +21,7 @@ it.each([
 });
 
 it("copies a large inflow into a monthly draft with source details", () => {
-  const draft = draftFromPostedEntry({ ...baseEntry, amount: "9223372036854775807" }, "source-account", accounts);
+  const draft = draftFromPostedEntry({ ...baseEntry, amount: "9223372036854775807" }, "source-account", accounts, "2026-01-31");
   expect(draft).toEqual({
     kind: "transaction", date: "2026-02-28", repeat: "monthly", payee: "Rent",
     categoryId: "hidden-category", counterpartId: "", memo: "monthly note", flagId: "flag-1",
@@ -30,7 +30,7 @@ it("copies a large inflow into a monthly draft with source details", () => {
 });
 
 it("preserves the minimum signed HUF amount as an outflow draft", () => {
-  const draft = draftFromPostedEntry({ ...baseEntry, amount: "-9223372036854775808" }, "source-account", accounts);
+  const draft = draftFromPostedEntry({ ...baseEntry, amount: "-9223372036854775808" }, "source-account", accounts, "2026-01-31");
   expect(draft).toMatchObject({ outflow: "9223372036854775808", inflow: "" });
 });
 
@@ -43,7 +43,7 @@ it("validates composer outflows including signed limits and zero", () => {
 });
 
 it("resolves a linked transfer destination only by its unique exact account name", () => {
-  const draft = draftFromPostedEntry({ ...baseEntry, transferId: "pair", transferAccountName: "Cash", amount: "-5500", payeeName: null }, "source-account", accounts);
+  const draft = draftFromPostedEntry({ ...baseEntry, transferId: "pair", transferAccountName: "Cash", amount: "-5500", payeeName: null }, "source-account", accounts, "2026-01-31");
   expect(draft).toMatchObject({ kind: "transfer", date: "2026-02-28", repeat: "monthly", counterpartId: "cash-account", outflow: "5500", inflow: "" });
   expect(() => draftFromPostedEntry({ ...baseEntry, transferId: "pair", transferAccountName: "Cash" }, "source-account", [...accounts, { id: "another-cash", name: "Cash" } as AccountOverview])).toThrow("cannot be identified uniquely");
 });
@@ -52,4 +52,18 @@ it("uses the linked account identity when account names are duplicated", () => {
   const source = { ...baseEntry, transferId: "pair", transferAccountId: "cash-account", transferAccountName: "Cash" };
   const draft = draftFromPostedEntry(source, "source-account", [...accounts, { id: "other-cash", name: "Cash" } as AccountOverview]);
   expect(draft.counterpartId).toBe("cash-account");
+});
+
+it("defaults a historical repeating draft to one month from today", () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date(2026, 9, 8, 12));
+  try {
+    const source = Object.freeze({ ...baseEntry, date: "2023-01-31" });
+    const draft = draftFromPostedEntry(source, "source-account", accounts);
+    expect(draft).toMatchObject({ date: "2026-11-08", repeat: "monthly" });
+    expect(source.date).toBe("2023-01-31");
+    expect(source.clearedState).toBe("reconciled");
+  } finally {
+    vi.useRealTimers();
+  }
 });

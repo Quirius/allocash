@@ -117,7 +117,7 @@ their register Edit, Post and Skip actions.
 
 A posted transaction through today offers Make repeating below its date in the
 editor. It opens a separate new draft copied from the stored transaction, dated
-one calendar month later (clamped for shorter months), with Monthly selected.
+one calendar month after today (clamped for shorter months), with Monthly selected.
 Payee, category, memo, flag and signed amount are preserved; transfers preserve
 their selected account and counterpart. Opening or canceling the draft performs
 no writes and never changes the original transaction or its reconciled state.
