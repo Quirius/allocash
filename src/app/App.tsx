@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   createNativeBackup,
   listNativeBackups,
@@ -14,10 +14,10 @@ import {
   type WorkspaceSnapshot,
 } from "../lib/desktop";
 import { formatDate, formatHuf, localCalendarDate } from "../lib/format";
+import { partitionRegisterEntries } from "../lib/register";
 import { RegisterEntryEditor, TransactionComposer } from "./TransactionEditor";
 import { ReconciliationEditor } from "./ReconciliationEditor";
 import { PlanView } from "./PlanView";
-import { ScheduleView } from "./ScheduleView";
 import { ReportsView } from "./ReportsView";
 
 type Startup =
@@ -87,7 +87,7 @@ export function App() {
   const [register, setRegister] = useState<RegisterState>({ status: "idle" });
   const [startupAttempt, setStartupAttempt] = useState(0);
   const [registerAttempt, setRegisterAttempt] = useState(0);
-  const [view, setView] = useState<"register" | "plan" | "schedules" | "reports">("register");
+  const [view, setView] = useState<"register" | "plan" | "reports">("register");
   const [backup, setBackup] = useState<
     { status: "idle" } | { status: "saving" } | { status: "ready"; path: string } | { status: "error" }
   >({ status: "idle" });
@@ -271,9 +271,8 @@ export function App() {
             </div>
           )}
 
-          {startup.status === "ready" && <div className="workspace-tabs"><button className={view === "register" ? "active" : ""} onClick={() => setView("register")}>Register</button><button className={view === "plan" ? "active" : ""} onClick={() => setView("plan")}>Plan</button><button className={view === "schedules" ? "active" : ""} onClick={() => setView("schedules")}>Scheduled</button><button className={view === "reports" ? "active" : ""} onClick={() => setView("reports")}>Reports</button></div>}
+          {startup.status === "ready" && <div className="workspace-tabs"><button className={view === "register" ? "active" : ""} onClick={() => setView("register")}>Register</button><button className={view === "plan" ? "active" : ""} onClick={() => setView("plan")}>Plan</button><button className={view === "reports" ? "active" : ""} onClick={() => setView("reports")}>Reports</button></div>}
           {startup.status === "ready" && view === "plan" && <PlanView />}
-          {startup.status === "ready" && view === "schedules" && <ScheduleView accounts={accounts} options={startup.workspace.transactionOptions} />}
           {startup.status === "ready" && view === "reports" && <ReportsView accounts={accounts} categories={startup.workspace.transactionOptions.categories} />}
           {startup.status === "ready" && view === "register" && selectedAccount && (
             <AccountRegister
@@ -366,26 +365,42 @@ function AccountRegister({
   const [scheduleAction, setScheduleAction] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [registerPage, setRegisterPage] = useState(0);
+  const [upcomingPage, setUpcomingPage] = useState(0);
   const registerPageSize = 100;
+  const today = localCalendarDate();
   const entryCount = register.status === "ready" ? register.entries.length : 0;
-  const pageCount = Math.ceil(entryCount / registerPageSize);
+  const partitionedEntries = useMemo(
+    () => register.status === "ready" ? partitionRegisterEntries(register.entries, today) : { upcoming: [], history: [] },
+    [register, today],
+  );
+  const historyCount = partitionedEntries.history.length;
+  const historyPageCount = Math.ceil(historyCount / registerPageSize);
+  const upcomingPageCount = Math.ceil(partitionedEntries.upcoming.length / registerPageSize);
+  const safeUpcomingPage = Math.min(upcomingPage, Math.max(0, upcomingPageCount - 1));
+  const upcomingPageEntries = useMemo(
+    () => partitionedEntries.upcoming.slice(safeUpcomingPage * registerPageSize, (safeUpcomingPage + 1) * registerPageSize),
+    [partitionedEntries, safeUpcomingPage],
+  );
   const safeRegisterPage = register.status === "ready"
-    ? Math.min(registerPage, Math.max(0, pageCount - 1))
+    ? Math.min(registerPage, Math.max(0, historyPageCount - 1))
     : registerPage;
   const pageEntries = useMemo(
-    () => register.status === "ready"
-      ? register.entries.slice(safeRegisterPage * registerPageSize, (safeRegisterPage + 1) * registerPageSize)
-      : [],
-    [register, safeRegisterPage],
+    () => partitionedEntries.history.slice(safeRegisterPage * registerPageSize, (safeRegisterPage + 1) * registerPageSize),
+    [partitionedEntries, safeRegisterPage],
   );
 
   useEffect(() => {
     setRegisterPage(0);
+    setUpcomingPage(0);
   }, [account.id]);
 
   useEffect(() => {
     if (register.status === "ready" && registerPage !== safeRegisterPage) setRegisterPage(safeRegisterPage);
   }, [register.status, registerPage, safeRegisterPage]);
+
+  useEffect(() => {
+    if (upcomingPage !== safeUpcomingPage) setUpcomingPage(safeUpcomingPage);
+  }, [upcomingPage, safeUpcomingPage]);
 
   async function finishSchedule(id: string, post: boolean) {
     setScheduleAction(true); setScheduleError(null);
@@ -467,14 +482,22 @@ function AccountRegister({
         <>
           <nav className="register-pagination" aria-label="Register pages">
             <span aria-live="polite">
-              Showing {safeRegisterPage * registerPageSize + 1}–{Math.min((safeRegisterPage + 1) * registerPageSize, entryCount)} of {entryCount} transactions
+              Showing {historyCount === 0 ? 0 : safeRegisterPage * registerPageSize + 1}–{Math.min((safeRegisterPage + 1) * registerPageSize, historyCount)} of {historyCount} past and current transactions · {partitionedEntries.upcoming.length} upcoming
             </span>
             <div>
               <button type="button" onClick={() => setRegisterPage((page) => Math.max(0, page - 1))} disabled={safeRegisterPage === 0}>Previous</button>
-              <span>Page {safeRegisterPage + 1} of {pageCount}</span>
-              <button type="button" onClick={() => setRegisterPage((page) => Math.min(pageCount - 1, page + 1))} disabled={safeRegisterPage >= pageCount - 1}>Next</button>
+              <span>Page {historyPageCount === 0 ? 0 : safeRegisterPage + 1} of {historyPageCount}</span>
+              <button type="button" onClick={() => setRegisterPage((page) => Math.min(historyPageCount - 1, page + 1))} disabled={historyPageCount === 0 || safeRegisterPage >= historyPageCount - 1}>Next</button>
             </div>
           </nav>
+          {upcomingPageCount > 1 && <nav className="register-pagination upcoming-pagination" aria-label="Upcoming pages">
+            <span aria-live="polite">Upcoming {safeUpcomingPage * registerPageSize + 1}–{Math.min((safeUpcomingPage + 1) * registerPageSize, partitionedEntries.upcoming.length)} of {partitionedEntries.upcoming.length}</span>
+            <div>
+              <button type="button" onClick={() => setUpcomingPage((page) => Math.max(0, page - 1))} disabled={safeUpcomingPage === 0}>Previous upcoming</button>
+              <span>Page {safeUpcomingPage + 1} of {upcomingPageCount}</span>
+              <button type="button" onClick={() => setUpcomingPage((page) => Math.min(upcomingPageCount - 1, page + 1))} disabled={safeUpcomingPage >= upcomingPageCount - 1}>Next upcoming</button>
+            </div>
+          </nav>}
           <div className="register-table-wrap">
             <table className="register-table">
               <thead>
@@ -491,10 +514,14 @@ function AccountRegister({
                 </tr>
               </thead>
               <tbody>
-              {pageEntries.map((entry) => {
+              {partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={9} scope="rowgroup">Upcoming</th></tr>}
+              {[...upcomingPageEntries, ...pageEntries].map((entry) => {
                 const amount = BigInt(entry.amount);
+                const isUpcoming = entry.postingState === "scheduled" || entry.date > today;
                 return (
-                  <tr key={entry.id} className={entry.postingState === "scheduled" ? "scheduled" : undefined}>
+                  <Fragment key={entry.id}>
+                  {!isUpcoming && entry.id === pageEntries[0]?.id && partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={9} scope="rowgroup">Transactions</th></tr>}
+                  <tr className={isUpcoming ? "upcoming-row" : undefined}>
                     <td className="flag-column">
                       {entry.flagColor && (
                         <span
@@ -516,6 +543,7 @@ function AccountRegister({
                     <td className="money-column inflow">{amount >= 0n ? huf(amount.toString()) : ""}</td>
                     <td className="action-column"><button onClick={() => setEditor(entry)}>Edit</button>{entry.postingState === "scheduled" && <><button disabled={scheduleAction} onClick={() => void finishSchedule(entry.id, true)}>Post</button><button disabled={scheduleAction} onClick={() => void finishSchedule(entry.id, false)}>Skip</button></>}</td>
                   </tr>
+                  </Fragment>
                 );
               })}
               </tbody>
@@ -523,12 +551,12 @@ function AccountRegister({
           </div>
           <nav className="register-pagination bottom" aria-label="Register pages">
             <span aria-live="polite">
-              Showing {safeRegisterPage * registerPageSize + 1}–{Math.min((safeRegisterPage + 1) * registerPageSize, entryCount)} of {entryCount} transactions
+              Showing {historyCount === 0 ? 0 : safeRegisterPage * registerPageSize + 1}–{Math.min((safeRegisterPage + 1) * registerPageSize, historyCount)} of {historyCount} past and current transactions · {partitionedEntries.upcoming.length} upcoming
             </span>
             <div>
               <button type="button" onClick={() => setRegisterPage((page) => Math.max(0, page - 1))} disabled={safeRegisterPage === 0}>Previous</button>
-              <span>Page {safeRegisterPage + 1} of {pageCount}</span>
-              <button type="button" onClick={() => setRegisterPage((page) => Math.min(pageCount - 1, page + 1))} disabled={safeRegisterPage >= pageCount - 1}>Next</button>
+              <span>Page {historyPageCount === 0 ? 0 : safeRegisterPage + 1} of {historyPageCount}</span>
+              <button type="button" onClick={() => setRegisterPage((page) => Math.min(historyPageCount - 1, page + 1))} disabled={historyPageCount === 0 || safeRegisterPage >= historyPageCount - 1}>Next</button>
             </div>
           </nav>
         </>

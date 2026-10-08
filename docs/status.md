@@ -1,5 +1,24 @@
 # Implementation and validation status
 
+On 2026-10-08, the owner restored the verified October 4 rehearsal candidate
+into the installed app and confirmed register responsiveness and upcoming-entry
+deletion. The owner then identified future imported Uncleared rows that were
+not visually distinguished, and requested a single register workflow without
+the separate Scheduled tab. Imported future rows retain ordinary posting state
+because YNAB exports do not supply recurrence definitions. The register now
+groups pending scheduled entries and future ordinary rows above current/past
+transactions, with muted styling and a divider. Each section keeps a 100-row
+page limit, and pending schedules retain Edit/Post/Skip. This is a display change;
+imported identities, recurrence rules, balances and posting semantics remain
+unchanged. The focused register partition test, 22 transaction-routing tests, one schedule
+test, frontend build and per-user NSIS package build passed. Independent review
+found no blocking issue. The installed app was closed normally, upgraded with
+installer exit code 0 and reopened into a responsive native window. Database
+bytes were unchanged by installation. The installed executable matches the
+built executable apart from the expected NSIS bundle marker. Computer Use
+remained unavailable, so owner confirmation of the revised display and the full
+fresh-export migration rehearsal remain open.
+
 On 2026-10-08, the existing per-user x64 NSIS package installed successfully
 in silent mode with exit code 0. The installed executable, version 0.1.0
 uninstall registration and Start menu shortcut were verified. The installed

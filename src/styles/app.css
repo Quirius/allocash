@@ -145,7 +145,10 @@ details { border-top: 1px solid #323d49; padding-top: 16px; margin-top: 20px; fo
 .register-table td { overflow: hidden; padding: 11px 12px; border-bottom: 1px solid #2a343e; color: #c9d1d9; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .register-table tr:last-child td { border-bottom: 0; }
 .register-table tbody tr:hover { background: #202b34; }
-.register-table tr.scheduled { opacity: .66; }
+.register-table tr.upcoming-row { background: #202a33; opacity: .66; }
+.register-table tr.upcoming-row td { color: #aeb9c2; }
+.register-table tr.upcoming-row .payee-column { color: #cbd3d9; }
+.register-table tr.upcoming-divider th { padding: 9px 12px; border-top: 2px solid #46535e; border-bottom: 1px solid #35414b; background: #1b252e; color: #93a1ad; font-size: 10px; font-weight: 650; letter-spacing: .5px; text-align: left; text-transform: uppercase; }
 .register-table .flag-column { width: 36px; padding-inline: 10px 4px; text-align: center; }
 .register-table .date-column { width: 105px; color: #aeb9c4; font-variant-numeric: tabular-nums; }
 .register-table .payee-column { width: 18%; color: #edf1f4; font-weight: 550; }

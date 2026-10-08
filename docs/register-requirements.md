@@ -105,6 +105,14 @@ Scheduled transaction:
   (both linked legs for transfers), with the normal safety backup
 - remains excluded from posted balances and Plan until posted
 
+The account register is the owner's schedule workspace; do not expose a separate
+Scheduled tab. Pending scheduled entries and all ordinary transactions dated
+after today appear together at the top, visually muted and separated from
+transactions through today. Imported future rows retain their cleared state and
+ordinary transaction identity; displaying them as upcoming does not invent a
+recurrence rule or change financial posting semantics. Pending schedules retain
+their register Edit, Post and Skip actions.
+
 Transfer counterpart:
 
 - manually entered side is Cleared
