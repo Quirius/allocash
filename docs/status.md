@@ -1,5 +1,24 @@
 # Implementation and validation status
 
+On 2026-10-08, the matching October 4 Net Worth and Income v Expense references
+were located and the current verifier reran a clean import from the unchanged
+owner-confirmed export with the approved account/card mappings. It created a new
+schema-10 candidate without overwriting prior candidates or the installed budget.
+All 34 account balances matched; all 1,326 Assigned, Activity and Available Plan
+rows across 51 months matched. Historical reports matched 1,734 account-month
+balances and 51 Net Worth totals, plus all supplied January-October Income v
+Expense monthly, source/group/category and total/average comparisons. The import
+materialized 6,337 transactions and retained 43 duplicate signals. Four unresolved
+transfer source rows remain staged; a read-only check confirmed zero inflow and
+outflow on all four, with their original source cells preserved.
+Candidate integrity, foreign keys and schema checks passed. An identical copy
+named `allocash-clean-migration-20261008.sqlite3` was placed in the installed
+app's backup folder for owner restore. This clean candidate has no targets or
+recurrence definitions; YNAB does not export those rules. Existing rehearsal
+schedule definitions are not part of this candidate. Desktop restore, comparison,
+native backup/reopen and required target/recurrence recreation remain open before
+the clean migration rehearsal can be called complete.
+
 On 2026-10-08, the owner accepted the revised upcoming register display and
 confirmed that YNAB has not changed since the October 4 export. That export is
 therefore the owner's current migration source; a newer export is not required
