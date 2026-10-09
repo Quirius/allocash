@@ -1,5 +1,26 @@
 # Implementation and validation status
 
+On 2026-10-09, the owner requested replacing the separate Plan Move Money form
+with a popup opened from a category's Available amount. The clicked category is
+the fixed source; a positive Available balance is prefilled for editing and a
+grouped dropdown selects the destination, including Ready to Assign. Category
+moves atomically adjust both Assigned values. Returning to Ready to Assign
+reduces the source assignment and increases the derived unassigned balance,
+without assigning to the special Inflow category or changing the schema. Both
+routes remain one undoable action. Cancel, Escape and outside clicks dismiss
+without writing, and invalid amounts cannot be submitted. Popup drafts survive
+their own failed save; month changes and external mutations dismiss stale drafts.
+Overlapping writes are distinguished from the move's own start/finish events.
+The popup retains its data during Plan reloads, measures its placement and restores
+keyboard focus. Other Plan edit controls are inactive while a move is saving.
+All 161 Rust library tests and 140 frontend tests passed, including atomic
+assignment changes, return-to-Ready derivation, overflow rollback, undo,
+fixed-source payloads and popup lifecycle guards. Formatting, default Cargo
+check, independent review, frontend and per-user NSIS builds passed. Installation
+exited successfully and preserved database bytes; the installed executable matches
+the release build after its expected bundle marker. A responsive native window
+reopened. Owner popup move, cancellation and undo interaction checks remain open.
+
 On 2026-10-09, the owner reported that the installed undo workflow works well,
 then requested budget-aware category entry. Ordinary tracking/loan transactions
 and transfers within one budget scope no longer need a category. Cash/credit

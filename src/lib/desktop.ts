@@ -285,7 +285,7 @@ export async function reconcileAccount(input: ReconciliationInput): Promise<Reco
 }
 export async function loadPlanMonth(month: string, asOf = localCalendarDate()): Promise<PlanSnapshot | null> { if (!isTauri()) return null; return invoke<PlanSnapshot>("get_plan_month", { month, asOf }); }
 export async function setPlanAssignment(categoryId: string, month: string, amount: string): Promise<void> { return savedMutation(() => invoke("set_plan_assignment", { input: { categoryId, month, amount } })); }
-export async function movePlanMoney(fromCategoryId: string, toCategoryId: string, month: string, amount: string, asOf = localCalendarDate()): Promise<void> { return savedMutation(() => invoke("move_plan_money", { input: { fromCategoryId, toCategoryId, month, amount, asOf } })); }
+export async function movePlanMoney(fromCategoryId: string, toCategoryId: string | null, month: string, amount: string, asOf = localCalendarDate()): Promise<void> { return savedMutation(() => invoke("move_plan_money", { input: { fromCategoryId, toCategoryId, month, amount, asOf } })); }
 export async function setCreditPaymentCategory(accountId: string, categoryId: string | null): Promise<void> { return savedMutation(() => invoke("set_credit_payment_category", { input: { accountId, categoryId } })); }
 export async function setCategoryTarget(categoryId: string, effectiveMonth: string, target: CategoryTargetDefinition | null): Promise<void> { return savedMutation(() => invoke("set_category_target", { input: { categoryId, effectiveMonth, target } })); }
 export async function setCategoryTargetSnoozed(categoryId: string, month: string, snoozed: boolean): Promise<void> { return savedMutation(() => invoke("set_category_target_snoozed", { input: { categoryId, month, snoozed } })); }

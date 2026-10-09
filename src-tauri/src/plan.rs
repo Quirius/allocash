@@ -275,6 +275,19 @@ impl Database {
         self.move_monthly_money_with_cutoff(from_category_id, to_category_id, month, amount)
     }
 
+    /// Removes assigned money from a category and returns it to Ready to Assign.
+    /// The change is represented by the category assignment alone; Ready to Assign
+    /// is derived from the reduced total assigned amount.
+    pub fn move_monthly_money_to_ready_as_of(
+        &mut self,
+        from_category_id: &str,
+        month: &PlanMonth,
+        amount: Huf,
+        _as_of: &CalendarDate,
+    ) -> LedgerResult<()> {
+        self.move_monthly_money_to_target(from_category_id, None, month, amount)
+    }
+
     fn move_monthly_money_with_cutoff(
         &mut self,
         from_category_id: &str,
@@ -282,29 +295,56 @@ impl Database {
         month: &PlanMonth,
         amount: Huf,
     ) -> LedgerResult<()> {
-        if from_category_id == to_category_id || amount.0 <= 0 {
+        self.move_monthly_money_to_target(from_category_id, Some(to_category_id), month, amount)
+    }
+
+    fn move_monthly_money_to_target(
+        &mut self,
+        from_category_id: &str,
+        to_category_id: Option<&str>,
+        month: &PlanMonth,
+        amount: Huf,
+    ) -> LedgerResult<()> {
+        if amount.0 <= 0 || to_category_id == Some(from_category_id) {
             return Err(LedgerError::InvalidValue(
-                "A category move needs two categories and a positive amount.",
+                "A money move needs a positive amount and distinct categories.",
             ));
         }
         let transaction = self
             .connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let count: i64 = transaction.query_row(
-            "SELECT COUNT(*) FROM categories WHERE id IN (?1,?2)",
+            "SELECT COUNT(*) FROM categories WHERE id=?1 OR (?2 IS NOT NULL AND id=?2)",
             params![from_category_id, to_category_id],
             |row| row.get(0),
         )?;
-        if count != 2 {
+        if count != if to_category_id.is_some() { 2 } else { 1 } {
             return Err(LedgerError::NotFound);
         }
-        let id: String = transaction.query_row(
-            "SELECT 'category-move-' || lower(hex(randomblob(16)))",
-            [],
-            |row| row.get(0),
-        )?;
-        transaction.execute("INSERT INTO category_month_moves (id,month,from_category_id,to_category_id,amount_huf) VALUES (?1,?2,?3,?4,?5)", params![id, month.as_str(), from_category_id, to_category_id, amount.0])?;
-        for (category_id, delta) in [(from_category_id, -amount.0), (to_category_id, amount.0)] {
+        if to_category_id.is_none() {
+            let is_ready: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE c.id=?1 AND lower(trim(g.name))='inflow' AND lower(trim(c.name))='ready to assign')",
+                [from_category_id],
+                |row| row.get(0),
+            )?;
+            if is_ready {
+                return Err(LedgerError::InvalidValue(
+                    "Ready to Assign cannot be the source of a return move.",
+                ));
+            }
+        } else {
+            let id: String = transaction.query_row(
+                "SELECT 'category-move-' || lower(hex(randomblob(16)))",
+                [],
+                |row| row.get(0),
+            )?;
+            transaction.execute("INSERT INTO category_month_moves (id,month,from_category_id,to_category_id,amount_huf) VALUES (?1,?2,?3,?4,?5)", params![id, month.as_str(), from_category_id, to_category_id, amount.0])?;
+        }
+        let mut changes = vec![(from_category_id, -amount.0)];
+        if let Some(to_category_id) = to_category_id {
+            changes.push((to_category_id, amount.0));
+        }
+        for (category_id, delta) in changes {
             let current: Option<i64> = transaction.query_row("SELECT amount_huf FROM category_month_assignments WHERE category_id=?1 AND month=?2", params![category_id, month.as_str()], |row| row.get(0)).optional()?;
             let updated = current
                 .unwrap_or(0)
@@ -1282,6 +1322,133 @@ mod tests {
             })
             .unwrap();
         assert_eq!(move_count, 0);
+    }
+
+    #[test]
+    fn move_to_ready_reduces_assignment_and_undo_restores_derived_ready_balance() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "cash".into(),
+                name: "Cash".into(),
+                kind: AccountKind::Cash,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        database
+            .create_category_group("inflow", "Inflow", 1)
+            .unwrap();
+        database
+            .create_category("rta", "inflow", "Ready to Assign", 0)
+            .unwrap();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        let as_of = CalendarDate::parse("2026-09-30").unwrap();
+        database
+            .set_monthly_assignment("food", &month, Huf(400))
+            .unwrap();
+        let income = Entry::manual("income", "cash", CalendarDate::parse("2026-09-01").unwrap());
+        database.create_transaction(&income, Huf(1_000)).unwrap();
+        let initial = database.plan_month_as_of(&month, &as_of).unwrap();
+        assert_eq!(initial.ready_to_assign, Huf(600));
+        assert_eq!(
+            initial
+                .categories
+                .iter()
+                .find(|c| c.category_id == "food")
+                .unwrap()
+                .assigned,
+            Huf(400)
+        );
+
+        database
+            .undoable("Move money", |database| {
+                database
+                    .move_monthly_money_to_ready_as_of("food", &month, Huf(175), &as_of)
+                    .map_err(|error| error.to_string())
+            })
+            .unwrap();
+        let moved = database.plan_month_as_of(&month, &as_of).unwrap();
+        assert_eq!(moved.ready_to_assign, Huf(775));
+        assert_eq!(
+            moved
+                .categories
+                .iter()
+                .find(|c| c.category_id == "food")
+                .unwrap()
+                .assigned,
+            Huf(225)
+        );
+        let move_count: i64 = database
+            .connection
+            .query_row("SELECT COUNT(*) FROM category_month_moves", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(move_count, 0);
+
+        database.undo_last_action().unwrap();
+        let restored = database.plan_month_as_of(&month, &as_of).unwrap();
+        assert_eq!(restored.ready_to_assign, initial.ready_to_assign);
+        assert_eq!(
+            restored
+                .categories
+                .iter()
+                .find(|c| c.category_id == "food")
+                .unwrap()
+                .assigned,
+            Huf(400)
+        );
+    }
+
+    #[test]
+    fn move_to_ready_rejects_invalid_source_amount_and_overflow_without_writes() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        database
+            .create_category_group("inflow", "Inflow", 1)
+            .unwrap();
+        database
+            .create_category("rta", "inflow", "Ready to Assign", 0)
+            .unwrap();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        let as_of = CalendarDate::parse("2026-09-30").unwrap();
+        database
+            .set_monthly_assignment("food", &month, Huf(10))
+            .unwrap();
+        database
+            .set_monthly_assignment("rta", &month, Huf(5))
+            .unwrap();
+        let before = database.plan_month_as_of(&month, &as_of).unwrap();
+
+        for (source, amount) in [
+            ("missing", Huf(1)),
+            ("food", Huf(0)),
+            ("food", Huf(-1)),
+            ("rta", Huf(1)),
+        ] {
+            assert!(database
+                .move_monthly_money_to_ready_as_of(source, &month, amount, &as_of)
+                .is_err());
+            assert_eq!(database.plan_month_as_of(&month, &as_of).unwrap(), before);
+        }
+        database
+            .set_monthly_assignment("food", &month, Huf(i64::MIN))
+            .unwrap();
+        let before_overflow = database.plan_month_as_of(&month, &as_of).unwrap();
+        assert!(matches!(
+            database.move_monthly_money_to_ready_as_of("food", &month, Huf(1), &as_of),
+            Err(LedgerError::AmountOverflow)
+        ));
+        assert_eq!(
+            database.plan_month_as_of(&month, &as_of).unwrap(),
+            before_overflow
+        );
     }
 
     #[test]

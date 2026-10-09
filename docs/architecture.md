@@ -181,6 +181,13 @@ loading form options never creates it. Register rows expose the effective
 budget-side category from either transfer leg, while persisted categories remain
 per-leg. Low-level import writes preserve source categories and identities.
 
+The Plan's Available amount opens a move popup with a fixed source category.
+`move_plan_money` accepts a nullable destination: a category ID moves Assigned
+between two categories atomically; null returns the source assignment to the
+derived Ready to Assign balance. Both routes remain one saved undoable action.
+Returning to Ready to Assign requires no special category assignment or schema
+change; category-to-category move records retain their existing shape.
+
 The default Cargo feature is `desktop`. Disabling it permits the actual SQLite
 and ledger tests to run without Tauri, using the same database implementation.
 Rust dependencies are locked in `src-tauri/Cargo.lock`.

@@ -92,6 +92,13 @@ Negative assignments and availability are allowed; checked arithmetic still
 rejects overflow without applying either side. Ready to Assign is unchanged in
 the moved month, while existing overspending/rollover rules still apply later.
 
+The Available amount opens an outgoing move popup with the source fixed to that
+category. Ready to Assign is also a destination: this atomically subtracts the
+amount from the source month's Assigned without creating an assignment to the
+special Inflow category. Ready to Assign increases through the usual assignment
+derivation. This return uses the saved assignment and session undo history;
+`category_month_moves` records remain limited to moves between two categories.
+
 YNAB's `Inflow: Ready to Assign` category remains on imported ledger entries for
 the register. Plan routes its cash activity into the separate Ready to Assign
 balance rather than showing it as a spendable category. Credit inflows categorized

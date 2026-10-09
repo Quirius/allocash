@@ -46,6 +46,20 @@ skipping or canceling an occurrence handles both entries together.
 
 Native backup/export must preserve recurrence rules exactly.
 
+## Moving assigned money
+
+Click a category's Available amount to open a move popup anchored to that amount.
+The clicked category is the fixed source; choose a destination from a grouped
+dropdown, including Ready to Assign. Prefill a positive Available balance and
+select it for editing; zero or negative balances start with an empty amount.
+Saving subtracts from the source month's Assigned and adds the same amount to
+the destination month's Assigned. Returning money to Ready to Assign reduces
+only the source assignment, allowing Ready to Assign to increase through its
+normal derivation. There is no separate Move Money form or source dropdown.
+Cancel, Escape and outside clicks dismiss without saving. Moves remain one
+undoable saved action and permit positive amounts exceeding Available, consistent
+with negative assignments and balances already supported by the Plan.
+
 ## Targets
 
 YNAB target definitions may not survive export.

@@ -474,7 +474,7 @@ struct PlanAssignmentInput {
 #[serde(rename_all = "camelCase")]
 struct PlanMoveInput {
     from_category_id: String,
-    to_category_id: String,
+    to_category_id: Option<String>,
     month: String,
     amount: String,
     as_of: String,
@@ -556,15 +556,22 @@ fn move_plan_money(
     }
     with_database(&app, &state, |database| {
         database.undoable("Move money", |database| {
-            database
-                .move_monthly_money_as_of(
+            match input.to_category_id.as_deref() {
+                Some(to_category_id) => database.move_monthly_money_as_of(
                     &input.from_category_id,
-                    &input.to_category_id,
+                    to_category_id,
                     &month,
                     crate::ledger::Huf(amount),
                     &as_of,
-                )
-                .map_err(ledger_error)
+                ),
+                None => database.move_monthly_money_to_ready_as_of(
+                    &input.from_category_id,
+                    &month,
+                    crate::ledger::Huf(amount),
+                    &as_of,
+                ),
+            }
+            .map_err(ledger_error)
         })
     })
 }
