@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Confirm Plan Available-click moves, returning money to Ready to Assign and Ctrl+Z; finish the prior category, Ready to Assign and Make repeating checks, then continue the clean-candidate desktop rehearsal and required-rule recreation."
-updated_at: "2026-10-09T19:13:12Z"
+next_action: "Confirm category selection, sidebar target editing and notes across months, reopening and undo; finish the prior Available-popup, category, Ready to Assign and Make repeating checks, then continue the clean-candidate desktop rehearsal and required-rule recreation."
+updated_at: "2026-10-09T19:32:34Z"
 source:
   branch: "main"
-  commit: "8ed991b3345f566ea36cc9ec9709423963c8bc29"
-  verified_at: "2026-10-09T19:13:12Z"
+  commit: "27b5f18c1940f2b8afab2991e8d5adcbb0e2cb71"
+  verified_at: "2026-10-09T19:32:34Z"
 summary:
   completed:
+    - "Category row clicks and control focus select a category whose balance summary, target progress, editor and month-specific snooze appear in a vertical right sidebar. Notes preserve exact text per category across months, reopening and native backups, with undo, autosave and explicit retry. Auto-Assign is omitted. All 162 Rust and 145 frontend tests, formatting, independent review and frontend/native builds passed. The installed upgrade preserved budget bytes and reopened a responsive window; owner sidebar and notes interaction confirmation remains open."
     - "Plan money moves now open from each category Available amount with that source fixed, a positive-balance amount default and grouped destinations including Ready to Assign. Category moves adjust both Assigned values; returning to Ready to Assign reduces the source assignment and remains undoable. Cancellation, invalid input, repeated saves, failed drafts and stale popup contexts are handled. All 161 Rust and 140 frontend tests, formatting, review and frontend/native builds passed. The installed upgrade preserved budget bytes and reopened a responsive window; owner popup interaction confirmation remains open."
     - "Budget-aware category entry is implemented: off-budget ordinary transactions and internal transfers need none; budget inflows default to Ready to Assign, outflows require an explicit choice, and crossing transfers use only the budget leg from either account. Current and repeating entries, edits, legacy preservation, reconciled confirmation, rollback and undo are checked. All 159 core and 134 frontend tests, review and frontend/native builds passed; the installed upgrade preserved budget bytes and reopened a responsive window. Owner interaction confirmation remains open."
     - "Ctrl+Z and an Undo button now reverse saved desktop budgeting actions, with complete transfers, payees, recurrence, Plan assignments/moves, targets/snoozes, payment mapping and reconciliation restored from verified SQLite states. A 30-step session history clears on reopening or successful backup restore. All 146 core and 117 frontend tests, formatting, review and frontend/native builds passed. The installed upgrade preserved budget bytes and reopened a responsive native window. The owner subsequently confirmed the undo workflow works well; individual shortcut, button and native editing checks were not separately described."
@@ -52,6 +53,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
+    - "The selected-category target sidebar and persistent notes are tested and installed; owner selection, target editing, month/reopen persistence and undo checks remain open."
     - "The Plan Available-click move popup is tested and installed; owner category moves, return-to-Ready, cancellation and undo checks remain open."
     - "Budget-aware category rules are tested and installed; owner ordinary entry and crossing-transfer checks from both account sides remain open."
     - "The owner-reported Ready to Assign calculation discrepancy is corrected and installed; owner confirmation of the October screen remains open."
@@ -64,6 +66,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "27b5f18c1940f2b8afab2991e8d5adcbb0e2cb71"
+    note: "Records the selected-category right sidebar, existing targets and snoozes, exact category-level notes, undo/backup/reopen checks, save lifecycle review and installed upgrade; owner interaction confirmation remains open."
   - path: "docs/status.md"
     ref: "8ed991b3345f566ea36cc9ec9709423963c8bc29"
     note: "Records the Available-click outgoing move popup, category assignment conservation, return to Ready to Assign and undo, lifecycle and validation checks, review and verified installed upgrade; owner popup interaction confirmation remains open."
