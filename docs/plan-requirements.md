@@ -165,6 +165,12 @@ failed or still-edited drafts remain attached to their category. Saved note chan
 participate in session undo. Existing target calculations and effective-month
 rules remain unchanged.
 
+Saving Plan changes refreshes the current month's data in place. Keep the table,
+selection, scroll position and sidebar mounted while a save or background read
+is pending. Only initial loading and changing months may replace the table with
+a loading view. Stale values remain visible but financial write controls wait for
+the current snapshot; refresh failures retain the last visible data and drafts.
+
 Do not reconstruct historical Plan solely from current balances if imported YNAB Plan data contains historical assignment state. Preserve source history.
 
 Money moves change the selected month's Assigned amounts in both categories;

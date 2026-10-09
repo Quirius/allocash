@@ -1,5 +1,24 @@
 # Implementation and validation status
 
+On 2026-10-09, the owner reported that any Plan change flashed the whole screen.
+The same-month table and category sidebar now remain mounted during saved writes
+and background reads; only initial loading and a different selected month use
+the loading replacement. Values update in place without a visible loading block
+or layout shift. Category selection, scroll position and the open target editor
+retain their existing DOM state. Assignment inputs have stable identities,
+preserve focused/dirty drafts, and save only on explicit blur. Clean inputs sync
+canonical values after refresh or undo, and unchanged values are not resubmitted.
+Stale snapshots remain visible while financial controls wait for current data;
+handlers also verify the global saved-mutation version and pending state.
+Failed reads retain the visible snapshot and drafts. Financial calculations,
+IPC contracts and storage are unchanged.
+All 145 frontend tests, the frontend build, focused independent code review
+and the per-user NSIS build passed. No DOM test environment is installed, and
+visual interaction was not inspected. Installation exited successfully,
+preserved budget bytes and matched the release executable after its expected
+bundle marker. A responsive native window reopened. Owner confirmation that
+assignment, target, note, move and undo updates no longer flash remains open.
+
 On 2026-10-09, the owner requested moving category targets into a vertical
 right-hand selected-category panel, persistent category notes and no Auto-Assign.
 Clicking a category row or focusing its controls selects it, with an accessible

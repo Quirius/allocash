@@ -19,6 +19,8 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
   currentMonth.current = month;
   currentReadEpoch.current = readEpoch;
   const error = actionError ?? loadError;
+  const planCurrent = !!plan && plan.month === month && planEpoch === readEpoch && !mutationPending;
+  function canWritePlan() { return planCurrent && plan?.month === currentMonth.current && planEpoch === getSavedMutationVersion() && !hasSavedMutationPending(); }
   const [moveSource, setMoveSource] = useState<{ id: string; name: string; available: string; categories: PlanSnapshot["categories"]; readyToAssign: string } | null>(null);
   const [toCategory, setToCategory] = useState(""); const [moveAmount, setMoveAmount] = useState(""); const [moveBusy, setMoveBusy] = useState(false); const moveBusyRef = useRef(false);
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -129,10 +131,10 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     setDueDay(String(target?.dueDay ?? 1)); setFirstDueMonth(target?.dueMonth ?? target?.firstDueMonth ?? month);
     hydratedTarget.current = key;
   }, [plan, month, selectedCategoryId, targetHydrationRevision]);
-  async function save(categoryId: string, value: string) { try { await setPlanAssignment(categoryId, month, parseSignedHufInput(value).toString()); setActionError(null); } catch { setActionError("Enter a whole HUF assignment amount."); } }
+  async function save(categoryId: string, value: string): Promise<boolean> { if (!canWritePlan()) { setActionError("Plan is updating. Your assignment is still here; blur the field again to retry."); return false; } try { await setPlanAssignment(categoryId, month, parseSignedHufInput(value).toString()); setActionError(null); return true; } catch { setActionError("Enter a whole HUF assignment amount."); return false; } }
   async function move(event: FormEvent) {
     event.preventDefault();
-    if (!moveSource || !toCategory || moveBusyRef.current || mutationPending || hasSavedMutationPending()) return;
+    if (!moveSource || !toCategory || moveBusyRef.current || !canWritePlan()) return;
     const requestedMonth = month;
     const requestedGeneration = moveGeneration.current;
     const startingVersion = getSavedMutationVersion();
@@ -153,7 +155,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     }
   }
   function openMove(category: PlanSnapshot["categories"][number], button: HTMLButtonElement) {
-    if (moveBusyRef.current || mutationPending || hasSavedMutationPending() || !plan) return;
+    if (!canWritePlan() || moveBusyRef.current || !plan) return;
     moveGeneration.current += 1;
     sourceButtonRef.current = button;
     const rect = button.getBoundingClientRect(); const width = Math.min(360, window.innerWidth - 24); const height = 184;
@@ -182,9 +184,9 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     return () => { document.removeEventListener("pointerdown", onPointerDown); document.removeEventListener("keydown", onKeyDown); window.removeEventListener("resize", update); window.removeEventListener("scroll", update, true); };
   }, [moveSource, moveError, plan]);
   useEffect(() => { if (mutationPending && !moveBusy) closeMove(false); }, [mutationPending, moveBusy]);
-  async function mapPayment(accountId: string, categoryId: string) { try { await setCreditPaymentCategory(accountId, categoryId || null); setActionError(null); } catch { setActionError("Could not save this credit-card payment category."); } }
+  async function mapPayment(accountId: string, categoryId: string) { if (!canWritePlan()) return; try { await setCreditPaymentCategory(accountId, categoryId || null); setActionError(null); } catch { setActionError("Could not save this credit-card payment category."); } }
   async function saveTarget(event: FormEvent) {
-    event.preventDefault(); const categoryId = selectedCategoryId; const targetMonth = month;
+    event.preventDefault(); if (!canWritePlan()) return; const categoryId = selectedCategoryId; const targetMonth = month;
     try {
       if (!categoryId) throw new Error();
       const amount = parseSignedHufInput(targetAmount); const day = Number(dueDay);
@@ -201,6 +203,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     }
   }
   async function clearTarget() {
+    if (!canWritePlan()) return;
     const categoryId = selectedCategoryId; const targetMonth = month;
     try {
       if (!categoryId) throw new Error();
@@ -211,7 +214,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
       }
     } catch { if (currentSelectedCategory.current === categoryId && currentMonth.current === targetMonth) setActionError("Choose a category to clear its target."); }
   }
-  async function toggleTargetSnooze(categoryId: string, snoozed: boolean) { try { await setCategoryTargetSnoozed(categoryId, month, snoozed); setActionError(null); } catch { setActionError("Could not update this month’s target snooze."); } }
+  async function toggleTargetSnooze(categoryId: string, snoozed: boolean) { if (!canWritePlan()) return; try { await setCategoryTargetSnoozed(categoryId, month, snoozed); setActionError(null); } catch { setActionError("Could not update this month’s target snooze."); } }
   async function saveNotes(categoryId: string, notes: string) {
     if (noteDraftsRef.current[categoryId]?.status === "saving") return;
     const saving = markCategoryNoteSaving(noteDraftsRef.current, categoryId, notes);
@@ -234,15 +237,16 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
   const selectedCategory = plan?.categories.find((category) => category.categoryId === selectedCategoryId) ?? null;
   const selectedNote = selectedCategory ? noteDrafts[selectedCategory.categoryId] : undefined;
   function editNotes(categoryId: string, value: string) { const next = editCategoryNote(noteDraftsRef.current, categoryId, value); noteDraftsRef.current = next; setNoteDrafts(next); }
-  const detailsPanel = <CategoryDetailsPanel key={`${selectedCategory?.categoryId ?? "none"}:${month}`} category={selectedCategory} month={plan?.month ?? month} notes={selectedCategory ? (selectedNote?.value ?? selectedCategory.notes ?? "") : ""} noteStatus={selectedNote?.status ?? ""} noteBusy={mutationPending} onNotesChange={editNotes} onSaveNotes={saveNotes} targetBusy={mutationPending || moveBusy || !plan || plan.month !== month || planEpoch !== readEpoch} target={{ behavior: targetBehavior, amount: targetAmount, interval: targetInterval, dueKind, dueDay, firstDueMonth }} onTargetChange={(field, value) => { targetDirty.current = true; if (field === "behavior") setTargetBehavior(value as "refill" | "set_aside"); else if (field === "amount") setTargetAmount(value); else if (field === "interval") selectTargetInterval(Number(value) as RecurrenceMonths); else if (field === "dueKind") setDueKind(value as "day" | "last_day"); else if (field === "dueDay") setDueDay(value); else setFirstDueMonth(value); }} onSaveTarget={saveTarget} onClearTarget={clearTarget} onSnooze={(id, value) => toggleTargetSnooze(id, value)} />;
+  const detailsPanel = <CategoryDetailsPanel key={`${selectedCategory?.categoryId ?? "none"}:${month}`} category={selectedCategory} month={plan?.month ?? month} notes={selectedCategory ? (selectedNote?.value ?? selectedCategory.notes ?? "") : ""} noteStatus={selectedNote?.status ?? ""} noteBusy={mutationPending} onNotesChange={editNotes} onSaveNotes={saveNotes} targetBusy={!planCurrent || moveBusy} target={{ behavior: targetBehavior, amount: targetAmount, interval: targetInterval, dueKind, dueDay, firstDueMonth }} onTargetChange={(field, value) => { targetDirty.current = true; if (field === "behavior") setTargetBehavior(value as "refill" | "set_aside"); else if (field === "amount") setTargetAmount(value); else if (field === "interval") selectTargetInterval(Number(value) as RecurrenceMonths); else if (field === "dueKind") setDueKind(value as "day" | "last_day"); else if (field === "dueDay") setDueDay(value); else setFirstDueMonth(value); }} onSaveTarget={saveTarget} onClearTarget={clearTarget} onSnooze={(id, value) => toggleTargetSnooze(id, value)} />;
   return <section className="plan-view" aria-labelledby="plan-title">
     <div className="plan-toolbar"><div><p className="eyebrow">MONTHLY PLAN</p><h2 id="plan-title" tabIndex={-1}>{month}</h2></div><div><button onClick={() => setMonth(shiftCalendarMonth(month, -1))}>←</button><button onClick={() => setMonth(localCalendarMonth())}>Today</button><button onClick={() => setMonth(shiftCalendarMonth(month, 1))}>→</button></div></div>
     {error && <p className="editor-error" role="alert">{error}</p>}
-    {!plan || plan.month !== month || planEpoch !== readEpoch || mutationPending ? <><div className="register-message" role="status">Loading Plan…</div><div className="plan-content loading">{detailsPanel}</div></> : <>
+    {!plan || plan.month !== month ? <><div className="register-message" role="status">Loading Plan…</div><div className="plan-content loading">{detailsPanel}</div></> : <>
+      <span className="sr-only" role="status">{planCurrent ? "" : "Updating Plan…"}</span>
       <div className="plan-rta"><span>Ready to Assign</span><strong>{formatHuf(BigInt(plan.readyToAssign))}</strong></div>
       {plan.creditPaymentCategories.length > 0 && <div className="plan-credit" inert={moveBusy}><strong>Credit card payment categories</strong><p>Funded card spending adds the funded portion to its mapped payment category.</p>{plan.creditPaymentCategories.map((mapping) => <label key={mapping.accountId}>{mapping.accountName}<select value={mapping.categoryId ?? ""} onChange={(event) => void mapPayment(mapping.accountId, event.target.value)}><option value="">Not mapped</option>{plan.categories.map((category) => <option key={category.categoryId} value={category.categoryId} disabled={plan.creditPaymentCategories.some((other) => other.accountId !== mapping.accountId && other.categoryId === category.categoryId)}>{category.groupName} / {category.categoryName}</option>)}</select></label>)}</div>}
       <div className="plan-content">
-      <div className="plan-table" inert={moveBusy}><div className="plan-head"><span>Category</span><span>Assigned</span><span>Activity</span><span>Available</span></div>{plan.categories.map((category) => <div className={`plan-row${selectedCategoryId === category.categoryId ? " selected" : ""}`} key={category.categoryId} onClick={() => selectCategory(category.categoryId)} onFocusCapture={() => selectCategory(category.categoryId)}><button className="plan-category-name" type="button" aria-pressed={selectedCategoryId === category.categoryId} aria-controls="plan-category-details" onClick={() => selectCategory(category.categoryId)}><small>{category.groupName}</small>{category.categoryName}</button><input key={`${month}-${category.categoryId}-${category.assigned}`} className={BigInt(category.assigned) < 0n ? "plan-negative" : undefined} aria-label={`${category.categoryName} assigned`} defaultValue={category.assigned} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} onBlur={(event) => { if (event.target.value !== category.assigned) void save(category.categoryId, event.target.value); }} /><span>{formatHuf(BigInt(category.activity))}</span><button type="button" data-category-id={category.categoryId} className={`plan-available ${BigInt(category.available) > 0n ? "positive" : BigInt(category.available) < 0n ? "negative" : "zero"}`} aria-label={`${category.categoryName} available ${formatHuf(BigInt(category.available))}; move money`} disabled={mutationPending || moveBusy} onClick={(event) => openMove(category, event.currentTarget)}>{formatHuf(BigInt(category.available))}</button></div>)}</div>
+      <div className="plan-table" inert={moveBusy}><div className="plan-head"><span>Category</span><span>Assigned</span><span>Activity</span><span>Available</span></div>{plan.categories.map((category) => <div className={`plan-row${selectedCategoryId === category.categoryId ? " selected" : ""}`} key={category.categoryId} onClick={() => selectCategory(category.categoryId)} onFocusCapture={() => selectCategory(category.categoryId)}><button className="plan-category-name" type="button" aria-pressed={selectedCategoryId === category.categoryId} aria-controls="plan-category-details" onClick={() => selectCategory(category.categoryId)}><small>{category.groupName}</small>{category.categoryName}</button><PlanAssignmentInput month={month} category={category} readOnly={!planCurrent} onSave={save} /><span>{formatHuf(BigInt(category.activity))}</span><button type="button" data-category-id={category.categoryId} className={`plan-available ${BigInt(category.available) > 0n ? "positive" : BigInt(category.available) < 0n ? "negative" : "zero"}`} aria-label={`${category.categoryName} available ${formatHuf(BigInt(category.available))}; move money`} disabled={!planCurrent || moveBusy} onClick={(event) => openMove(category, event.currentTarget)}>{formatHuf(BigInt(category.available))}</button></div>)}</div>
       {detailsPanel}
       </div>
     </>}
@@ -257,6 +261,16 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
 }
 
 type TargetEditor = { behavior: "refill" | "set_aside"; amount: string; interval: RecurrenceMonths; dueKind: "day" | "last_day"; dueDay: string; firstDueMonth: string };
+function PlanAssignmentInput({ month, category, readOnly, onSave }: { month: string; category: PlanCategory; readOnly: boolean; onSave: (categoryId: string, value: string) => Promise<boolean> }) {
+  const [value, setValue] = useState(category.assigned);
+  const currentValue = useRef(value);
+  const focused = useRef(false);
+  const dirty = useRef(false);
+  useEffect(() => {
+    if (!readOnly && !focused.current && !dirty.current) { currentValue.current = category.assigned; setValue(category.assigned); }
+  }, [category.assigned, readOnly]);
+  return <input className={BigInt(category.assigned) < 0n ? "plan-negative" : undefined} aria-label={`${category.categoryName} assigned`} value={value} readOnly={readOnly} onFocus={() => { focused.current = true; }} onChange={(event) => { dirty.current = true; currentValue.current = event.target.value; setValue(event.target.value); }} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} onBlur={() => { focused.current = false; if (!dirty.current || currentValue.current === category.assigned) { dirty.current = false; currentValue.current = category.assigned; setValue(category.assigned); } else if (!readOnly) { const submitted = currentValue.current; void onSave(category.categoryId, submitted).then((saved) => { if (saved && currentValue.current === submitted) dirty.current = false; }); } }} data-plan-month={month} />;
+}
 function targetFingerprint(target: { behavior: "set_aside" | "refill"; amount: string; dueKind: "day" | "last_day"; dueDay: number | null; intervalMonths?: RecurrenceMonths; firstDueMonth?: string | null } | null): string { return target ? JSON.stringify({ behavior: target.behavior, amount: target.amount, dueKind: target.dueKind, dueDay: target.dueDay, intervalMonths: target.intervalMonths ?? 1, firstDueMonth: target.firstDueMonth ?? null }) : "none"; }
 function CategoryDetailsPanel({ category, month, notes, noteStatus, noteBusy, onNotesChange, onSaveNotes, targetBusy, target, onTargetChange, onSaveTarget, onClearTarget, onSnooze }: { category: PlanCategory | null; month: string; notes: string; noteStatus: string; noteBusy: boolean; onNotesChange: (id: string, value: string) => void; onSaveNotes: (id: string, value: string) => Promise<void>; targetBusy: boolean; target: TargetEditor; onTargetChange: (field: keyof TargetEditor, value: string) => void; onSaveTarget: (event: FormEvent) => Promise<void>; onClearTarget: () => Promise<void>; onSnooze: (id: string, value: boolean) => Promise<void> }) {
   if (!category) return <aside id="plan-category-details" className="category-details empty"><p>Select a category to see its details.</p></aside>;
