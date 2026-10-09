@@ -1,5 +1,26 @@
 # Implementation and validation status
 
+On 2026-10-09, the owner reported that the installed undo workflow works well,
+then requested budget-aware category entry. Ordinary tracking/loan transactions
+and transfers within one budget scope no longer need a category. Cash/credit
+inflows default to Ready to Assign; outflows require an explicit category choice.
+Transfers crossing the budget boundary use only the budget leg's category,
+including entry and editing from the other account. Pending/repeating entries
+follow the same rules, while imported history and confirmed reconciliation
+adjustments retain their existing contracts. Category changes from a transfer's
+other side respect reconciled-history confirmation. Ready to Assign is reused
+by semantic group/category identity, including hidden categories, or created
+atomically during a saved inflow. Failed saves roll back that category and any
+new payee; undo also restores the prior state. Sign and account-scope changes
+validate the new direction, while unrelated edits preserve legacy categories.
+All 159 core and 134 frontend tests passed, covering budget activity, incoming
+Ready to Assign, boundary schedules, peer edits, scope/sign changes, undo,
+rollback and checked transfer overflow. Formatting, default Cargo check,
+independent review, frontend and per-user NSIS builds passed. The installed
+upgrade exited successfully, preserved database bytes and matched the release
+executable after its expected bundle marker. A responsive native window reopened.
+Owner category-entry and transfer interaction confirmation remains open.
+
 On 2026-10-09, the owner requested Ctrl+Z for saved transaction, Plan and
 account changes. The desktop mutation boundary now captures a verified SQLite
 snapshot before a successful saved action, with a bounded 30-step session history.
@@ -22,8 +43,9 @@ remain visible across automatic reloads, separate from read errors. All 117 fron
 tests, the frontend build, formatting and independent review passed. The per-user
 NSIS build passed and the installed app was upgraded with exit code 0. Installation
 preserved database bytes, the executable matches the release build after the
-expected bundle marker, and a responsive native window reopened. Owner shortcut
-and Undo-button interaction confirmation remain open.
+expected bundle marker, and a responsive native window reopened. The owner
+subsequently confirmed that the installed undo workflow works well; individual
+shortcut, Undo-button and native text-editing checks were not separately described.
 
 On 2026-10-08, the owner reported an incorrect large negative Ready to Assign
 balance in the October Plan. Investigation reproduced it on an isolated copy of

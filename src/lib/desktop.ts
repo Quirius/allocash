@@ -149,6 +149,7 @@ export interface ManualTransferInput {
   flagId: string | null;
   amount: string;
   direction: "outflow" | "inflow";
+  categoryId?: string | null;
 }
 export type RecurrenceMonths = 1 | 3 | 12;
 export interface MonthlyScheduleInput { accountId: string; startDate: string; dayOfMonth?: number; endDate: string | null; payeeName: string | null; categoryId: string | null; memo: string; flagId: string | null; amount: string; intervalMonths?: RecurrenceMonths; counterpartAccountId?: string | null; }

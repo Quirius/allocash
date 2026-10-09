@@ -76,12 +76,13 @@ function displayPayee(entry: RegisterEntry): string {
   return entry.payeeName || "No payee";
 }
 
-function displayCategory(entry: RegisterEntry): string {
-  if (entry.transferAccountName) return "Transfer";
+function displayCategory(entry: RegisterEntry, account: AccountOverview): string {
   if (entry.categoryGroupName && entry.categoryName) {
     return `${entry.categoryGroupName} / ${entry.categoryName}`;
   }
-  return entry.categoryName || "Uncategorized";
+  if (entry.transferAccountName) return "Transfer";
+  if (entry.categoryName) return entry.categoryName;
+  return account.kind === "cash" || account.kind === "credit" ? "Uncategorized" : "—";
 }
 
 function statusLabel(entry: RegisterEntry): string {
@@ -616,7 +617,7 @@ function AccountRegister({
                     </td>
                     <td className="date-column">{formatDate(entry.date)}</td>
                     <td className="payee-column">{displayPayee(entry)}</td>
-                    <td className="category-column">{displayCategory(entry)}</td>
+                    <td className="category-column">{displayCategory(entry, account)}</td>
                     <td className="memo-column">{entry.memo || <span>—</span>}</td>
                     <td className="status-column">
                       <span className={`cleared-state ${entry.clearedState}`} title={statusLabel(entry)}>

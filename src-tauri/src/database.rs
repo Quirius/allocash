@@ -833,6 +833,12 @@ mod tests {
             .create_account(&account("cash", AccountKind::Cash, 0))
             .unwrap();
         database
+            .create_category_group("test-group", "Test", 0)
+            .unwrap();
+        database
+            .create_category("test-expense", "test-group", "Expense", 0)
+            .unwrap();
+        database
             .create_monthly_schedule(&MonthlyScheduleDraft {
                 account_id: "cash".into(),
                 counterpart_account_id: None,
@@ -841,7 +847,7 @@ mod tests {
                 end_date: None,
                 interval_months: 1,
                 payee_name: Some("Rent".into()),
-                category_id: None,
+                category_id: Some("test-expense".into()),
                 memo: "September".into(),
                 flag_id: None,
                 amount: Huf(-100),

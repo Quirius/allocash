@@ -13,6 +13,9 @@ mod schema_tests;
 mod ledger_tests;
 
 #[cfg(test)]
+mod category_policy_tests;
+
+#[cfg(test)]
 mod undo_tests;
 
 #[cfg(test)]

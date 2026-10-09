@@ -162,7 +162,8 @@ Memo-only edits are allowed without confirmation. Account, date, payee, category
 flag, amount and clearing-state changes away from Reconciled, and deletions require
 explicit confirmation for reconciled entries. Shared transfer amount changes
 check both legs, so the unreconciled side cannot bypass a reconciled counterpart's
-warning. Per-leg metadata changes check the selected leg. Ordinary transactions
+warning. Budget-boundary category changes also check the budget leg when editing
+from its counterpart. Other per-leg metadata changes check the selected leg. Ordinary transactions
 can move to another open account and change sign; linked transfer account and
 direction remain fixed in register editing. Confirmation allows the
 change; history is not hard-locked. Basic reconciliation reviews an account's
@@ -172,6 +173,16 @@ Reconciled. Future, scheduled and already reconciled rows remain unchanged.
 An adjustment is an explicit fallback for genuinely missing history, not the
 normal way to resolve unmatched transaction states.
 
+Manual entry and pending schedules use budget-aware category validation. New
+tracking/loan transactions and transfers staying within one budget scope have no
+category. Cash/credit inflows default to the semantic Ready to Assign category;
+if none exists, it is created atomically with the saved action. Budget outflows
+require an explicit category. A crossing transfer stores the category only on
+its budget leg, including when entered or edited from the off-budget side.
+Imported history remains unchanged, and metadata-only edits retain legacy
+off-budget categories. These input rules do not change the import contract or
+the confirmed reconciliation-adjustment pathway.
+
 ## Recurring schedules
 
 The register composer provides Date and Repeat (Never, Monthly, Quarterly,
@@ -180,8 +191,7 @@ represented by an end date equal to their start date. Current/past entries with
 Never retain manual-entry behavior. Choosing recurrence creates a pending
 schedule from the selected date. Existing posted future history is unchanged.
 Pending entries can be posted or skipped from the register, from either transfer
-leg; the Scheduled view remains another way to manage them. There is no automatic
-posting on the due date.
+leg, in the unified upcoming section. There is no automatic posting on the due date.
 
 Schedules support monthly, quarterly and yearly ordinary income/expenses and
 linked account transfers. They materialize one Uncleared, pending occurrence at

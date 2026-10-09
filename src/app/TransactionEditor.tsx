@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   createManualTransfer,
   deleteRegisterEntry,
@@ -9,7 +9,8 @@ import {
   type TransactionFormOptions,
 } from "../lib/desktop";
 import { formatDate, localCalendarDate, parseHufInput, parseSignedHufInput } from "../lib/format";
-import { createPayeeEntry, createScheduledPayeeEntry, isTransferPayee, scheduleForEntry, type EntryRepeat } from "../lib/transaction";
+import { createPayeeEntry, createScheduledPayeeEntry, isTransferPayee, resolveTransferPayee, scheduleForEntry, type EntryRepeat } from "../lib/transaction";
+import { categoryPolicy, inheritedReadyNeedsReset, readyToAssignCategoryId, transitionCategoryOrigin } from "../lib/categoryPolicy";
 import { DateRepeatPicker, nextRepeatDate } from "./DateRepeatPicker";
 
 export interface TransactionDraft {
@@ -19,6 +20,8 @@ export interface TransactionDraft {
   repeatDayOfMonth?: number;
   payee: string;
   categoryId: string;
+  categoryGroupName?: string | null;
+  categoryName?: string | null;
   counterpartId: string;
   memo: string;
   flagId: string;
@@ -46,7 +49,7 @@ export function draftFromPostedEntry(entry: RegisterEntry, sourceAccountId: stri
   return {
     kind: entry.transferId ? "transfer" : "transaction",
     date: nextRepeatDate(entry.date, today), repeat: "monthly", repeatDayOfMonth: Number(entry.date.slice(8)),
-    payee: entry.payeeName || "", categoryId: entry.categoryId || "", counterpartId,
+    payee: entry.payeeName || "", categoryId: entry.categoryId || "", categoryGroupName: entry.categoryGroupName, categoryName: entry.categoryName, counterpartId,
     memo: entry.memo, flagId: entry.flagId || "",
     outflow: amount < 0n ? magnitude : "", inflow: amount >= 0n ? magnitude : "",
   };
@@ -94,6 +97,7 @@ export function TransactionComposer({
   const [repeat, setRepeat] = useState<EntryRepeat>(initialDraft?.repeat ?? "never");
   const [payee, setPayee] = useState(initialDraft?.payee ?? "");
   const [categoryId, setCategoryId] = useState(initialDraft?.categoryId ?? "");
+  const [categoryOrigin, setCategoryOrigin] = useState<"automatic-ready" | "explicit" | "existing" | "empty">(initialDraft?.categoryId ? "existing" : "empty");
   const [counterpartId, setCounterpartId] = useState(initialDraft?.counterpartId ?? "");
   const [memo, setMemo] = useState(initialDraft?.memo ?? "");
   const [flagId, setFlagId] = useState(initialDraft?.flagId ?? "");
@@ -102,12 +106,48 @@ export function TransactionComposer({
   const [status, setStatus] = useState<"editing" | "saving">("editing");
   const [error, setError] = useState<string | null>(null);
 
-  function applyPayeeDefaults(name: string) {
-    const match = options.payees.find(
-      (option) => option.name.localeCompare(name.trim(), undefined, { sensitivity: "accent" }) === 0,
-    );
-    if (match?.lastCategoryId && !categoryId) setCategoryId(match.lastCategoryId);
+  const direction = inflow.trim() ? "inflow" : "outflow";
+  let resolvedPayeeTransfer: AccountOverview | undefined;
+  if (kind === "transaction" && isTransferPayee(payee)) {
+    try {
+      const id = resolveTransferPayee(payee, account.id, accounts);
+      resolvedPayeeTransfer = accounts.find((item) => item.id === id);
+    } catch { /* The save path reports incomplete or ambiguous transfer payees. */ }
   }
+  const transferDestination = kind === "transfer"
+    ? accounts.find((item) => item.id === counterpartId)
+    : resolvedPayeeTransfer;
+  const categoryRule = categoryPolicy(account, direction, transferDestination);
+  const initialDirection = initialDraft ? (initialDraft.inflow.trim() ? "inflow" : "outflow") : null;
+  const initialTransferDestination = initialDraft?.kind === "transfer"
+    ? accounts.find((item) => item.id === initialDraft.counterpartId)
+    : initialDraft && isTransferPayee(initialDraft.payee)
+      ? (() => {
+          try {
+            const id = resolveTransferPayee(initialDraft.payee, account.id, accounts);
+            return accounts.find((item) => item.id === id);
+          } catch { return undefined; }
+        })()
+      : undefined;
+  const initialCategoryRule = initialDirection ? categoryPolicy(account, initialDirection, initialTransferDestination) : null;
+  const readyId = readyToAssignCategoryId(options.categories);
+
+  useEffect(() => {
+    if (inheritedReadyNeedsReset({
+      origin: categoryOrigin, categoryId, initiallyDefaultedToReady: !!initialCategoryRule?.readyToAssignDefault,
+      nextScopeVisible: categoryRule.show, nextRequiresChoice: categoryRule.required, readyToAssignId: readyId,
+      categoryGroupName: initialDraft?.categoryGroupName, categoryName: initialDraft?.categoryName,
+    })) {
+      setCategoryId(""); setCategoryOrigin("empty");
+      return;
+    }
+    const next = transitionCategoryOrigin({
+      categoryId, origin: categoryOrigin, show: categoryRule.show, required: categoryRule.required,
+      readyToAssignDefault: categoryRule.readyToAssignDefault, readyToAssignId: readyId, allowDefault: true,
+    });
+    if (next.categoryId !== categoryId) setCategoryId(next.categoryId);
+    if (next.origin !== categoryOrigin) setCategoryOrigin(next.origin);
+  }, [categoryId, categoryOrigin, categoryRule.required, categoryRule.show, initialCategoryRule?.readyToAssignDefault, readyId]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -115,6 +155,14 @@ export function TransactionComposer({
     try {
       formatDate(date);
       const parsed = signedAmount(outflow, inflow);
+      const applicableRule = categoryPolicy(account, parsed.direction, transferDestination);
+      const submittedCategoryId = applicableRule.show ? categoryId || null : initialDraft?.categoryId ?? null;
+      const inheritedReadyMustReset = inheritedReadyNeedsReset({
+        origin: categoryOrigin, categoryId, initiallyDefaultedToReady: !!initialCategoryRule?.readyToAssignDefault,
+        nextScopeVisible: applicableRule.show, nextRequiresChoice: applicableRule.required, readyToAssignId: readyId,
+        categoryGroupName: initialDraft?.categoryGroupName, categoryName: initialDraft?.categoryName,
+      });
+      if (applicableRule.required && (!categoryId || categoryOrigin === "automatic-ready" || inheritedReadyMustReset)) throw new Error("Choose a category for this budget outflow.");
       setStatus("saving");
       const schedule = scheduleForEntry(date, repeat, localCalendarDate());
       const dayOfMonth = initialDraft && date === initialDraft.date && repeat !== "never" ? initialDraft.repeatDayOfMonth : undefined;
@@ -123,7 +171,7 @@ export function TransactionComposer({
         if (BigInt(parsed.positive) > 9223372036854775807n) throw new Error("Transfer amounts must fit the supported positive HUF range.");
         if (schedule) {
           await createScheduledPayeeEntry({ accountId: account.id, counterpartAccountId: counterpartId, startDate: date, endDate: schedule.endDate,
-            payeeName: null, categoryId: categoryId || null, memo, flagId: flagId || null, amount: parsed.amount, intervalMonths: schedule.intervalMonths, ...(dayOfMonth ? { dayOfMonth } : {}) }, accounts);
+            payeeName: null, categoryId: submittedCategoryId, memo, flagId: flagId || null, amount: parsed.amount, intervalMonths: schedule.intervalMonths, ...(dayOfMonth ? { dayOfMonth } : {}) }, accounts);
         } else {
           await createManualTransfer({
             accountId: account.id,
@@ -133,6 +181,7 @@ export function TransactionComposer({
             flagId: flagId || null,
             amount: parsed.positive,
             direction: parsed.direction,
+            categoryId: submittedCategoryId,
           });
         }
       } else {
@@ -140,7 +189,7 @@ export function TransactionComposer({
           accountId: account.id,
           date,
           payeeName: payee.trim() || null,
-          categoryId: categoryId || null,
+          categoryId: submittedCategoryId,
           memo,
           flagId: flagId || null,
           amount: parsed.amount,
@@ -179,7 +228,6 @@ export function TransactionComposer({
               list={`payees-${account.id}`}
               value={payee}
               onChange={(event) => setPayee(event.target.value)}
-              onBlur={(event) => applyPayeeDefaults(event.target.value)}
               placeholder="Name or new payee"
             />
             <datalist id={`payees-${account.id}`}>
@@ -187,15 +235,15 @@ export function TransactionComposer({
               {options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => <option key={option.id} value={option.name} />)}
             </datalist>
           </label>
-          <label>Category
-            <select disabled={transferPayee && !scheduled} value={transferPayee && !scheduled ? "" : categoryId} onChange={(event) => setCategoryId(event.target.value)}>
-              <option value="">Uncategorized</option>
+          {categoryRule.show && <label>Category
+            <select required={categoryRule.required} value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setCategoryOrigin(event.target.value ? "explicit" : "empty"); }}>
+              <option value="">{categoryRule.readyToAssignDefault ? "Ready to Assign (automatic)" : "Choose category"}</option>
               {categoryId && !options.categories.some((option) => option.id === categoryId) && <option value={categoryId}>{categoryId === initialDraft?.categoryId ? "Existing hidden category" : "Unavailable category"}</option>}
               {options.categories.map((option) => (
                 <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>
               ))}
             </select>
-          </label>
+          </label>}
         </> : (
           <label>Other account
             <select required autoFocus value={counterpartId} onChange={(event) => setCounterpartId(event.target.value)}>
@@ -204,8 +252,8 @@ export function TransactionComposer({
             </select>
           </label>
         )}
-        {(kind === "transfer" && scheduled) && <label>Category
-          <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Uncategorized</option>
+        {(kind === "transfer" && categoryRule.show) && <label>Category
+          <select required={categoryRule.required} value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setCategoryOrigin(event.target.value ? "explicit" : "empty"); }}><option value="">{categoryRule.readyToAssignDefault ? "Ready to Assign (automatic)" : "Choose category"}</option>
             {categoryId && !options.categories.some((option) => option.id === categoryId) && <option value={categoryId}>{categoryId === initialDraft?.categoryId ? "Existing hidden category" : "Unavailable category"}</option>}
             {options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}
           </select>
@@ -257,6 +305,8 @@ export function RegisterEntryEditor({
   const [date, setDate] = useState(entry.date);
   const [payee, setPayee] = useState(entry.payeeName || "");
   const [categoryId, setCategoryId] = useState(entry.categoryId || "");
+  const [categoryOrigin, setCategoryOrigin] = useState<"automatic-ready" | "explicit" | "existing" | "empty">(entry.categoryId ? "existing" : "empty");
+  const [categoryTouched, setCategoryTouched] = useState(false);
   const [memo, setMemo] = useState(entry.memo);
   const [flagId, setFlagId] = useState(entry.flagId || "");
   const [clearedState, setClearedState] = useState(entry.clearedState);
@@ -266,6 +316,38 @@ export function RegisterEntryEditor({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const editAccount = accounts.find((option) => option.id === accountId) ?? account;
+  const transferPeer = entry.transferId
+    ? (entry.transferAccountId ? accounts.find((option) => option.id === entry.transferAccountId) : accounts.find((option) => option.id !== account.id && option.name === entry.transferAccountName))
+    : undefined;
+  const initialDirection = initialAmount < 0n ? "outflow" : "inflow";
+  const editCategoryRule = categoryPolicy(editAccount, direction, transferPeer);
+  const initialCategoryRule = categoryPolicy(account, initialDirection, transferPeer);
+  const readyId = readyToAssignCategoryId(options.categories);
+  const categoryEmptyLabel = editCategoryRule.required
+    ? "Choose category"
+    : editCategoryRule.readyToAssignDefault && (categoryTouched || direction !== initialDirection || accountId !== account.id)
+      ? "Ready to Assign (automatic)"
+      : "Uncategorized";
+
+  useEffect(() => {
+    const changed = direction !== initialDirection || accountId !== account.id;
+    if (changed && inheritedReadyNeedsReset({
+      origin: categoryOrigin, categoryId, initiallyDefaultedToReady: initialCategoryRule.readyToAssignDefault,
+      nextScopeVisible: editCategoryRule.show, nextRequiresChoice: editCategoryRule.required, readyToAssignId: readyId,
+      categoryGroupName: entry.categoryGroupName, categoryName: entry.categoryName,
+    })) {
+      setCategoryId(""); setCategoryOrigin("empty");
+      return;
+    }
+    const next = transitionCategoryOrigin({
+      categoryId, origin: categoryOrigin, show: editCategoryRule.show, required: editCategoryRule.required,
+      readyToAssignDefault: editCategoryRule.readyToAssignDefault, readyToAssignId: readyId,
+      allowDefault: categoryTouched || changed,
+    });
+    if (next.categoryId !== categoryId) setCategoryId(next.categoryId);
+    if (next.origin !== categoryOrigin) setCategoryOrigin(next.origin);
+  }, [account.id, accountId, categoryId, categoryOrigin, categoryTouched, direction, editCategoryRule.readyToAssignDefault, editCategoryRule.required, editCategoryRule.show, initialCategoryRule.readyToAssignDefault, initialDirection, readyId]);
 
   async function save(confirmed: boolean) {
     setError(null);
@@ -273,12 +355,20 @@ export function RegisterEntryEditor({
     try {
       formatDate(date);
       const positive = parseHufInput(amount);
+      const inheritedReadyMustReset = inheritedReadyNeedsReset({
+        origin: categoryOrigin, categoryId, initiallyDefaultedToReady: initialCategoryRule.readyToAssignDefault,
+        nextScopeVisible: editCategoryRule.show, nextRequiresChoice: editCategoryRule.required, readyToAssignId: readyId,
+        categoryGroupName: entry.categoryGroupName, categoryName: entry.categoryName,
+      });
+      if (editCategoryRule.required && (!categoryId || categoryOrigin === "automatic-ready" || inheritedReadyMustReset) && (categoryTouched || direction !== initialDirection || accountId !== account.id)) {
+        throw new Error("Choose a category for this budget outflow.");
+      }
       await updateRegisterEntry({
         id: entry.id,
         accountId: entry.transferId ? null : accountId,
         date,
         payeeName: entry.transferId ? null : payee.trim() || null,
-        categoryId: categoryId || null,
+        categoryId: editCategoryRule.show ? categoryId || null : entry.categoryId,
         memo,
         flagId: flagId || null,
         amount: (direction === "outflow" ? -positive : positive).toString(),
@@ -361,14 +451,14 @@ export function RegisterEntryEditor({
             {options.payees.map((option) => <option key={option.id} value={option.name} />)}
           </datalist>
         </label>}
-        <label>Category
-          <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
-            <option value="">Uncategorized</option>
+        {editCategoryRule.show && <label>Category
+          <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setCategoryOrigin(event.target.value ? "explicit" : "empty"); setCategoryTouched(true); }}>
+            <option value="">{categoryEmptyLabel}</option>
             {entry.categoryId && !options.categories.some((option) => option.id === entry.categoryId) &&
               <option value={entry.categoryId}>{entry.categoryGroupName} / {entry.categoryName} (hidden)</option>}
             {options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}
           </select>
-        </label>
+        </label>}
         {!entry.transferId && <label>Direction
           <select value={direction} onChange={(event) => setDirection(event.target.value as "outflow" | "inflow")}>
             <option value="outflow">Outflow</option><option value="inflow">Inflow</option>

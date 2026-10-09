@@ -28,6 +28,7 @@ export async function createPayeeEntry(input: ManualTransactionInput, accounts: 
     flagId: input.flagId,
     amount: (amount < 0n ? -amount : amount).toString(),
     direction: amount < 0n ? "outflow" : "inflow",
+    ...(input.categoryId !== undefined ? { categoryId: input.categoryId } : {}),
   });
 }
 

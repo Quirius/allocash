@@ -173,6 +173,14 @@ commands create normal transactions and paired transfers, update an entry, or de
 an ordinary/paired entry; Rust keeps the writes atomic and enforces reconciled-history
 confirmation.
 
+Manual transaction, transfer and schedule inputs validate categories against the
+account's budget scope inside their write transaction. `ManualTransferInput`
+accepts an optional category ID for the budget leg of a boundary transfer. New
+budget inflows reuse or atomically create the semantic Ready to Assign category;
+loading form options never creates it. Register rows expose the effective
+budget-side category from either transfer leg, while persisted categories remain
+per-leg. Low-level import writes preserve source categories and identities.
+
 The default Cargo feature is `desktop`. Disabling it permits the actual SQLite
 and ledger tests to run without Tauri, using the same database implementation.
 Rust dependencies are locked in `src-tauri/Cargo.lock`.

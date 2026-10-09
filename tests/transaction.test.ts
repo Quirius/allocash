@@ -21,6 +21,7 @@ it.each(["Transfer: Cash", " transfer: cash ", "Payment: Cash"])("creates a link
   expect(invoke).toHaveBeenCalledExactlyOnceWith("create_manual_transfer", { input: {
     accountId: "bank", counterpartAccountId: "cash", date: "2026-10-05",
     memo: "Test transfer", flagId: null, amount: "1000", direction: "outflow",
+    categoryId: "food",
   } });
 });
 

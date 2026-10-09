@@ -167,6 +167,19 @@ Requirements:
 
 Reporting semantics for transfers are important.
 
+Category entry follows the budget boundary. Cash and credit accounts are in the
+budget; tracking and loan accounts are outside it. New ordinary off-budget
+transactions have no category. Budget inflows default to Ready to Assign, while
+budget outflows require an explicit category choice without a remembered payee
+default. An explicitly selected inflow category remains valid for refunds.
+
+Transfers between two budget accounts or two off-budget accounts have no category.
+For a transfer crossing the boundary, only the budget leg has a category: money
+entering the budget defaults to Ready to Assign, and money leaving requires an
+explicit choice. Entry and editing from either account use that same budget-side
+category. These rules also apply to pending and repeating transactions. Imported
+history is preserved; unrelated edits do not erase legacy off-budget categories.
+
 ## Reimbursement workflow
 
 The owner deliberately avoids split transactions.
@@ -227,20 +240,9 @@ Reconciliation must allow comparing app balance with the real account balance.
 
 Payee entry is high priority.
 
-Remember useful payee defaults such as:
-
-- last category
-- whether it was usually inflow or outflow
-- other useful recent behavior if it improves entry speed
-
-Example:
-
-Selecting `Spar` should likely prefill:
-
-- category: Groceries
-- direction: Outflow
-
-If the payee is normally income, the form should avoid unnecessary focus in Outflow.
+Remember whether a payee usually receives inflows or outflows where it improves
+entry speed. Category history can remain stored, but budget outflows require an
+explicit category choice. Selecting a payee must not supply that choice silently.
 
 ## Keyboard navigation
 

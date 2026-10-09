@@ -32,7 +32,7 @@ it("copies a large inflow into a monthly draft with source details", () => {
   const draft = draftFromPostedEntry({ ...baseEntry, amount: "9223372036854775807" }, "source-account", accounts, "2026-02-01");
   expect(draft).toEqual({
     kind: "transaction", date: "2026-02-28", repeat: "monthly", repeatDayOfMonth: 31, payee: "Rent",
-    categoryId: "hidden-category", counterpartId: "", memo: "monthly note", flagId: "flag-1",
+    categoryId: "hidden-category", categoryGroupName: "Housing", categoryName: "Rent", counterpartId: "", memo: "monthly note", flagId: "flag-1",
     outflow: "", inflow: "9223372036854775807",
   });
 });

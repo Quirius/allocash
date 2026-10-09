@@ -24,6 +24,12 @@ fn database() -> (tempfile::TempDir, Database) {
         })
         .unwrap();
     database
+        .create_category_group("test-group", "Test", 0)
+        .unwrap();
+    database
+        .create_category("test-expense", "test-group", "Expense", 0)
+        .unwrap();
+    database
         .create_account(&Account {
             id: "savings".into(),
             name: "Savings".into(),
@@ -49,7 +55,7 @@ fn undo_transaction_create_and_delete_restores_linked_payee_identity() {
         account_id: "cash".into(),
         date: date("2026-10-01"),
         payee_name: Some("Corner shop".into()),
-        category_id: None,
+        category_id: Some("test-expense".into()),
         memo: "Weekly groceries".into(),
         flag_id: None,
         amount: Huf(-1_250),
@@ -130,6 +136,7 @@ fn undo_transfer_amount_and_paired_delete_preserve_both_legs_and_confirmation_hi
         flag_id: None,
         amount: Huf(5_000),
         direction: Direction::Outflow,
+        category_id: None,
     };
     let first_leg = database
         .undoable("Add transfer", |database| {

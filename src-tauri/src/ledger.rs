@@ -655,6 +655,8 @@ pub struct ManualTransferInput {
     pub flag_id: Option<String>,
     pub amount: Huf,
     pub direction: Direction,
+    #[serde(default)]
+    pub category_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -947,14 +949,15 @@ impl Database {
     pub fn register_entries(&self, account_id: &str) -> LedgerResult<Vec<RegisterEntry>> {
         ensure_account(&self.connection, account_id)?;
         let mut query = self.connection.prepare(
-            "SELECT le.id,le.transaction_date,p.name,CASE WHEN le.posting_state='scheduled' THEN COALESCE(le.category_id,peer.category_id) ELSE le.category_id END,cg.name,c.name,le.memo,le.flag_id,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,le.transfer_id,transfer_account.name,o.schedule_id,CASE WHEN s.end_date=s.start_date THEN 0 ELSE s.interval_months END,peer.account_id
+            "SELECT le.id,le.transaction_date,p.name,CASE WHEN le.transfer_id IS NOT NULL AND a.kind IN ('cash','credit') AND transfer_account.kind IN ('tracking','loan') THEN le.category_id WHEN le.transfer_id IS NOT NULL AND a.kind IN ('tracking','loan') AND transfer_account.kind IN ('cash','credit') THEN peer.category_id ELSE le.category_id END,cg.name,c.name,le.memo,le.flag_id,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,le.transfer_id,transfer_account.name,o.schedule_id,CASE WHEN s.end_date=s.start_date THEN 0 ELSE s.interval_months END,peer.account_id
              FROM ledger_entries le
+             JOIN accounts a ON a.id=le.account_id
              LEFT JOIN payees p ON p.id=le.payee_id
              LEFT JOIN transactions peer ON peer.transfer_id=le.transfer_id AND peer.id<>le.id
-             LEFT JOIN categories c ON c.id=CASE WHEN le.posting_state='scheduled' THEN COALESCE(le.category_id,peer.category_id) ELSE le.category_id END
+             LEFT JOIN accounts transfer_account ON transfer_account.id=peer.account_id
+             LEFT JOIN categories c ON c.id=CASE WHEN le.transfer_id IS NOT NULL AND a.kind IN ('cash','credit') AND transfer_account.kind IN ('tracking','loan') THEN le.category_id WHEN le.transfer_id IS NOT NULL AND a.kind IN ('tracking','loan') AND transfer_account.kind IN ('cash','credit') THEN peer.category_id ELSE le.category_id END
              LEFT JOIN category_groups cg ON cg.id=c.group_id
              LEFT JOIN flags f ON f.id=le.flag_id
-             LEFT JOIN accounts transfer_account ON transfer_account.id=peer.account_id
              LEFT JOIN schedule_occurrences o ON (o.transaction_id=le.id OR o.transaction_id=peer.id) AND o.state='pending'
              LEFT JOIN schedules s ON s.id=o.schedule_id
              WHERE le.account_id=?1
@@ -1936,9 +1939,44 @@ impl Database {
         if let Some(counterpart) = draft.counterpart_account_id.as_deref() {
             ensure_open_account(&transaction, counterpart)?;
         }
+        let draft_account_kind = account_kind(&transaction, &draft.account_id)?;
+        let category_id = if let Some(counterpart) = draft.counterpart_account_id.as_deref() {
+            let counterpart_kind = account_kind(&transaction, counterpart)?;
+            if draft_account_kind.is_on_budget() == counterpart_kind.is_on_budget() {
+                None
+            } else {
+                let budget_kind = if draft_account_kind.is_on_budget() {
+                    draft_account_kind
+                } else {
+                    counterpart_kind
+                };
+                let amount = if draft_account_kind.is_on_budget() {
+                    draft.amount.0
+                } else {
+                    draft
+                        .amount
+                        .0
+                        .checked_neg()
+                        .ok_or(LedgerError::AmountOverflow)?
+                };
+                manual_category(
+                    &transaction,
+                    budget_kind,
+                    amount,
+                    draft.category_id.as_deref(),
+                )?
+            }
+        } else {
+            manual_category(
+                &transaction,
+                draft_account_kind,
+                draft.amount.0,
+                draft.category_id.as_deref(),
+            )?
+        };
         let schedule_id = random_id(&transaction, "monthly-schedule")?;
         let payee_id = resolve_payee(&transaction, draft.payee_name.as_deref())?;
-        transaction.execute("INSERT INTO schedules (id,account_id,payee_id,category_id,memo,flag_id,amount_huf,start_date,day_of_month,end_date,interval_months,counterpart_account_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)", params![schedule_id,draft.account_id,payee_id,draft.category_id,draft.memo.trim(),draft.flag_id,draft.amount.0,draft.start_date.as_str(),day,draft.end_date.as_ref().map(CalendarDate::as_str),draft.interval_months,draft.counterpart_account_id])?;
+        transaction.execute("INSERT INTO schedules (id,account_id,payee_id,category_id,memo,flag_id,amount_huf,start_date,day_of_month,end_date,interval_months,counterpart_account_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)", params![schedule_id,draft.account_id,payee_id,category_id,draft.memo.trim(),draft.flag_id,draft.amount.0,draft.start_date.as_str(),day,draft.end_date.as_ref().map(CalendarDate::as_str),draft.interval_months,draft.counterpart_account_id])?;
         materialize_occurrence(&transaction, &schedule_id, &draft.start_date)?;
         transaction.commit()?;
         Ok(())
@@ -2041,11 +2079,18 @@ impl Database {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         ensure_open_account(&transaction, &draft.account_id)?;
+        let account_kind = account_kind(&transaction, &draft.account_id)?;
+        let category_id = manual_category(
+            &transaction,
+            account_kind,
+            draft.amount.0,
+            draft.category_id.as_deref(),
+        )?;
         let id = random_id(&transaction, "manual-transaction")?;
         let payee_id = resolve_payee(&transaction, draft.payee_name.as_deref())?;
         let mut entry = Entry::manual(&id, &draft.account_id, draft.date.clone());
         entry.payee_id = payee_id.clone();
-        entry.category_id = draft.category_id.clone();
+        entry.category_id = category_id.clone();
         entry.memo = draft.memo.trim().to_owned();
         entry.flag_id = draft.flag_id.clone();
         insert_entry(&transaction, &entry, Some(draft.amount), None)?;
@@ -2057,7 +2102,7 @@ impl Database {
             };
             transaction.execute(
                 "UPDATE payees SET last_category_id=?2,last_direction=?3 WHERE id=?1",
-                params![payee_id, draft.category_id, direction],
+                params![payee_id, category_id, direction],
             )?;
         }
         transaction.commit()?;
@@ -2075,11 +2120,42 @@ impl Database {
                 "Transfer amount must be positive.",
             ));
         }
-        ensure_open_account(&self.connection, &input.account_id)?;
-        ensure_open_account(&self.connection, &input.counterpart_account_id)?;
-        let transfer_id = random_id(&self.connection, "manual-transfer")?;
-        let entered_id = random_id(&self.connection, "manual-transaction")?;
-        let counterpart_id = random_id(&self.connection, "manual-transaction")?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        ensure_open_account(&transaction, &input.account_id)?;
+        ensure_open_account(&transaction, &input.counterpart_account_id)?;
+        let entered_kind = account_kind(&transaction, &input.account_id)?;
+        let peer_kind = account_kind(&transaction, &input.counterpart_account_id)?;
+        let (budget_account, budget_kind, budget_amount) =
+            if entered_kind.is_on_budget() && !peer_kind.is_on_budget() {
+                (
+                    Some(&input.account_id),
+                    entered_kind,
+                    signed_amount(input.amount, input.direction),
+                )
+            } else if !entered_kind.is_on_budget() && peer_kind.is_on_budget() {
+                (
+                    Some(&input.counterpart_account_id),
+                    peer_kind,
+                    signed_amount(input.amount, opposite_direction(input.direction)),
+                )
+            } else {
+                (None, AccountKind::Cash, 0)
+            };
+        let category_id = if budget_account.is_some() {
+            manual_category(
+                &transaction,
+                budget_kind,
+                budget_amount,
+                input.category_id.as_deref(),
+            )?
+        } else {
+            None
+        };
+        let transfer_id = random_id(&transaction, "manual-transfer")?;
+        let entered_id = random_id(&transaction, "manual-transaction")?;
+        let counterpart_id = random_id(&transaction, "manual-transaction")?;
         let mut entered = Entry::manual(&entered_id, &input.account_id, input.date.clone());
         let mut counterpart = Entry::manual(
             &counterpart_id,
@@ -2090,13 +2166,37 @@ impl Database {
             entry.memo = input.memo.trim().to_owned();
             entry.flag_id = input.flag_id.clone();
         }
-        self.create_transfer(&TransferDraft::manual(
+        if budget_account.is_some() {
+            if entered_kind.is_on_budget() {
+                entered.category_id = category_id;
+            } else {
+                counterpart.category_id = category_id;
+            }
+        }
+        let draft = TransferDraft::manual(
             &transfer_id,
             input.amount,
             entered,
             counterpart,
             input.direction,
-        ))?;
+        );
+        transaction.execute(
+            "INSERT INTO transfers (id,amount_huf,outflow_id,inflow_id) VALUES (?1,?2,?3,?4)",
+            params![draft.id, draft.amount.0, draft.outflow.id, draft.inflow.id],
+        )?;
+        insert_entry(
+            &transaction,
+            &draft.outflow,
+            None,
+            Some((&draft.id, Direction::Outflow)),
+        )?;
+        insert_entry(
+            &transaction,
+            &draft.inflow,
+            None,
+            Some((&draft.id, Direction::Inflow)),
+        )?;
+        transaction.commit()?;
         Ok(entered_id)
     }
 
@@ -2140,6 +2240,7 @@ impl Database {
             return Ok(());
         }
         let amount_changed = current.4 != edit.amount.0;
+        let sign_changed = current.4.signum() != edit.amount.0.signum();
         let state_changed = current.2 != edit.cleared_state;
         let is_transfer = current.0.is_some();
         let account_changed = edit
@@ -2160,10 +2261,16 @@ impl Database {
             .map(str::trim)
             .filter(|name| !name.is_empty());
         let payee_changed = !is_transfer && payee_name != current.8.as_deref();
+        let effective_current_category = if let Some(transfer_id) = current.0.as_deref() {
+            transaction.query_row("SELECT CASE WHEN a.kind IN ('cash','credit') AND peer_a.kind IN ('tracking','loan') THEN le.category_id WHEN a.kind IN ('tracking','loan') AND peer_a.kind IN ('cash','credit') THEN peer.category_id ELSE le.category_id END FROM ledger_entries le JOIN accounts a ON a.id=le.account_id JOIN ledger_entries peer ON peer.transfer_id=le.transfer_id AND peer.id<>le.id JOIN accounts peer_a ON peer_a.id=peer.account_id WHERE le.id=?1 AND le.transfer_id=?2", params![edit.id,transfer_id], |row| row.get::<_,Option<String>>(0))?
+        } else {
+            current.9.clone()
+        };
+        let category_changed = effective_current_category != edit.category_id;
         let detail_changed = account_changed
             || current.6 != edit.date.as_str()
             || payee_changed
-            || current.9 != edit.category_id
+            || category_changed
             || current.10 != edit.flag_id;
         let reconciled_pair = if let Some(transfer_id) = current.0.as_deref() {
             transaction.query_row(
@@ -2176,7 +2283,8 @@ impl Database {
         };
         let confirmation_required = ((state_changed || detail_changed)
             && current.2 == ClearedState::Reconciled)
-            || (amount_changed && (current.2 == ClearedState::Reconciled || reconciled_pair));
+            || ((amount_changed || (is_transfer && category_changed))
+                && (current.2 == ClearedState::Reconciled || reconciled_pair));
         confirm_reconciled(confirmation_required, edit.confirmed)?;
 
         let payee_id = if payee_changed {
@@ -2185,7 +2293,43 @@ impl Database {
             current.7
         };
 
-        if let Some(transfer_id) = current.0 {
+        let category_to_write = if let Some(transfer_id) = current.0.as_deref() {
+            let (budget_leg_id, budget_kind, _old_budget_amount): (Option<String>, Option<AccountKind>, Option<i64>) = transaction.query_row("SELECT CASE WHEN a.kind IN ('cash','credit') AND peer_a.kind IN ('tracking','loan') THEN le.id WHEN a.kind IN ('tracking','loan') AND peer_a.kind IN ('cash','credit') THEN peer.id ELSE NULL END,CASE WHEN a.kind IN ('cash','credit') THEN a.kind WHEN peer_a.kind IN ('cash','credit') THEN peer_a.kind ELSE NULL END,CASE WHEN a.kind IN ('cash','credit') AND peer_a.kind IN ('tracking','loan') THEN le.amount_huf WHEN a.kind IN ('tracking','loan') AND peer_a.kind IN ('cash','credit') THEN peer.amount_huf ELSE NULL END FROM ledger_entries le JOIN accounts a ON a.id=le.account_id JOIN ledger_entries peer ON peer.transfer_id=le.transfer_id AND peer.id<>le.id JOIN accounts peer_a ON peer_a.id=peer.account_id WHERE le.id=?1 AND le.transfer_id=?2", params![edit.id,transfer_id], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)))?;
+            let budget_amount = if budget_leg_id.as_deref() == Some(edit.id.as_str()) {
+                edit.amount.0
+            } else {
+                edit.amount
+                    .0
+                    .checked_neg()
+                    .ok_or(LedgerError::AmountOverflow)?
+            };
+            if !category_changed && !sign_changed {
+                None
+            } else if let (Some(_), Some(kind), _) = (budget_leg_id, budget_kind, budget_amount) {
+                Some(manual_category(
+                    &transaction,
+                    kind,
+                    budget_amount,
+                    edit.category_id.as_deref(),
+                )?)
+            } else {
+                Some(None)
+            }
+        } else if category_changed || account_changed || sign_changed {
+            Some(manual_category(
+                &transaction,
+                account_kind(
+                    &transaction,
+                    edit.account_id.as_deref().unwrap_or(&current.11),
+                )?,
+                edit.amount.0,
+                edit.category_id.as_deref(),
+            )?)
+        } else {
+            None
+        };
+
+        if let Some(transfer_id) = current.0.clone() {
             let direction = current.1.ok_or(LedgerError::InvalidValue(
                 "A transfer direction is missing.",
             ))?;
@@ -2216,10 +2360,30 @@ impl Database {
                 params![edit.id, edit.amount.0],
             )?;
         }
-        if current.3 != edit.memo || state_changed || detail_changed {
+        if current.3 != edit.memo || state_changed || detail_changed || category_to_write.is_some()
+        {
+            if let Some(category) = category_to_write.as_ref() {
+                if is_transfer {
+                    let transfer_id = current.0.as_deref().unwrap();
+                    let budget_leg: Option<String> = transaction.query_row("SELECT CASE WHEN a.kind IN ('cash','credit') AND peer_a.kind IN ('tracking','loan') THEN le.id WHEN a.kind IN ('tracking','loan') AND peer_a.kind IN ('cash','credit') THEN peer.id ELSE NULL END FROM ledger_entries le JOIN accounts a ON a.id=le.account_id JOIN ledger_entries peer ON peer.transfer_id=le.transfer_id AND peer.id<>le.id JOIN accounts peer_a ON peer_a.id=peer.account_id WHERE le.id=?1 AND le.transfer_id=?2", params![edit.id,transfer_id], |row| row.get(0))?;
+                    if let Some(id) = budget_leg {
+                        transaction.execute("UPDATE transactions SET category_id=CASE WHEN id=?1 THEN ?2 ELSE NULL END WHERE transfer_id=?3", params![id,category,transfer_id])?;
+                    } else {
+                        transaction.execute(
+                            "UPDATE transactions SET category_id=NULL WHERE transfer_id=?1",
+                            [transfer_id],
+                        )?;
+                    }
+                } else {
+                    transaction.execute(
+                        "UPDATE transactions SET category_id=?2 WHERE id=?1",
+                        params![edit.id, category],
+                    )?;
+                }
+            }
             transaction.execute(
-                "UPDATE transactions SET account_id=?2,transaction_date=?3,payee_id=?4,category_id=?5,memo=?6,flag_id=?7,cleared_state=?8 WHERE id=?1",
-                params![edit.id, edit.account_id.as_deref().unwrap_or(&current.11), edit.date.as_str(), payee_id, edit.category_id, edit.memo.trim(), edit.flag_id, edit.cleared_state],
+                "UPDATE transactions SET account_id=?2,transaction_date=?3,payee_id=?4,memo=?5,flag_id=?6,cleared_state=?7 WHERE id=?1",
+                params![edit.id, edit.account_id.as_deref().unwrap_or(&current.11), edit.date.as_str(), payee_id, edit.memo.trim(), edit.flag_id, edit.cleared_state],
             )?;
         }
         if let Some(payee_id) = payee_id.filter(|_| {
@@ -2474,6 +2638,91 @@ fn ensure_open_account(connection: &Connection, id: &str) -> LedgerResult<()> {
     } else {
         Ok(())
     }
+}
+
+fn account_kind(connection: &Connection, id: &str) -> LedgerResult<AccountKind> {
+    connection
+        .query_row("SELECT kind FROM accounts WHERE id=?1", [id], |row| {
+            row.get(0)
+        })
+        .optional()?
+        .ok_or(LedgerError::NotFound)
+}
+
+fn signed_amount(amount: Huf, direction: Direction) -> i64 {
+    match direction {
+        Direction::Outflow => -amount.0,
+        Direction::Inflow => amount.0,
+    }
+}
+
+fn opposite_direction(direction: Direction) -> Direction {
+    match direction {
+        Direction::Outflow => Direction::Inflow,
+        Direction::Inflow => Direction::Outflow,
+    }
+}
+
+fn manual_category(
+    connection: &Connection,
+    kind: AccountKind,
+    amount: i64,
+    selected: Option<&str>,
+) -> LedgerResult<Option<String>> {
+    if !kind.is_on_budget() {
+        return Ok(None);
+    }
+    if let Some(id) = selected {
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
+            [id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(LedgerError::InvalidValue("Choose an existing category."));
+        }
+        return Ok(Some(id.to_owned()));
+    }
+    if amount < 0 {
+        return Err(LedgerError::InvalidValue(
+            "Choose a category for a budget outflow.",
+        ));
+    }
+    if amount == 0 {
+        return Ok(None);
+    }
+    let existing: Option<String> = connection.query_row("SELECT c.id FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE lower(trim(g.name))='inflow' AND lower(trim(c.name))='ready to assign' ORDER BY c.id LIMIT 1", [], |row| row.get(0)).optional()?;
+    if existing.is_some() {
+        return Ok(existing);
+    }
+    let category_id = random_id(connection, "category")?;
+    let group_id: Option<String> = connection
+        .query_row(
+            "SELECT id FROM category_groups WHERE lower(trim(name))='inflow' ORDER BY id LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let group_id = if let Some(group_id) = group_id {
+        group_id
+    } else {
+        let group_id = random_id(connection, "category-group")?;
+        let next_group: i64 = connection.query_row(
+            "SELECT COALESCE(MAX(sort_order)+1,0) FROM category_groups",
+            [],
+            |row| row.get(0),
+        )?;
+        connection.execute(
+            "INSERT INTO category_groups (id,name,sort_order) VALUES (?1,'Inflow',?2)",
+            params![group_id, next_group],
+        )?;
+        group_id
+    };
+    connection.execute(
+        "INSERT INTO categories (id,group_id,name,sort_order) VALUES (?1,?2,'Ready to Assign',0)",
+        params![category_id, group_id],
+    )?;
+    Ok(Some(category_id))
 }
 fn materialize_occurrence(
     transaction: &rusqlite::Transaction<'_>,
@@ -2795,9 +3044,58 @@ fn update_scheduled_register_entry(
     } else {
         day_of_month
     };
+    let stored_category: Option<String> = transaction.query_row(
+        "SELECT category_id FROM schedules WHERE id=?1",
+        [&schedule_id],
+        |row| row.get(0),
+    )?;
+    let schedule_sign_changed = current.4.signum() != edit.amount.0.signum();
+    let proposed_category = if edit.category_id == stored_category
+        && !schedule_sign_changed
+        && selected_account == current.11
+    {
+        stored_category.clone()
+    } else if is_transfer {
+        let peer_kind = counterpart
+            .as_deref()
+            .map(|peer| account_kind(transaction, peer))
+            .transpose()?;
+        let anchor_kind = account_kind(transaction, &account_id)?;
+        if let Some(peer_kind) =
+            peer_kind.filter(|kind| kind.is_on_budget() != anchor_kind.is_on_budget())
+        {
+            let budget_kind = if anchor_kind.is_on_budget() {
+                anchor_kind
+            } else {
+                peer_kind
+            };
+            let budget_amount = if anchor_kind.is_on_budget() {
+                signed_amount
+            } else {
+                signed_amount
+                    .checked_neg()
+                    .ok_or(LedgerError::AmountOverflow)?
+            };
+            manual_category(
+                transaction,
+                budget_kind,
+                budget_amount,
+                edit.category_id.as_deref(),
+            )?
+        } else {
+            None
+        }
+    } else {
+        manual_category(
+            transaction,
+            account_kind(transaction, selected_account)?,
+            edit.amount.0,
+            edit.category_id.as_deref(),
+        )?
+    };
     transaction.execute(
         "UPDATE schedules SET account_id=?2,payee_id=?3,category_id=?4,memo=?5,flag_id=?6,amount_huf=?7,start_date=?8,day_of_month=?9,end_date=?10,interval_months=?11 WHERE id=?1",
-        params![schedule_id,new_anchor_account,payee_id,edit.category_id,edit.memo.trim(),edit.flag_id,signed_amount,new_start_date,day,new_end,if interval == 0 { 1 } else { interval }],
+        params![schedule_id,new_anchor_account,payee_id,proposed_category,edit.memo.trim(),edit.flag_id,signed_amount,new_start_date,day,new_end,if interval == 0 { 1 } else { interval }],
     )?;
     transaction.execute("UPDATE schedule_occurrences SET occurrence_date=?2 WHERE schedule_id=?1 AND occurrence_date=(SELECT occurrence_date FROM schedule_occurrences WHERE transaction_id=?3)", params![schedule_id,edit.date.as_str(),anchor_id])?;
     let category_leg: Option<String> =
@@ -2835,11 +3133,11 @@ fn update_scheduled_register_entry(
         if let Some(id) = category_leg {
             transaction.execute(
                 "UPDATE transactions SET category_id=?2 WHERE id=?1",
-                params![id, edit.category_id],
+                params![id, proposed_category],
             )?;
         }
     } else {
-        transaction.execute("UPDATE transactions SET account_id=?2,transaction_date=?3,payee_id=?4,category_id=?5,memo=?6,flag_id=?7,amount_huf=?8 WHERE id=?1", params![edit.id,selected_account,edit.date.as_str(),payee_id,edit.category_id,edit.memo.trim(),edit.flag_id,edit.amount.0])?;
+        transaction.execute("UPDATE transactions SET account_id=?2,transaction_date=?3,payee_id=?4,category_id=?5,memo=?6,flag_id=?7,amount_huf=?8 WHERE id=?1", params![edit.id,selected_account,edit.date.as_str(),payee_id,proposed_category,edit.memo.trim(),edit.flag_id,edit.amount.0])?;
     }
     Ok(())
 }
