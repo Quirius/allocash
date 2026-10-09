@@ -149,7 +149,21 @@ Requirements:
 - target progress
 - snoozed state
 - hidden categories if supported
-- notes if practical
+- persistent category notes
+
+Clicking anywhere on a category row selects it, including Assigned, Activity
+and Available. Keyboard focus on the row's controls also selects it. The selected
+category's balance summary, target progress, target editor and month-specific
+snooze controls appear vertically in a right-hand panel, below the table on
+narrow windows. The separate target form is removed. Auto-Assign is omitted from
+this owner workflow.
+
+Notes belong to the category rather than a budget month. Preserve arbitrary
+text, whitespace and line breaks across month changes, reopening, and native
+backup/restore. Notes save on leaving the field, with explicit save/retry feedback;
+failed or still-edited drafts remain attached to their category. Saved note changes
+participate in session undo. Existing target calculations and effective-month
+rules remain unchanged.
 
 Do not reconstruct historical Plan solely from current balances if imported YNAB Plan data contains historical assignment state. Preserve source history.
 

@@ -1,5 +1,28 @@
 # Implementation and validation status
 
+On 2026-10-09, the owner requested moving category targets into a vertical
+right-hand selected-category panel, persistent category notes and no Auto-Assign.
+Clicking a category row or focusing its controls selects it, with an accessible
+selected state. The panel contains Available/Assigned/Activity, target progress,
+the existing target editor and month-specific snooze. It stacks below the table
+on smaller windows, and the table can scroll horizontally rather than clipping.
+Notes use the existing category-level SQLite column without a schema migration.
+Exact text, whitespace and line breaks persist across months, reopening and
+native backup/restore; changes are undoable. Leaving the field saves, and a Save
+notes button supports retry. Failed drafts remain keyed to their category, older
+completions cannot replace newer drafts, and successful notes immediately reflect
+in the cached panel. Plan reads reject stale mutation versions; target saves
+capture their category/month and the editor refreshes persisted definitions after
+undo without applying an old completion to a new selection. Existing target
+calculations and Available-click money moves remain in place.
+All 162 Rust library tests and 145 frontend tests passed, including exact note
+storage, month/reopen/backup/undo behavior and draft lifecycle checks. Formatting,
+Cargo check, independent review, frontend and per-user NSIS builds passed.
+Installation exited successfully, preserved budget bytes, and the installed
+executable matches the release build after its expected bundle marker. A
+responsive native window reopened. Owner category selection, target editing,
+notes across months/reopening and undo interaction checks remain open.
+
 On 2026-10-09, the owner requested replacing the separate Plan Move Money form
 with a popup opened from a category's Available amount. The clicked category is
 the fixed source; a positive Available balance is prefilled for editing and a

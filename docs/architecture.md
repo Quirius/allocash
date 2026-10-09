@@ -188,6 +188,12 @@ derived Ready to Assign balance. Both routes remain one saved undoable action.
 Returning to Ready to Assign requires no special category assignment or schema
 change; category-to-category move records retain their existing shape.
 
+Monthly Plan responses include category notes from the existing `categories.notes`
+column. `set_category_notes` updates exact text by category ID through the saved
+mutation and undo boundary. Notes have no month key and need no schema migration;
+native database backups preserve them. The selected-category sidebar keeps
+category-specific note drafts while monthly Plan reads refresh.
+
 The default Cargo feature is `desktop`. Disabling it permits the actual SQLite
 and ledger tests to run without Tauri, using the same database implementation.
 Rust dependencies are locked in `src-tauri/Cargo.lock`.

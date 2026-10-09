@@ -22,6 +22,7 @@ import {
   setPlanAssignment,
   setCreditPaymentCategory,
   setCategoryTarget,
+  setCategoryNotes,
   setCategoryTargetSnoozed,
   updateRegisterEntry,
   loadUndoStatus,
@@ -34,6 +35,13 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn() }));
 
 beforeEach(() => vi.resetAllMocks());
+
+it("saves category notes as exact text without a month", async () => {
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  const notes = "  Árvíztűrő 📝\nNext month\n  ";
+  await setCategoryNotes("category-1", notes);
+  expect(invoke).toHaveBeenCalledWith("set_category_notes", { input: { categoryId: "category-1", notes } });
+});
 
 it("does not access desktop storage in browser preview", async () => {
   vi.mocked(isTauri).mockReturnValue(false);

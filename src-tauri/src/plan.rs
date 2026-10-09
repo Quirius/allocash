@@ -57,6 +57,7 @@ pub struct PlanCategory {
     pub group_name: String,
     pub category_id: String,
     pub category_name: String,
+    pub notes: String,
     pub assigned: Huf,
     pub activity: Huf,
     pub available: Huf,
@@ -145,6 +146,17 @@ struct PlanDerivation {
 }
 
 impl Database {
+    pub fn set_category_notes(&self, category_id: &str, notes: &str) -> LedgerResult<()> {
+        let changed = self.connection.execute(
+            "UPDATE categories SET notes=?1 WHERE id=?2",
+            params![notes, category_id],
+        )?;
+        if changed == 0 {
+            return Err(LedgerError::NotFound);
+        }
+        Ok(())
+    }
+
     pub fn set_credit_payment_category(
         &self,
         account_id: &str,
@@ -396,7 +408,7 @@ impl Database {
         let target_definitions = target_definitions_for(&self.connection, month)?;
         let target_snoozes = target_snoozes_for(&self.connection, month)?;
         let mut categories = Vec::new();
-        let mut category_query = self.connection.prepare("SELECT g.id,g.name,c.id,c.name FROM category_groups g JOIN categories c ON c.group_id=g.id WHERE g.hidden=0 AND c.hidden=0 ORDER BY g.sort_order,c.sort_order,c.id")?;
+        let mut category_query = self.connection.prepare("SELECT g.id,g.name,c.id,c.name,c.notes FROM category_groups g JOIN categories c ON c.group_id=g.id WHERE g.hidden=0 AND c.hidden=0 ORDER BY g.sort_order,c.sort_order,c.id")?;
         let mut rows = category_query.query([])?;
         while let Some(row) = rows.next()? {
             let category_id: String = row.get(2)?;
@@ -408,12 +420,13 @@ impl Database {
                 row.get::<_, String>(1)?,
                 category_id,
                 row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
             ));
         }
         let categories = categories
             .into_iter()
             .map(
-                |(group_id, group_name, category_id, category_name)| -> LedgerResult<_> {
+                |(group_id, group_name, category_id, category_name, notes)| -> LedgerResult<_> {
                     let assigned = *derivation.assigned.get(&category_id).unwrap_or(&0);
                     let target = target_definitions
                         .get(&category_id)
@@ -450,6 +463,7 @@ impl Database {
                         group_name,
                         category_id: category_id.clone(),
                         category_name,
+                        notes,
                         assigned: narrow(assigned)?,
                         activity: narrow(*derivation.activity.get(&category_id).unwrap_or(&0))?,
                         available: narrow(*derivation.available.get(&category_id).unwrap_or(&0))?,
@@ -1051,6 +1065,91 @@ fn narrow(value: i128) -> LedgerResult<Huf> {
 mod tests {
     use super::*;
     use crate::ledger::{Account, AccountKind, CalendarDate, Direction, Entry, TransferDraft};
+
+    #[test]
+    fn category_notes_round_trip_undo_backup_and_reopen_without_changing_plan_money() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("budget.sqlite3");
+        let mut database = Database::open(&path).unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        let august = PlanMonth::parse("2026-08").unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &august, Huf(1200))
+            .unwrap();
+        database
+            .set_monthly_assignment("food", &september, Huf(-200))
+            .unwrap();
+        let original_august = database.plan_month(&august).unwrap();
+        let original_september = database.plan_month(&september).unwrap();
+
+        let note = "  café 🧾\nsecond line\t ";
+        database.set_category_notes("food", note).unwrap();
+        for month in [&august, &september] {
+            let category = database
+                .plan_month(month)
+                .unwrap()
+                .categories
+                .into_iter()
+                .find(|category| category.category_id == "food")
+                .unwrap();
+            assert_eq!(category.notes, note);
+        }
+        assert_eq!(
+            database.plan_month(&august).unwrap().ready_to_assign,
+            original_august.ready_to_assign
+        );
+        assert_eq!(
+            database.plan_month(&september).unwrap().categories[0].assigned,
+            original_september.categories[0].assigned
+        );
+
+        database
+            .undoable("Edit category notes", |database| {
+                database
+                    .set_category_notes("food", "")
+                    .map_err(|error| error.to_string())
+            })
+            .unwrap();
+        assert_eq!(
+            database.plan_month(&august).unwrap().categories[0].notes,
+            ""
+        );
+        database.undo_last_action().unwrap();
+        assert_eq!(
+            database.plan_month(&september).unwrap().categories[0].notes,
+            note
+        );
+
+        database.create_native_backup().unwrap();
+        let backup_name = database
+            .list_native_backups()
+            .unwrap()
+            .into_iter()
+            .last()
+            .unwrap();
+        database.set_category_notes("food", "changed").unwrap();
+        database.restore_native_backup(&backup_name).unwrap();
+        assert_eq!(
+            database.plan_month(&august).unwrap().categories[0].notes,
+            note
+        );
+        drop(database);
+        let reopened = Database::open(&path).unwrap();
+        assert_eq!(
+            reopened.plan_month(&september).unwrap().categories[0].notes,
+            note
+        );
+        assert!(matches!(
+            reopened.set_category_notes("missing", "ignored"),
+            Err(LedgerError::NotFound)
+        ));
+        assert_eq!(
+            reopened.plan_month(&august).unwrap().categories[0].available,
+            original_august.categories[0].available
+        );
+    }
 
     fn category_available(plan: &PlanSnapshot, category_id: &str) -> Huf {
         plan.categories
