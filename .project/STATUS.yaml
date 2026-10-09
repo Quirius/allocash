@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Confirm October Ready to Assign displays zero after the installed credit-funding correction, then verify Make repeating calendar/cancel/save behavior and continue the clean-candidate desktop rehearsal and required-rule recreation."
-updated_at: "2026-10-08T19:34:40Z"
+next_action: "Confirm Ctrl+Z and the Undo button reverse saved transactions, transfers and Plan changes; confirm the prior Ready to Assign and Make repeating fixes, then continue the clean-candidate desktop rehearsal and required-rule recreation."
+updated_at: "2026-10-09T18:25:46Z"
 source:
   branch: "main"
-  commit: "44f8b27feb10fa24a9ef166c4121fc900de33cdf"
-  verified_at: "2026-10-08T19:34:40Z"
+  commit: "e0805d6e30c3fb5791178f00cd1454d6115d3f8a"
+  verified_at: "2026-10-09T18:25:46Z"
 summary:
   completed:
+    - "Ctrl+Z and an Undo button now reverse saved desktop budgeting actions, with complete transfers, payees, recurrence, Plan assignments/moves, targets/snoozes, payment mapping and reconciliation restored from verified SQLite states. A 30-step session history clears on reopening or successful backup restore. All 146 core and 117 frontend tests, formatting, review and frontend/native builds passed. The installed upgrade preserved budget bytes and reopened a responsive native window; owner interaction confirmation remains open."
     - "Ready to Assign now includes credit-to-cash advances and newly positive credit balances while avoiding duplicate funding from existing positive balances. Payment-category cash overspending is classified after monthly funding/payment deltas. The captured installed budget now derives zero October Ready to Assign; all 51 category/mapping snapshots remain identical. All 137 core tests, formatting, independent review and frontend/native package builds passed. The installed app was upgraded and reopened, preserving budget bytes and table contents; owner screen confirmation remains open."
     - "Make repeating now selects the next occurrence of the original day strictly after today, using this month when available or next month otherwise and clamping short months. The original day anchor survives clamping unless the proposed date is edited. Sixteen date/draft, 23 routing, 24 IPC, three monthly-schedule and three scheduled-transfer tests passed with formatting, review and frontend/native installer builds. The installed upgrade preserved database bytes and reopened a responsive native window; owner retest remains open."
     - "An earlier owner clarification used one month after the original date; the subsequent next-available-day refinement supersedes that default. This earlier change was validated with Monthly selected and original history untouched. All ten date/draft tests and frontend/native installer builds passed. The installed app was upgraded and reopened; database bytes were unchanged by installation."
@@ -49,6 +50,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
+    - "The owner-requested undo workflow is implemented, tested and installed; owner Ctrl+Z, Undo-button and native text-editing checks remain open."
     - "The owner-reported Ready to Assign calculation discrepancy is corrected and installed; owner confirmation of the October screen remains open."
     - "The date/repeat dropdown and refined next-available-day Make repeating draft are installed; owner calendar, month-end recurrence, cancel-without-change and saved-draft checks remain open."
     - "Register responsiveness and upcoming deletion received owner confirmation. The owner accepted the installed unified upcoming display; the daily-workflow gate is verified. Clean import/reference rerun passed; owner desktop restore, view comparisons, required target/recurrence recreation and native backup/reopen remain open."
@@ -59,6 +61,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "e0805d6e30c3fb5791178f00cd1454d6115d3f8a"
+    note: "Records session undo, preserved linked financial state, mutation/read ordering safeguards, tests/review/builds and verified installed upgrade; owner interaction confirmation remains open."
   - path: "docs/status.md"
     ref: "44f8b27feb10fa24a9ef166c4121fc900de33cdf"
     note: "Records reproduced Ready to Assign discrepancy, credit-funding and rollover corrections, zero result with unchanged category snapshots, 137 tests/review/builds and verified installed upgrade; owner confirmation remains open."
