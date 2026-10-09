@@ -1,6 +1,46 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { localCalendarDate } from "./format";
 
+let savedMutationCount = 0;
+let savedMutationVersion = 0;
+let undoReservation = false;
+const savedMutationListeners = new Set<(pending: boolean, version: number) => void>();
+function notifySavedMutation(): void {
+  savedMutationVersion += 1;
+  for (const listener of savedMutationListeners) listener(savedMutationCount > 0 || undoReservation, savedMutationVersion);
+}
+export function subscribeSavedMutations(listener: (pending: boolean, version: number) => void): () => void {
+  savedMutationListeners.add(listener);
+  listener(savedMutationCount > 0 || undoReservation, savedMutationVersion);
+  return () => savedMutationListeners.delete(listener);
+}
+export function hasSavedMutationPending(): boolean { return savedMutationCount > 0 || undoReservation; }
+export function getSavedMutationVersion(): number { return savedMutationVersion; }
+async function savedMutation<T>(operation: () => Promise<T>): Promise<T> {
+  if (undoReservation) throw new Error("Undo is refreshing the budget. Try again in a moment.");
+  savedMutationCount += 1; notifySavedMutation();
+  try { return await operation(); }
+  finally { savedMutationCount -= 1; notifySavedMutation(); }
+}
+export interface UndoStatus { canUndo: boolean; label: string | null; }
+export async function loadUndoStatus(): Promise<UndoStatus | null> {
+  if (!isTauri()) return null;
+  return invoke<UndoStatus>("get_undo_status");
+}
+export async function undoLastAction(): Promise<UndoStatus> {
+  if (savedMutationCount > 0 || undoReservation) throw new Error("A saved change is still in progress.");
+  undoReservation = true;
+  notifySavedMutation();
+  try { return await invoke<UndoStatus>("undo_last_action"); }
+  catch (error) { undoReservation = false; notifySavedMutation(); throw error; }
+}
+export function releaseUndoReservation(): void {
+  if (!undoReservation) return;
+  undoReservation = false;
+  notifySavedMutation();
+}
+
+
 export interface BudgetInfo {
   name: string;
   currency: "HUF";
@@ -189,11 +229,11 @@ export async function listNativeBackups(): Promise<NativeBackupList> {
 }
 
 export async function restoreNativeBackup(name: string): Promise<NativeRestoreReceipt> {
-  return invoke<NativeRestoreReceipt>("restore_native_backup", { name });
+  return savedMutation(() => invoke<NativeRestoreReceipt>("restore_native_backup", { name }));
 }
 
 export async function recoverUnreadableBudget(name: string): Promise<NativeRecoveryReceipt> {
-  return invoke<NativeRecoveryReceipt>("recover_unreadable_budget", { name });
+  return savedMutation(() => invoke<NativeRecoveryReceipt>("recover_unreadable_budget", { name }));
 }
 
 export async function loadWorkspace(asOf: string): Promise<WorkspaceSnapshot | null> {
@@ -207,17 +247,17 @@ export async function loadAccountRegister(accountId: string): Promise<RegisterEn
 }
 
 export async function createManualTransaction(input: ManualTransactionInput): Promise<string> {
-  return invoke<string>("create_manual_transaction", { input });
+  return savedMutation(() => invoke<string>("create_manual_transaction", { input }));
 }
 
 export async function createManualTransfer(input: ManualTransferInput): Promise<string> {
-  return invoke<string>("create_manual_transfer", { input });
+  return savedMutation(() => invoke<string>("create_manual_transfer", { input }));
 }
 export async function loadScheduledOccurrences(): Promise<ScheduledOccurrence[] | null> { if (!isTauri()) return null; return invoke("get_scheduled_occurrences"); }
-export async function createMonthlySchedule(input: MonthlyScheduleInput): Promise<void> { return invoke("create_monthly_schedule", { input }); }
-export async function postScheduledOccurrence(transactionId: string): Promise<void> { return invoke("post_scheduled_occurrence", { transactionId }); }
-export async function skipScheduledOccurrence(transactionId: string): Promise<void> { return invoke("skip_scheduled_occurrence", { transactionId }); }
-export async function deactivateSchedule(scheduleId: string): Promise<void> { return invoke("deactivate_schedule", { scheduleId }); }
+export async function createMonthlySchedule(input: MonthlyScheduleInput): Promise<void> { return savedMutation(() => invoke("create_monthly_schedule", { input })); }
+export async function postScheduledOccurrence(transactionId: string): Promise<void> { return savedMutation(() => invoke("post_scheduled_occurrence", { transactionId })); }
+export async function skipScheduledOccurrence(transactionId: string): Promise<void> { return savedMutation(() => invoke("skip_scheduled_occurrence", { transactionId })); }
+export async function deactivateSchedule(scheduleId: string): Promise<void> { return savedMutation(() => invoke("deactivate_schedule", { scheduleId })); }
 export async function loadSpendingByCategory(input: SpendingReportInput): Promise<SpendingCategoryTotal[] | null> { if (!isTauri()) return null; return invoke("get_spending_by_category", { input }); }
 export async function loadSpendingByPayee(input: SpendingReportInput): Promise<SpendingPayeeTotal[] | null> { if (!isTauri()) return null; return invoke("get_spending_by_payee", { input }); }
 export async function loadInflowOutflowByMonth(input: SpendingReportInput): Promise<InflowOutflowReport | null> { if (!isTauri()) return null; return invoke("get_inflow_outflow_by_month", { input }); }
@@ -229,22 +269,22 @@ export async function loadForecast(input: ForecastInput): Promise<ForecastReport
 export async function loadNetWorthReport(asOf: string, comparedTo: string | null): Promise<NetWorthReport | null> { if (!isTauri()) return null; return invoke("get_net_worth_report", { asOf, comparedTo }); }
 
 export async function updateRegisterEntry(edit: RegisterEntryEdit): Promise<void> {
-  return invoke("update_register_entry", { edit });
+  return savedMutation(() => invoke("update_register_entry", { edit }));
 }
 
 export async function deleteRegisterEntry(id: string, confirmed: boolean): Promise<void> {
-  return invoke("delete_register_entry", { id, confirmed });
+  return savedMutation(() => invoke("delete_register_entry", { id, confirmed }));
 }
 
 export async function previewAccountReconciliation(input: ReconciliationInput): Promise<ReconciliationReview> {
   return invoke<ReconciliationReview>("preview_account_reconciliation", { input });
 }
 export async function reconcileAccount(input: ReconciliationInput): Promise<ReconciliationResult> {
-  return invoke<ReconciliationResult>("reconcile_account", { input });
+  return savedMutation(() => invoke<ReconciliationResult>("reconcile_account", { input }));
 }
 export async function loadPlanMonth(month: string, asOf = localCalendarDate()): Promise<PlanSnapshot | null> { if (!isTauri()) return null; return invoke<PlanSnapshot>("get_plan_month", { month, asOf }); }
-export async function setPlanAssignment(categoryId: string, month: string, amount: string): Promise<void> { return invoke("set_plan_assignment", { input: { categoryId, month, amount } }); }
-export async function movePlanMoney(fromCategoryId: string, toCategoryId: string, month: string, amount: string, asOf = localCalendarDate()): Promise<void> { return invoke("move_plan_money", { input: { fromCategoryId, toCategoryId, month, amount, asOf } }); }
-export async function setCreditPaymentCategory(accountId: string, categoryId: string | null): Promise<void> { return invoke("set_credit_payment_category", { input: { accountId, categoryId } }); }
-export async function setCategoryTarget(categoryId: string, effectiveMonth: string, target: CategoryTargetDefinition | null): Promise<void> { return invoke("set_category_target", { input: { categoryId, effectiveMonth, target } }); }
-export async function setCategoryTargetSnoozed(categoryId: string, month: string, snoozed: boolean): Promise<void> { return invoke("set_category_target_snoozed", { input: { categoryId, month, snoozed } }); }
+export async function setPlanAssignment(categoryId: string, month: string, amount: string): Promise<void> { return savedMutation(() => invoke("set_plan_assignment", { input: { categoryId, month, amount } })); }
+export async function movePlanMoney(fromCategoryId: string, toCategoryId: string, month: string, amount: string, asOf = localCalendarDate()): Promise<void> { return savedMutation(() => invoke("move_plan_money", { input: { fromCategoryId, toCategoryId, month, amount, asOf } })); }
+export async function setCreditPaymentCategory(accountId: string, categoryId: string | null): Promise<void> { return savedMutation(() => invoke("set_credit_payment_category", { input: { accountId, categoryId } })); }
+export async function setCategoryTarget(categoryId: string, effectiveMonth: string, target: CategoryTargetDefinition | null): Promise<void> { return savedMutation(() => invoke("set_category_target", { input: { categoryId, effectiveMonth, target } })); }
+export async function setCategoryTargetSnoozed(categoryId: string, month: string, snoozed: boolean): Promise<void> { return savedMutation(() => invoke("set_category_target_snoozed", { input: { categoryId, month, snoozed } })); }

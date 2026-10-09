@@ -1,5 +1,30 @@
 # Implementation and validation status
 
+On 2026-10-09, the owner requested Ctrl+Z for saved transaction, Plan and
+account changes. The desktop mutation boundary now captures a verified SQLite
+snapshot before a successful saved action, with a bounded 30-step session history.
+Undo reverses complete transfers, related payees and recurrence state alongside
+ordinary transactions, Plan assignments/moves, targets/snoozes, credit-payment
+mapping and reconciliation. The generic boundary also supports account metadata
+and closed-state changes without adding an account-management screen. Existing
+reconciled-history confirmation and required deletion backups remain in place.
+Failed partial writes restore the prior state; failed undo retains history, and
+failed recovery preserves the relevant safety copies. Successful native restore
+clears history; reopening starts a new history. No schema change is required.
+All 146 core tests passed, covering transfer identity and shared amounts,
+reconciled confirmation failures, Plan move conservation, target/snooze reversal,
+WAL state, the 30-step limit and corrupt snapshots. Ctrl+Z retains native editing
+inside text fields; an Undo button shows the available action. Mutation/undo
+barriers prevent concurrent writes and stale status responses. Sequenced Plan,
+report and workspace reads ignore superseded responses and reload when pending
+actions settle, preserving the Plan month and report filters. Plan save errors
+remain visible across automatic reloads, separate from read errors. All 117 frontend
+tests, the frontend build, formatting and independent review passed. The per-user
+NSIS build passed and the installed app was upgraded with exit code 0. Installation
+preserved database bytes, the executable matches the release build after the
+expected bundle marker, and a responsive native window reopened. Owner shortcut
+and Undo-button interaction confirmation remain open.
+
 On 2026-10-08, the owner reported an incorrect large negative Ready to Assign
 balance in the October Plan. Investigation reproduced it on an isolated copy of
 the installed budget. The calculation omitted credit-to-cash advances, surplus

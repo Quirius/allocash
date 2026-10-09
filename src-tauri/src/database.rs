@@ -1,6 +1,7 @@
 use crate::{
     backup::create_verified_backup,
     migrations::{self, SCHEMA_VERSION},
+    undo::{UndoHistory, UndoStatus},
 };
 use rusqlite::Connection;
 use serde::Serialize;
@@ -16,6 +17,7 @@ pub type DatabaseResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 pub struct Database {
     pub(crate) connection: Connection,
     path: PathBuf,
+    undo: UndoHistory,
 }
 
 #[derive(Serialize)]
@@ -76,6 +78,7 @@ impl Database {
         let database = Self {
             connection,
             path: path.to_owned(),
+            undo: UndoHistory::new()?,
         };
         database.info()?;
         Ok(database)
@@ -136,6 +139,7 @@ impl Database {
             None::<fn(rusqlite::backup::Progress)>,
         );
         if result.is_ok() && Self::verify_connection(&self.connection).is_ok() {
+            self.undo.clear();
             return Ok(NativeRestoreReceipt {
                 safety_backup_path: safety.path,
             });
@@ -154,6 +158,63 @@ impl Database {
             ).into());
         }
         Err("Restore failed; the original budget was recovered from its safety backup.".into())
+    }
+
+    pub fn undo_status(&self) -> UndoStatus {
+        self.undo.status()
+    }
+
+    pub fn undo_last_action(&mut self) -> Result<UndoStatus, String> {
+        self.undo.undo(&mut self.connection)?;
+        Ok(self.undo.status())
+    }
+
+    /// Run a mutation as one session-only undo step. The snapshot is captured
+    /// through SQLite's backup API, which includes committed WAL contents.
+    pub fn undoable<T>(
+        &mut self,
+        label: &str,
+        operation: impl FnOnce(&mut Self) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let before = self.undo.capture(&self.connection, label)?;
+        let changes_before: i64 = self
+            .connection
+            .query_row("SELECT total_changes()", [], |row| row.get(0))
+            .map_err(|_| "Could not prepare undo history.".to_owned())?;
+        match operation(self) {
+            Ok(value) => {
+                let changes_after: i64 = self
+                    .connection
+                    .query_row("SELECT total_changes()", [], |row| row.get(0))
+                    .map_err(|_| "Could not verify the saved change.".to_owned())?;
+                if changes_after > changes_before {
+                    self.undo.push(before);
+                } else {
+                    let _ = std::fs::remove_file(before.path);
+                }
+                Ok(value)
+            }
+            Err(error) => {
+                let changes_after: i64 = self
+                    .connection
+                    .query_row("SELECT total_changes()", [], |row| row.get(0))
+                    .unwrap_or(changes_before);
+                if changes_after > changes_before {
+                    if let Err(restore_error) = self
+                        .undo
+                        .restore_snapshot(&mut self.connection, &before.path)
+                    {
+                        let retained = self.undo.preserve_directory();
+                        return Err(format!(
+                            "{error}; rollback failed: {restore_error}. The pre-action snapshot was preserved in {}.",
+                            retained.display()
+                        ));
+                    }
+                }
+                let _ = std::fs::remove_file(before.path);
+                Err(error)
+            }
+        }
     }
 
     pub fn recover_unreadable_budget(
@@ -476,6 +537,112 @@ mod tests {
         let reopened = Database::open(&path).unwrap();
         assert_eq!(reopened.info().unwrap().name, "Test budget");
         assert_eq!(reopened.info().unwrap().schema_version, SCHEMA_VERSION);
+        assert!(!reopened.undo_status().can_undo);
+    }
+
+    #[test]
+    fn undo_restores_successful_actions_and_rolls_back_partial_failures() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .undoable("Rename budget", |database| {
+                database
+                    .connection
+                    .execute("UPDATE budget_settings SET name = 'Changed'", [])
+                    .map_err(|error| error.to_string())?;
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(
+            database.undo_status().label.as_deref(),
+            Some("Rename budget")
+        );
+        assert_eq!(database.info().unwrap().name, "Changed");
+        database.undo_last_action().unwrap();
+        assert_eq!(database.info().unwrap().name, "My budget");
+        assert!(!database.undo_status().can_undo);
+        assert!(!database.undo_last_action().unwrap().can_undo);
+
+        let result: Result<(), String> = database.undoable("Failed rename", |database| {
+            database
+                .connection
+                .execute("UPDATE budget_settings SET name = 'Partial'", [])
+                .map_err(|error| error.to_string())?;
+            Err("simulated failure".to_owned())
+        });
+        assert_eq!(result.unwrap_err(), "simulated failure");
+        assert_eq!(database.info().unwrap().name, "My budget");
+        assert!(!database.undo_status().can_undo);
+
+        database.undoable("No-op", |_| Ok(())).unwrap();
+        assert!(!database.undo_status().can_undo);
+    }
+
+    #[test]
+    fn restore_clears_session_undo_history() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("budget.sqlite3");
+        let mut database = Database::open(&path).unwrap();
+        let saved = database.create_native_backup().unwrap();
+        database
+            .undoable("Rename", |database| {
+                database
+                    .connection
+                    .execute("UPDATE budget_settings SET name = 'Changed'", [])
+                    .map_err(|error| error.to_string())?;
+                Ok(())
+            })
+            .unwrap();
+        let name = Path::new(&saved.path)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        database.restore_native_backup(&name).unwrap();
+        assert!(!database.undo_status().can_undo);
+        assert_eq!(database.info().unwrap().name, "My budget");
+    }
+
+    #[test]
+    fn undo_handles_account_metadata_and_closed_state_across_multiple_steps() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&crate::ledger::Account {
+                id: "cash".into(),
+                name: "Cash".into(),
+                kind: crate::ledger::AccountKind::Cash,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database
+            .undoable("Close account", |database| {
+                database
+                    .set_account_closed("cash", true)
+                    .map_err(|error| error.to_string())
+            })
+            .unwrap();
+        database
+            .undoable("Rename account", |database| {
+                database
+                    .connection
+                    .execute("UPDATE accounts SET name = 'Renamed' WHERE id = 'cash'", [])
+                    .map_err(|error| error.to_string())?;
+                Ok(())
+            })
+            .unwrap();
+        let current = database.accounts().unwrap();
+        assert_eq!(current[0].name, "Renamed");
+        assert!(current[0].closed);
+        database.undo_last_action().unwrap();
+        let after_rename = database.accounts().unwrap();
+        assert_eq!(after_rename[0].name, "Cash");
+        assert!(after_rename[0].closed);
+        database.undo_last_action().unwrap();
+        let after_close = database.accounts().unwrap();
+        assert!(!after_close[0].closed);
+        assert!(!database.undo_status().can_undo);
     }
 
     #[test]

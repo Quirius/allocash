@@ -351,3 +351,21 @@ Important:
 - preserve the user's manual routing/category choices
 
 The final YNAB dataset may be cleaned up before final migration.
+
+## Undo saved actions
+
+Ctrl+Z reverses the latest saved budgeting action, with an Undo button showing
+which action is available. Creation, edits and deletion include complete linked
+transfers and associated recurring state. Plan assignments, money moves, targets,
+snoozes, card-payment mapping and account reconciliation are undoable actions.
+The same backend action boundary supports account metadata and closed-state
+changes. It does not add an account-management screen.
+
+One action creates one undo step. Repeated undo walks backward through up to 30
+saved actions in the current app session. Reopening the app or successfully
+restoring a backup clears the session history. There is no redo command in this
+slice. Failed saves do not replace the latest valid undo step. Typing in inputs,
+text areas or editable text retains the field's native Ctrl+Z behavior. Undo is
+unavailable while a saved mutation or restore is in progress; new saved actions
+cannot interleave with undo and its view refresh. All balances and active views
+refresh after undo, preserving selected Plan month and report filters.

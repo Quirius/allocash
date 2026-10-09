@@ -3,6 +3,7 @@ pub mod database;
 pub mod ledger;
 mod migrations;
 pub mod plan;
+mod undo;
 pub mod ynab_import;
 
 #[cfg(test)]
@@ -10,6 +11,9 @@ mod schema_tests;
 
 #[cfg(test)]
 mod ledger_tests;
+
+#[cfg(test)]
+mod undo_tests;
 
 #[cfg(test)]
 mod ynab_import_tests;

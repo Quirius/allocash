@@ -92,6 +92,22 @@ fn get_budget_info(
 }
 
 #[tauri::command]
+fn get_undo_status(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+) -> Result<crate::undo::UndoStatus, String> {
+    with_database(&app, &state, |database| Ok(database.undo_status()))
+}
+
+#[tauri::command]
+fn undo_last_action(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+) -> Result<crate::undo::UndoStatus, String> {
+    with_database(&app, &state, |database| database.undo_last_action())
+}
+
+#[tauri::command]
 fn create_native_backup(
     app: tauri::AppHandle,
     state: tauri::State<'_, BudgetState>,
@@ -184,9 +200,11 @@ fn create_manual_transaction(
     input: ManualTransactionDraft,
 ) -> Result<String, String> {
     with_database(&app, &state, |database| {
-        database
-            .create_manual_transaction(&input)
-            .map_err(ledger_error)
+        database.undoable("Add transaction", |database| {
+            database
+                .create_manual_transaction(&input)
+                .map_err(ledger_error)
+        })
     })
 }
 
@@ -197,9 +215,11 @@ fn create_manual_transfer(
     input: ManualTransferInput,
 ) -> Result<String, String> {
     with_database(&app, &state, |database| {
-        database
-            .create_manual_transfer(&input)
-            .map_err(ledger_error)
+        database.undoable("Add transfer", |database| {
+            database
+                .create_manual_transfer(&input)
+                .map_err(ledger_error)
+        })
     })
 }
 
@@ -210,7 +230,9 @@ fn update_register_entry(
     edit: RegisterEntryEdit,
 ) -> Result<(), String> {
     with_database(&app, &state, |database| {
-        database.update_register_entry(&edit).map_err(ledger_error)
+        database.undoable("Edit transaction", |database| {
+            database.update_register_entry(&edit).map_err(ledger_error)
+        })
     })
 }
 
@@ -226,7 +248,9 @@ fn delete_register_entry(
             .check_entry_deletion(&id, confirmed)
             .map_err(ledger_error)?;
         create_safety_backup(database)?;
-        database.delete_entry(&id, confirmed).map_err(ledger_error)
+        database.undoable("Delete transaction", |database| {
+            database.delete_entry(&id, confirmed).map_err(ledger_error)
+        })
     })
 }
 
@@ -250,7 +274,9 @@ fn reconcile_account(
     input: ReconciliationInput,
 ) -> Result<ReconciliationResult, String> {
     with_database(&app, &state, |database| {
-        database.reconcile_account(&input).map_err(ledger_error)
+        database.undoable("Reconcile account", |database| {
+            database.reconcile_account(&input).map_err(ledger_error)
+        })
     })
 }
 
@@ -383,9 +409,11 @@ fn create_monthly_schedule(
     input: MonthlyScheduleDraft,
 ) -> Result<(), String> {
     with_database(&app, &state, |database| {
-        database
-            .create_monthly_schedule(&input)
-            .map_err(ledger_error)
+        database.undoable("Create schedule", |database| {
+            database
+                .create_monthly_schedule(&input)
+                .map_err(ledger_error)
+        })
     })
 }
 #[tauri::command]
@@ -395,9 +423,11 @@ fn post_scheduled_occurrence(
     transaction_id: String,
 ) -> Result<(), String> {
     with_database(&app, &state, |database| {
-        database
-            .post_scheduled_occurrence(&transaction_id)
-            .map_err(ledger_error)
+        database.undoable("Post scheduled transaction", |database| {
+            database
+                .post_scheduled_occurrence(&transaction_id)
+                .map_err(ledger_error)
+        })
     })
 }
 #[tauri::command]
@@ -407,9 +437,11 @@ fn skip_scheduled_occurrence(
     transaction_id: String,
 ) -> Result<(), String> {
     with_database(&app, &state, |database| {
-        database
-            .skip_scheduled_occurrence(&transaction_id)
-            .map_err(ledger_error)
+        database.undoable("Skip scheduled transaction", |database| {
+            database
+                .skip_scheduled_occurrence(&transaction_id)
+                .map_err(ledger_error)
+        })
     })
 }
 #[tauri::command]
@@ -423,9 +455,11 @@ fn deactivate_schedule(
             .check_schedule_deactivation(&schedule_id)
             .map_err(ledger_error)?;
         create_safety_backup(database)?;
-        database
-            .deactivate_schedule(&schedule_id)
-            .map_err(ledger_error)
+        database.undoable("Deactivate schedule", |database| {
+            database
+                .deactivate_schedule(&schedule_id)
+                .map_err(ledger_error)
+        })
     })
 }
 
@@ -497,9 +531,11 @@ fn set_plan_assignment(
         return Err("Expected canonical integer HUF text.".into());
     }
     with_database(&app, &state, |database| {
-        database
-            .set_monthly_assignment(&input.category_id, &month, crate::ledger::Huf(amount))
-            .map_err(ledger_error)
+        database.undoable("Assign money", |database| {
+            database
+                .set_monthly_assignment(&input.category_id, &month, crate::ledger::Huf(amount))
+                .map_err(ledger_error)
+        })
     })
 }
 
@@ -519,15 +555,17 @@ fn move_plan_money(
         return Err("Expected canonical integer HUF text.".into());
     }
     with_database(&app, &state, |database| {
-        database
-            .move_monthly_money_as_of(
-                &input.from_category_id,
-                &input.to_category_id,
-                &month,
-                crate::ledger::Huf(amount),
-                &as_of,
-            )
-            .map_err(ledger_error)
+        database.undoable("Move money", |database| {
+            database
+                .move_monthly_money_as_of(
+                    &input.from_category_id,
+                    &input.to_category_id,
+                    &month,
+                    crate::ledger::Huf(amount),
+                    &as_of,
+                )
+                .map_err(ledger_error)
+        })
     })
 }
 
@@ -538,9 +576,11 @@ fn set_credit_payment_category(
     input: CreditPaymentCategoryInput,
 ) -> Result<(), String> {
     with_database(&app, &state, |database| {
-        database
-            .set_credit_payment_category(&input.account_id, input.category_id.as_deref())
-            .map_err(ledger_error)
+        database.undoable("Update card payment category", |database| {
+            database
+                .set_credit_payment_category(&input.account_id, input.category_id.as_deref())
+                .map_err(ledger_error)
+        })
     })
 }
 
@@ -552,9 +592,11 @@ fn set_category_target(
 ) -> Result<(), String> {
     let effective_month = PlanMonth::parse(&input.effective_month).map_err(ledger_error)?;
     with_database(&app, &state, |database| {
-        database
-            .set_category_target(&input.category_id, &effective_month, input.target.as_ref())
-            .map_err(ledger_error)
+        database.undoable("Update target", |database| {
+            database
+                .set_category_target(&input.category_id, &effective_month, input.target.as_ref())
+                .map_err(ledger_error)
+        })
     })
 }
 
@@ -566,9 +608,11 @@ fn set_category_target_snoozed(
 ) -> Result<(), String> {
     let month = PlanMonth::parse(&input.month).map_err(ledger_error)?;
     with_database(&app, &state, |database| {
-        database
-            .set_category_target_snoozed(&input.category_id, &month, input.snoozed)
-            .map_err(ledger_error)
+        database.undoable("Update target snooze", |database| {
+            database
+                .set_category_target_snoozed(&input.category_id, &month, input.snoozed)
+                .map_err(ledger_error)
+        })
     })
 }
 
@@ -577,6 +621,8 @@ pub fn run() {
         .manage(BudgetState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             get_budget_info,
+            get_undo_status,
+            undo_last_action,
             create_native_backup,
             list_native_backups,
             restore_native_backup,

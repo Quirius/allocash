@@ -55,6 +55,16 @@ unnecessary files for rejected requests, holds the database mutex across snapsho
 and mutation, and aborts the mutation if the snapshot fails. Skipping a schedule
 occurrence and reversible Plan configuration changes are intentionally excluded.
 
+Saved desktop mutations run through a Rust undo boundary under the same budget
+mutex. Before a change, SQLite's online backup API captures a complete local
+snapshot, including committed WAL data. A bounded session stack holds up to 30
+states in temporary storage outside the ordinary backup list. Undo restores and
+verifies a whole snapshot, so transfer legs, related payees, schedules and Plan
+configuration stay consistent. A restore failure retains history and protects
+the current state; successful native backup restore clears undo history. Session
+history is not a persistent replacement for native backups and introduces no
+schema change. Ctrl+Z inside editable text remains a text-editing operation.
+
 The ledger uses signed 64-bit integer forints. Rust must use checked
 integer arithmetic. Money crosses JSON IPC as decimal strings and becomes `bigint`
 in TypeScript; JavaScript floating point is never used for financial calculations.

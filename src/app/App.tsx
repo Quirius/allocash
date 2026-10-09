@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   createNativeBackup,
   listNativeBackups,
@@ -8,10 +8,17 @@ import {
   skipScheduledOccurrence,
   recoverUnreadableBudget,
   restoreNativeBackup,
+  hasSavedMutationPending,
+  getSavedMutationVersion,
+  loadUndoStatus,
+  releaseUndoReservation,
+  subscribeSavedMutations,
+  undoLastAction,
   type AccountKind,
   type AccountOverview,
   type RegisterEntry,
   type WorkspaceSnapshot,
+  type UndoStatus,
 } from "../lib/desktop";
 import { formatDate, formatHuf, localCalendarDate } from "../lib/format";
 import { partitionRegisterEntries } from "../lib/register";
@@ -19,6 +26,8 @@ import { draftFromPostedEntry, RegisterEntryEditor, TransactionComposer, type Tr
 import { ReconciliationEditor } from "./ReconciliationEditor";
 import { PlanView } from "./PlanView";
 import { ReportsView } from "./ReportsView";
+import { isUndoShortcutEligible } from "../lib/undo";
+import { createRequestSequence } from "../lib/request-sequence";
 
 type Startup =
   | { status: "loading" }
@@ -88,6 +97,13 @@ export function App() {
   const [startupAttempt, setStartupAttempt] = useState(0);
   const [registerAttempt, setRegisterAttempt] = useState(0);
   const [view, setView] = useState<"register" | "plan" | "reports">("register");
+  const [undoStatus, setUndoStatus] = useState<UndoStatus>({ canUndo: false, label: null });
+  const [undoBusy, setUndoBusy] = useState(false);
+  const [undoFeedback, setUndoFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  const undoLock = useRef(false);
+  const ledgerRefreshSequence = useRef(createRequestSequence());
+  const [mutation, setMutation] = useState({ pending: false, version: 0 });
+  const [refreshRevision, setRefreshRevision] = useState(0);
   const [backup, setBackup] = useState<
     { status: "idle" } | { status: "saving" } | { status: "ready"; path: string } | { status: "error" }
   >({ status: "idle" });
@@ -124,6 +140,23 @@ export function App() {
       active = false;
     };
   }, [startupAttempt]);
+
+  useEffect(() => subscribeSavedMutations((pending, version) => setMutation({ pending, version })), []);
+
+  useEffect(() => {
+    if (startup.status !== "ready" || mutation.pending) {
+      if (startup.status !== "ready") setUndoStatus({ canUndo: false, label: null });
+      return;
+    }
+    let active = true;
+    const requestedVersion = mutation.version;
+    loadUndoStatus().then((status) => {
+      if (active && !hasSavedMutationPending() && getSavedMutationVersion() === requestedVersion) setUndoStatus(status ?? { canUndo: false, label: null });
+    }).catch(() => {
+      if (active && !hasSavedMutationPending() && getSavedMutationVersion() === requestedVersion) setUndoStatus({ canUndo: false, label: null });
+    });
+    return () => { active = false; };
+  }, [startup.status, startup.status === "ready" ? startupAttempt : 0, mutation.version, mutation.pending]);
 
   useEffect(() => {
     if (startup.status !== "ready" || !selectedAccountId) {
@@ -162,11 +195,50 @@ export function App() {
   );
 
   async function refreshLedger() {
-    const workspace = await loadWorkspace(localCalendarDate());
+    const request = ledgerRefreshSequence.current.begin();
+    let workspace: WorkspaceSnapshot | null;
+    try { workspace = await loadWorkspace(localCalendarDate()); }
+    catch (error) {
+      if (!ledgerRefreshSequence.current.isCurrent(request)) return;
+      throw error;
+    }
+    if (!ledgerRefreshSequence.current.isCurrent(request)) return;
     if (!workspace) throw new Error("The desktop ledger is unavailable.");
+    setSelectedAccountId((selected) => workspace.accounts.some((account) => account.id === selected) ? selected : workspace.accounts[0]?.id ?? null);
     setStartup({ status: "ready", workspace });
     setRegisterAttempt((value) => value + 1);
+    setRefreshRevision((value) => value + 1);
   }
+
+  async function undo() {
+    if (undoLock.current || undoBusy || mutation.pending || hasSavedMutationPending() || !undoStatus.canUndo) return;
+    undoLock.current = true;
+    ledgerRefreshSequence.current.invalidate();
+    setUndoBusy(true); setUndoFeedback(null);
+    try {
+      const nextStatus = await undoLastAction();
+      await refreshLedger();
+      setUndoStatus(nextStatus);
+      setUndoFeedback({ kind: "success", message: "Last action undone." });
+    } catch (error) {
+      setUndoFeedback({ kind: "error", message: typeof error === "string" ? error : "Could not undo the last action." });
+      const requestedVersion = getSavedMutationVersion();
+      try {
+        const status = await loadUndoStatus();
+        if (status && !hasSavedMutationPending() && getSavedMutationVersion() === requestedVersion) setUndoStatus(status);
+      } catch { /* Keep the current status when the refresh fails. */ }
+    } finally { releaseUndoReservation(); undoLock.current = false; setUndoBusy(false); }
+  }
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!isUndoShortcutEligible(event)) return;
+      if (undoLock.current || mutation.pending || hasSavedMutationPending() || !undoStatus.canUndo) return;
+      event.preventDefault(); void undo();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [undoStatus, mutation.pending]);
 
   async function saveNativeBackup() {
     setBackup({ status: "saving" });
@@ -256,7 +328,12 @@ export function App() {
             <p className="eyebrow">{selectedAccount ? "ACCOUNT REGISTER" : "YOUR BUDGET"}</p>
             <h1>{selectedAccount?.name ?? "Accounts"}</h1>
           </div>
-          <span className="stage-badge">Local ledger</span>
+          <div className="workspace-actions">
+            <button className="undo-button" onClick={() => void undo()} disabled={!undoStatus.canUndo || mutation.pending || undoBusy || startup.status !== "ready"} title={undoStatus.label ? `Undo ${undoStatus.label} (Ctrl+Z)` : "Undo (Ctrl+Z)"}>
+              {undoBusy ? "Undoing…" : undoStatus.label ? `Undo ${undoStatus.label}` : "Undo"} <kbd>Ctrl+Z</kbd>
+            </button>
+            <span className="stage-badge">Local ledger</span>
+          </div>
         </header>
 
         <div className="workspace-content">
@@ -272,8 +349,9 @@ export function App() {
           )}
 
           {startup.status === "ready" && <div className="workspace-tabs"><button className={view === "register" ? "active" : ""} onClick={() => setView("register")}>Register</button><button className={view === "plan" ? "active" : ""} onClick={() => setView("plan")}>Plan</button><button className={view === "reports" ? "active" : ""} onClick={() => setView("reports")}>Reports</button></div>}
-          {startup.status === "ready" && view === "plan" && <PlanView />}
-          {startup.status === "ready" && view === "reports" && <ReportsView accounts={accounts} categories={startup.workspace.transactionOptions.categories} />}
+          {undoFeedback && <p className={undoFeedback.kind === "error" ? "backup-error" : "backup-success"} role={undoFeedback.kind === "error" ? "alert" : "status"}>{undoFeedback.message}</p>}
+          {startup.status === "ready" && view === "plan" && <PlanView refreshRevision={refreshRevision} readEpoch={mutation.version} mutationPending={mutation.pending} />}
+          {startup.status === "ready" && view === "reports" && <ReportsView accounts={accounts} categories={startup.workspace.transactionOptions.categories} refreshRevision={refreshRevision} readEpoch={mutation.version} readPending={mutation.pending} />}
           {startup.status === "ready" && view === "register" && selectedAccount && (
             <AccountRegister
               key={selectedAccount.id}

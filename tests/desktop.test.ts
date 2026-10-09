@@ -24,6 +24,11 @@ import {
   setCategoryTarget,
   setCategoryTargetSnoozed,
   updateRegisterEntry,
+  loadUndoStatus,
+  undoLastAction,
+  subscribeSavedMutations,
+  releaseUndoReservation,
+  getSavedMutationVersion,
 } from "../src/lib/desktop";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn() }));
@@ -34,6 +39,63 @@ it("does not access desktop storage in browser preview", async () => {
   vi.mocked(isTauri).mockReturnValue(false);
   expect(await loadBudgetInfo()).toBeNull();
   expect(invoke).not.toHaveBeenCalled();
+});
+
+it("keeps undo unavailable in browser preview", async () => {
+  vi.mocked(isTauri).mockReturnValue(false);
+  expect(await loadUndoStatus()).toBeNull();
+  expect(invoke).not.toHaveBeenCalled();
+});
+
+it("loads and runs undo through the typed desktop commands", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  vi.mocked(invoke).mockResolvedValue({ canUndo: true, label: "Edit transaction" });
+  const signals: Array<{ pending: boolean; version: number }> = [];
+  const unsubscribe = subscribeSavedMutations((pending, version) => signals.push({ pending, version }));
+  const versionBeforeUndo = getSavedMutationVersion();
+  await expect(loadUndoStatus()).resolves.toEqual({ canUndo: true, label: "Edit transaction" });
+  expect(invoke).toHaveBeenCalledWith("get_undo_status");
+  await undoLastAction();
+  expect(invoke).toHaveBeenLastCalledWith("undo_last_action");
+  expect(signals.at(-1)?.pending).toBe(true);
+  expect(getSavedMutationVersion()).toBeGreaterThan(versionBeforeUndo);
+  releaseUndoReservation();
+  expect(signals.at(-1)?.pending).toBe(false);
+  unsubscribe();
+});
+
+it("signals saved mutations from start through completion", async () => {
+  let resolveMutation!: (value: string) => void;
+  vi.mocked(invoke).mockReturnValue(new Promise((resolve) => { resolveMutation = resolve; }));
+  const signals: boolean[] = [];
+  const unsubscribe = subscribeSavedMutations((pending) => signals.push(pending));
+  const write = createManualTransaction({} as never);
+  expect(signals).toEqual([false, true]);
+  resolveMutation("transaction");
+  await write;
+  expect(signals).toEqual([false, true, false]);
+  unsubscribe();
+});
+
+it("refuses undo during a saved write and blocks new writes until undo refresh releases its reservation", async () => {
+  let writeResolve!: (value: string) => void;
+  let undoResolve!: (status: { canUndo: boolean; label: string | null }) => void;
+  vi.mocked(invoke).mockImplementation((command) => {
+    if (command === "create_manual_transaction") return new Promise((resolve) => { writeResolve = resolve; });
+    if (command === "undo_last_action") return new Promise((resolve) => { undoResolve = resolve; });
+    return Promise.resolve({ canUndo: false, label: null });
+  });
+  const pendingWrite = createManualTransaction({} as never);
+  await expect(undoLastAction()).rejects.toThrow("still in progress");
+  writeResolve("transaction");
+  await pendingWrite;
+  const pendingUndo = undoLastAction();
+  await expect(createManualTransaction({} as never)).rejects.toThrow("refreshing the budget");
+  undoResolve({ canUndo: false, label: null });
+  await pendingUndo;
+  releaseUndoReservation();
+  vi.mocked(invoke).mockResolvedValue("transaction");
+  await expect(createManualTransaction({} as never)).resolves.toBe("transaction");
 });
 
 it("loads the actual budget through the desktop command", async () => {

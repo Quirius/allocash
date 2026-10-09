@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import {
   loadBalanceOverTime,
   loadForecast,
@@ -22,6 +22,7 @@ import {
   type SpendingPayeeTotal,
 } from "../lib/desktop";
 import { formatHuf, localCalendarDate } from "../lib/format";
+import { createRequestSequence } from "../lib/request-sequence";
 
 function formatSavingsRatio(value: string | null): string {
   if (value === null) return "No income";
@@ -49,7 +50,7 @@ function forecastPath(report: ForecastReport, percentile: number): string[] {
   return report.percentilePaths.find((path) => path.percentile === percentile)?.balances ?? [];
 }
 
-export function ReportsView({ accounts, categories: categoryOptions }: { accounts: AccountOverview[]; categories: CategoryOption[] }) {
+export function ReportsView({ accounts, categories: categoryOptions, refreshRevision = 0, readEpoch = 0, readPending = false }: { accounts: AccountOverview[]; categories: CategoryOption[]; refreshRevision?: number; readEpoch?: number; readPending?: boolean }) {
   const today = localCalendarDate();
   const [from, setFrom] = useState(`${today.slice(0, 7)}-01`);
   const [to, setTo] = useState(today);
@@ -70,8 +71,13 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
   const [forecast, setForecast] = useState<ForecastReport | null>(null);
   const [netWorth, setNetWorth] = useState<NetWorthReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const reportsRequest = useRef(createRequestSequence());
+  const currentReadEpoch = useRef(readEpoch);
+  currentReadEpoch.current = readEpoch;
 
   async function load() {
+    if (readEpoch !== currentReadEpoch.current) return;
+    const request = reportsRequest.current.begin();
     try {
       const input = { from, to, accountIds };
       const [spendingByCategory, spendingByPayee, inflowOutflow, incomeVsExpense, history, outflow, breakdown, projection, worth] = await Promise.all([
@@ -85,6 +91,7 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
         loadForecast({ asOf: to, horizonMonths: forecastHorizon, historyMonths: forecastHistory, accountIds: forecastAccountIds, categoryIds: outflowCategoryIds, seed: forecastSeed }),
         loadNetWorthReport(to, from),
       ]);
+      if (!reportsRequest.current.isCurrent(request) || readEpoch !== currentReadEpoch.current) return;
       setCategories(spendingByCategory);
       setPayees(spendingByPayee);
       setCashFlow(inflowOutflow);
@@ -96,13 +103,18 @@ export function ReportsView({ accounts, categories: categoryOptions }: { account
       setNetWorth(worth);
       setError(null);
     } catch {
-      setError("Could not load these reports.");
+      if (reportsRequest.current.isCurrent(request) && readEpoch === currentReadEpoch.current) setError("Could not load these reports.");
     }
   }
 
   useEffect(() => {
+    if (readPending) {
+      reportsRequest.current.invalidate();
+      return;
+    }
     void load();
-  }, []);
+    return () => reportsRequest.current.invalidate();
+  }, [refreshRevision, readEpoch, readPending]);
 
   function toggleAccount(id: string) {
     setAccountIds((current) =>

@@ -1,12 +1,20 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { loadPlanMonth, movePlanMoney, setCategoryTarget, setCategoryTargetSnoozed, setCreditPaymentCategory, setPlanAssignment, type PlanSnapshot, type RecurrenceMonths } from "../lib/desktop";
 import { formatHuf, localCalendarMonth, parseSignedHufInput, shiftCalendarMonth } from "../lib/format";
 import { recurrenceLabel } from "../lib/recurrence";
+import { createRequestSequence } from "../lib/request-sequence";
 
-export function PlanView() {
+export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending = false }: { refreshRevision?: number; readEpoch?: number; mutationPending?: boolean }) {
   const [month, setMonth] = useState(localCalendarMonth());
   const [plan, setPlan] = useState<PlanSnapshot | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const planRequest = useRef(createRequestSequence());
+  const currentMonth = useRef(month);
+  const currentReadEpoch = useRef(readEpoch);
+  currentMonth.current = month;
+  currentReadEpoch.current = readEpoch;
+  const error = actionError ?? loadError;
   const [fromCategory, setFromCategory] = useState(""); const [toCategory, setToCategory] = useState(""); const [moveAmount, setMoveAmount] = useState("");
   const [targetCategory, setTargetCategory] = useState(""); const [targetBehavior, setTargetBehavior] = useState<"set_aside" | "refill">("refill"); const [targetAmount, setTargetAmount] = useState(""); const [dueKind, setDueKind] = useState<"day" | "last_day">("last_day"); const [dueDay, setDueDay] = useState("1");
   const [targetInterval, setTargetInterval] = useState<RecurrenceMonths>(1);
@@ -25,15 +33,34 @@ export function PlanView() {
     setTargetInterval(interval);
     setFirstDueMonth(shiftCalendarMonth(month, interval - 1));
   }
-  useEffect(() => { setTargetCategory(""); setTargetAmount(""); }, [month]);
-  async function reload() { setPlan(await loadPlanMonth(month)); }
-  useEffect(() => { let active = true; setPlan(null); setError(null); loadPlanMonth(month).then((value) => { if (active) { setPlan(value); if (!value) setError("The Plan is available in the desktop app."); } }, () => { if (active) setError("Could not load this Plan month."); }); return () => { active = false; }; }, [month]);
-  async function save(categoryId: string, value: string) { try { await setPlanAssignment(categoryId, month, parseSignedHufInput(value).toString()); await reload(); } catch { setError("Enter a whole HUF assignment amount."); } }
-  async function move(event: FormEvent) { event.preventDefault(); try { const amount = parseSignedHufInput(moveAmount); if (amount <= 0n) throw new Error(); await movePlanMoney(fromCategory, toCategory, month, amount.toString()); await reload(); setMoveAmount(""); setError(null); } catch { setError("Choose two different categories and a positive whole HUF amount."); } }
-  async function mapPayment(accountId: string, categoryId: string) { try { await setCreditPaymentCategory(accountId, categoryId || null); await reload(); } catch { setError("Could not save this credit-card payment category."); } }
-  async function saveTarget(event: FormEvent) { event.preventDefault(); try { if (!targetCategory) throw new Error(); const amount = parseSignedHufInput(targetAmount); const day = Number(dueDay); if (amount <= 0n || (dueKind === "day" && (!Number.isInteger(day) || day < 1 || day > 31))) throw new Error(); if (targetInterval !== 1 && (!firstDueMonth || firstDueMonth < month)) throw new Error(); await setCategoryTarget(targetCategory, month, { behavior: targetBehavior, amount: amount.toString(), dueKind, dueDay: dueKind === "day" ? day : null, intervalMonths: targetInterval, firstDueMonth: targetInterval === 1 ? null : firstDueMonth }); await reload(); setError(null); } catch { setError("Choose a category, a positive whole HUF amount, and a valid due date in this or a later month."); } }
-  async function clearTarget() { try { if (!targetCategory) throw new Error(); await setCategoryTarget(targetCategory, month, null); await reload(); setError(null); } catch { setError("Choose a category to clear its target."); } }
-  async function toggleTargetSnooze(categoryId: string, snoozed: boolean) { try { await setCategoryTargetSnoozed(categoryId, month, snoozed); await reload(); setError(null); } catch { setError("Could not update this month’s target snooze."); } }
+  useEffect(() => { setTargetCategory(""); setTargetAmount(""); setActionError(null); }, [month]);
+  async function reload(requestedMonth = month, requestedEpoch = currentReadEpoch.current) {
+    if (requestedMonth !== currentMonth.current || requestedEpoch !== currentReadEpoch.current) return;
+    const request = planRequest.current.begin();
+    try {
+      const value = await loadPlanMonth(requestedMonth);
+      if (!planRequest.current.isCurrent(request) || requestedMonth !== currentMonth.current || requestedEpoch !== currentReadEpoch.current) return;
+      setPlan(value);
+      setLoadError(value ? null : "The Plan is available in the desktop app.");
+    } catch {
+      if (planRequest.current.isCurrent(request) && requestedMonth === currentMonth.current && requestedEpoch === currentReadEpoch.current) setLoadError("Could not load this Plan month.");
+    }
+  }
+  useEffect(() => {
+    if (mutationPending) {
+      planRequest.current.invalidate();
+      return;
+    }
+    setPlan(null); setLoadError(null);
+    void reload(month, readEpoch);
+    return () => planRequest.current.invalidate();
+  }, [month, refreshRevision, readEpoch, mutationPending]);
+  async function save(categoryId: string, value: string) { try { await setPlanAssignment(categoryId, month, parseSignedHufInput(value).toString()); setActionError(null); } catch { setActionError("Enter a whole HUF assignment amount."); } }
+  async function move(event: FormEvent) { event.preventDefault(); try { const amount = parseSignedHufInput(moveAmount); if (amount <= 0n) throw new Error(); await movePlanMoney(fromCategory, toCategory, month, amount.toString()); setMoveAmount(""); setActionError(null); } catch { setActionError("Choose two different categories and a positive whole HUF amount."); } }
+  async function mapPayment(accountId: string, categoryId: string) { try { await setCreditPaymentCategory(accountId, categoryId || null); setActionError(null); } catch { setActionError("Could not save this credit-card payment category."); } }
+  async function saveTarget(event: FormEvent) { event.preventDefault(); try { if (!targetCategory) throw new Error(); const amount = parseSignedHufInput(targetAmount); const day = Number(dueDay); if (amount <= 0n || (dueKind === "day" && (!Number.isInteger(day) || day < 1 || day > 31))) throw new Error(); if (targetInterval !== 1 && (!firstDueMonth || firstDueMonth < month)) throw new Error(); await setCategoryTarget(targetCategory, month, { behavior: targetBehavior, amount: amount.toString(), dueKind, dueDay: dueKind === "day" ? day : null, intervalMonths: targetInterval, firstDueMonth: targetInterval === 1 ? null : firstDueMonth }); setActionError(null); } catch { setActionError("Choose a category, a positive whole HUF amount, and a valid due date in this or a later month."); } }
+  async function clearTarget() { try { if (!targetCategory) throw new Error(); await setCategoryTarget(targetCategory, month, null); setActionError(null); } catch { setActionError("Choose a category to clear its target."); } }
+  async function toggleTargetSnooze(categoryId: string, snoozed: boolean) { try { await setCategoryTargetSnoozed(categoryId, month, snoozed); setActionError(null); } catch { setActionError("Could not update this month’s target snooze."); } }
   return <section className="plan-view" aria-labelledby="plan-title">
     <div className="plan-toolbar"><div><p className="eyebrow">MONTHLY PLAN</p><h2 id="plan-title">{month}</h2></div><div><button onClick={() => setMonth(shiftCalendarMonth(month, -1))}>←</button><button onClick={() => setMonth(localCalendarMonth())}>Today</button><button onClick={() => setMonth(shiftCalendarMonth(month, 1))}>→</button></div></div>
     {error && <p className="editor-error" role="alert">{error}</p>}
