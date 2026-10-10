@@ -160,6 +160,44 @@ struct PlanDerivation {
 }
 
 impl Database {
+    pub fn rename_category(&mut self, category_id: &str, name: &str) -> LedgerResult<()> {
+        let name = name.trim();
+        if name.is_empty() || name.chars().count() > 200 {
+            return Err(LedgerError::InvalidValue(
+                "A category name must contain 1 to 200 characters.",
+            ));
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let current: Option<(bool, bool)> = transaction
+            .query_row(
+                "SELECT lower(trim(g.name))='inflow' AND lower(trim(c.name))='ready to assign', lower(trim(g.name))='inflow' AND lower(trim(?2))='ready to assign' FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE c.id=?1",
+                params![category_id, name],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((is_ready, becomes_ready)) = current else {
+            return Err(LedgerError::NotFound);
+        };
+        if is_ready && !becomes_ready {
+            return Err(LedgerError::InvalidValue(
+                "Ready to Assign cannot be renamed.",
+            ));
+        }
+        if becomes_ready && !is_ready {
+            return Err(LedgerError::InvalidValue(
+                "Another Inflow category cannot be renamed to Ready to Assign.",
+            ));
+        }
+        transaction.execute(
+            "UPDATE categories SET name=?1 WHERE id=?2",
+            params![name, category_id],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn set_category_notes(&self, category_id: &str, notes: &str) -> LedgerResult<()> {
         let changed = self.connection.execute(
             "UPDATE categories SET notes=?1 WHERE id=?2",
@@ -1201,6 +1239,200 @@ fn narrow(value: i128) -> LedgerResult<Huf> {
 mod tests {
     use super::*;
     use crate::ledger::{Account, AccountKind, CalendarDate, Direction, Entry, TransferDraft};
+
+    #[test]
+    fn category_rename_preserves_references_and_is_undoable_without_changing_plan() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "cash".into(),
+                name: "Cash".into(),
+                kind: AccountKind::Cash,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database
+            .create_account(&Account {
+                id: "card".into(),
+                name: "Card".into(),
+                kind: AccountKind::Credit,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        database
+            .create_category("other-food", "g", "Groceries", 1)
+            .unwrap();
+        database
+            .create_category_group("inflow", "Inflow", 1)
+            .unwrap();
+        database
+            .create_category("rta", "inflow", "Ready to Assign", 0)
+            .unwrap();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        database.set_category_notes("food", "saved note").unwrap();
+        database
+            .set_monthly_assignment("food", &month, Huf(300))
+            .unwrap();
+        database
+            .set_category_target(
+                "food",
+                &month,
+                Some(&CategoryTargetDefinition {
+                    behavior: "set_aside".into(),
+                    amount: Huf(500),
+                    due_kind: "day".into(),
+                    due_day: Some(10),
+                    interval_months: 1,
+                    first_due_month: None,
+                }),
+            )
+            .unwrap();
+        database
+            .set_credit_payment_category("card", Some("food"))
+            .unwrap();
+        let mut spending =
+            Entry::manual("spend", "cash", CalendarDate::parse("2026-09-01").unwrap());
+        spending.category_id = Some("food".into());
+        database.create_transaction(&spending, Huf(-100)).unwrap();
+        let before = database.plan_month(&month).unwrap();
+
+        database
+            .undoable("Rename category", |database| {
+                database
+                    .rename_category("food", "  Groceries  ")
+                    .map_err(|error| error.to_string())
+            })
+            .unwrap();
+        let after = database.plan_month(&month).unwrap();
+        let renamed = after
+            .categories
+            .iter()
+            .find(|category| category.category_id == "food")
+            .unwrap();
+        assert_eq!(renamed.category_name, "Groceries");
+        assert_eq!(renamed.notes, "saved note");
+        assert_eq!(renamed.assigned, Huf(300));
+        assert_eq!(renamed.activity, Huf(-100));
+        assert_eq!(renamed.available, Huf(200));
+        assert_eq!(after.ready_to_assign, before.ready_to_assign);
+        assert_eq!(
+            after.credit_payment_categories[0].category_id.as_deref(),
+            Some("food")
+        );
+        let ledger_category: String = database
+            .connection
+            .query_row(
+                "SELECT category_id FROM transactions WHERE id='spend'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(ledger_category, "food");
+        let target_count: i64 = database
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM category_target_revisions WHERE category_id='food'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(target_count, 1);
+
+        database.undo_last_action().unwrap();
+        assert_eq!(
+            database.plan_month(&month).unwrap().categories[0].category_name,
+            "Food"
+        );
+        assert!(matches!(
+            database.rename_category("missing", "Name"),
+            Err(LedgerError::NotFound)
+        ));
+        for invalid in ["  ", &"x".repeat(201)] {
+            assert!(matches!(
+                database.rename_category("food", invalid),
+                Err(LedgerError::InvalidValue(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn category_rename_cannot_change_ready_to_assign_classification() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_category_group("inflow", "Inflow", 0)
+            .unwrap();
+        database
+            .create_category("rta", "inflow", "Ready to Assign", 0)
+            .unwrap();
+        database
+            .create_category("income", "inflow", "Income", 1)
+            .unwrap();
+        assert!(matches!(
+            database.rename_category("rta", "Income"),
+            Err(LedgerError::InvalidValue(_))
+        ));
+        assert!(matches!(
+            database.rename_category("income", " ready to assign "),
+            Err(LedgerError::InvalidValue(_))
+        ));
+        database.rename_category("income", "Salary").unwrap();
+        database
+            .rename_category("rta", " READY TO ASSIGN ")
+            .unwrap();
+        assert_eq!(
+            ready_to_assign_category_ids(&database.connection).unwrap(),
+            ["rta"].into_iter().map(str::to_owned).collect()
+        );
+    }
+
+    #[test]
+    fn category_rename_uses_sqlite_trim_for_ready_to_assign_classification() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_category_group("inflow", "Inflow", 0)
+            .unwrap();
+        database
+            .create_category(
+                "unicode-name",
+                "inflow",
+                "\u{00a0}Ready to Assign\u{00a0}",
+                0,
+            )
+            .unwrap();
+        database
+            .create_category_group("unicode-group", "Inflow\u{00a0}", 1)
+            .unwrap();
+        database
+            .create_category("unicode-group-ready", "unicode-group", "Ready to Assign", 0)
+            .unwrap();
+
+        // SQLite trim() removes ASCII spaces only, so neither Unicode-padded
+        // value participates in the Plan's Ready to Assign classifier.
+        database
+            .rename_category("unicode-name", "Ordinary category")
+            .unwrap();
+        assert!(matches!(
+            database.rename_category("unicode-name", "Ready to Assign"),
+            Err(LedgerError::InvalidValue(_))
+        ));
+        database
+            .rename_category("unicode-group-ready", "Ordinary category")
+            .unwrap();
+        database
+            .rename_category("unicode-group-ready", "Ready to Assign")
+            .unwrap();
+        assert_eq!(
+            ready_to_assign_category_ids(&database.connection).unwrap(),
+            BTreeSet::new()
+        );
+    }
 
     #[test]
     fn category_notes_round_trip_undo_backup_and_reopen_without_changing_plan_money() {

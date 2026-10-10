@@ -107,6 +107,10 @@ details { border-top: 1px solid #323d49; padding-top: 16px; margin-top: 20px; fo
 .plan-category-name:focus-visible { outline: 2px solid #71ae89; outline-offset: 2px; }
 .category-details { position: sticky; top: 12px; min-width: 0; padding: 16px; border: 1px solid #3c505a; border-radius: 8px; background: #182129; font-size: 12px; }
 .category-details h3 { margin: 0; color: #e3ece8; font-size: 17px; }
+.category-name-editor { margin: 8px 0; }.category-name-editor > button { padding: 4px 8px; font-size: 11px; }
+.category-name-editor form { padding: 10px; border: 1px solid #566c77; border-radius: 6px; background: #202c35; }
+.category-name-editor label { display: grid; gap: 6px; }.category-name-editor input { width: 100%; min-width: 0; padding: 8px; }
+.category-name-editor form > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .category-details-group { margin: 4px 0 14px; color: #91a3ad; }
 .category-totals { display: grid; gap: 8px; margin: 0; padding: 0 0 14px; border-bottom: 1px solid #34434b; }
 .category-totals > div { display: flex; justify-content: space-between; gap: 8px; }

@@ -1,5 +1,24 @@
 # Implementation and validation status
 
+On 2026-10-10, the owner requested category renaming. The selected-category Plan
+sidebar now offers Rename with a selected name field, Save/Enter and Cancel/Escape.
+Failed saves preserve the draft; saving locks duplicate submissions. Names are
+trimmed and contain 1?200 Unicode characters. The backend updates only the name
+by stable ID in a transaction, retaining ledger links, assignments, targets,
+notes and credit payment mappings, and participates in session undo. Successful
+renames refresh shared category options for Register and Reports as well as Plan.
+Metadata-refresh failure is distinguished from write failure. Exact SQLite
+normalization guards the name-derived Ready to Assign role in both directions,
+including Unicode-whitespace edge cases. No schema or financial changes.
+All 172 Rust tests and 176 frontend tests passed, including identity/financial
+preservation, undo, validation/classification guards and actual React name editing,
+cancellation, retry, duplicate-write prevention and Unicode limit checks.
+Formatting, Cargo check, frontend/native builds and independent review passed.
+The installer exited successfully, budget database bytes were unchanged, and the
+installed executable matches the release build. Allocash reopened a responsive
+native window. Owner rename/cancel/undo and cross-view category-name confirmation
+remain open.
+
 On 2026-10-10, the owner requested selection and calculator-style editing in all
 amount fields, then clarified replacement, Tab/Enter commit and Escape reset.
 All eight monetary controls now share select-all-on-focus/click behavior. Plain

@@ -494,6 +494,12 @@ struct CategoryNotesInput {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct CategoryRenameInput {
+    category_id: String,
+    name: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PlanMoveInput {
     from_category_id: String,
     to_category_id: Option<String>,
@@ -571,6 +577,21 @@ fn set_category_notes(
         database.undoable("Edit category notes", |database| {
             database
                 .set_category_notes(&input.category_id, &input.notes)
+                .map_err(ledger_error)
+        })
+    })
+}
+
+#[tauri::command]
+fn rename_category(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: CategoryRenameInput,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database.undoable("Rename category", |database| {
+            database
+                .rename_category(&input.category_id, &input.name)
                 .map_err(ledger_error)
         })
     })
@@ -697,6 +718,7 @@ pub fn run() {
             get_plan_month,
             set_plan_assignment,
             set_category_notes,
+            rename_category,
             move_plan_money,
             set_credit_payment_category,
             set_category_target,

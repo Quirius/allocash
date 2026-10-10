@@ -16,6 +16,16 @@ target and reconciliation forms retain their existing validation/save workflow.
 Only whole HUF results in the applicable signed range are accepted, with no
 silent rounding; invalid drafts remain available for correction.
 
+## Category names
+
+Category names can be edited from the selected category's Plan sidebar using
+Rename, followed by Save or Cancel. Enter saves and Escape cancels the name edit;
+failed saves preserve the draft. Names are trimmed and must contain 1–200 Unicode
+characters. Renaming preserves category identity, transactions, assignments,
+targets, notes and credit payment mappings, refreshes Register/Reports category
+choices, and participates in saved-action undo. The special Ready to Assign
+classification cannot be changed through renaming.
+
 ## Account model
 
 Top-level account groups must appear in this order:

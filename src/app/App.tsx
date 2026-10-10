@@ -351,7 +351,7 @@ export function App() {
 
           {startup.status === "ready" && <div className="workspace-tabs"><button className={view === "register" ? "active" : ""} onClick={() => setView("register")}>Register</button><button className={view === "plan" ? "active" : ""} onClick={() => setView("plan")}>Plan</button><button className={view === "reports" ? "active" : ""} onClick={() => setView("reports")}>Reports</button></div>}
           {undoFeedback && <p className={undoFeedback.kind === "error" ? "backup-error" : "backup-success"} role={undoFeedback.kind === "error" ? "alert" : "status"}>{undoFeedback.message}</p>}
-          {startup.status === "ready" && view === "plan" && <PlanView refreshRevision={refreshRevision} readEpoch={mutation.version} mutationPending={mutation.pending} />}
+          {startup.status === "ready" && view === "plan" && <PlanView onCategoryRenamed={refreshLedger} refreshRevision={refreshRevision} readEpoch={mutation.version} mutationPending={mutation.pending} />}
           {startup.status === "ready" && view === "reports" && <ReportsView accounts={accounts} categories={startup.workspace.transactionOptions.categories} refreshRevision={refreshRevision} readEpoch={mutation.version} readPending={mutation.pending} />}
           {startup.status === "ready" && view === "register" && selectedAccount && (
             <AccountRegister

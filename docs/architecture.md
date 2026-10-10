@@ -227,3 +227,11 @@ these read-only fields require no migration and do not alter financial writes.
 The default Cargo feature is `desktop`. Disabling it permits the actual SQLite
 and ledger tests to run without Tauri, using the same database implementation.
 Rust dependencies are locked in `src-tauri/Cargo.lock`.
+
+`rename_category` changes only the category name by stable ID in a transaction,
+inside the desktop undo boundary. Validation shares the Plan classifier's exact
+SQLite `lower(trim(...))` semantics to reject entering or leaving the special
+Inflow/Ready to Assign role. The Plan editor refreshes shared workspace metadata
+after a successful rename, so category options in Register and Reports update
+alongside the Plan; a metadata-refresh failure is distinguished from a failed
+rename. Category relationships and the schema remain unchanged.

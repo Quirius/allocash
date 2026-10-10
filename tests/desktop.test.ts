@@ -23,6 +23,7 @@ import {
   setCreditPaymentCategory,
   setCategoryTarget,
   setCategoryNotes,
+  renameCategory,
   setCategoryTargetSnoozed,
   updateRegisterEntry,
   makeUpcomingRegisterEntryRepeating,
@@ -318,4 +319,9 @@ it.each([0, 1, 3, 12] as const)("sends scheduled register edits with exact HUF t
   };
   await updateRegisterEntry(edit);
   expect(invoke).toHaveBeenCalledExactlyOnceWith("update_register_entry", { edit });
+});
+
+it("renames a category through the saved mutation boundary", async () => {
+  await renameCategory("rent", "Rent and utilities");
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("rename_category", { input: { categoryId: "rent", name: "Rent and utilities" } });
 });
