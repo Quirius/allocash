@@ -195,6 +195,15 @@ schedule definitions. The desktop command validates first, creates a safety back
 and invokes the saved undo boundary. Transaction rows are never deleted by it;
 raw import data and category Plan state remain intact. No migration is needed.
 
+The shared frontend presentation uses separate shell, Plan and inline-editor
+stylesheets. Existing register entries mount their editor inside the matching
+table row, while new composers mount at the top. Date/Repeat uses a body portal
+with viewport positioning so table scrolling does not clip its popup. Immediate
+frontend mutation locks reject duplicate form submissions. A successful write
+followed by failed register refresh exposes refresh-only retry, without replaying
+the mutation; Save and add another resets only after the save and refresh succeed.
+The visual rebuild does not change Rust accounting, database schema or IPC shapes.
+
 Manual transaction, transfer and schedule inputs validate categories against the
 account's budget scope inside their write transaction. `ManualTransferInput`
 accepts an optional category ID for the budget leg of a boundary transfer. New

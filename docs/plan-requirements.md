@@ -4,6 +4,20 @@ Owner requirements moved from the original project brief. These describe intende
 behavior and scope, not completion status. See [status](status.md) for implementation
 and validation limits; read only sections relevant to the task.
 
+## Visual reference and navigation
+
+The owner requested a close YNAB dark-theme match on 2026-10-10, with later
+customization. The shared shell offers Plan, Reports, Accounts and Budget &
+backups, with a collapsible account sidebar. Plan uses dense category rows,
+group totals, funding bars, Available pills and the existing right-side details.
+Search and All/Snoozed/Underfunded/Overfunded/Money Available filters operate on
+loaded data; credit payment shortfalls are included in Underfunded. Group identity
+uses group IDs, even when names match. A cleared selection displays actual monthly
+category totals. Auto-Assign remains omitted. No placeholder supplies invented
+financial values; unsupported reference controls require a later scoped decision.
+The current implementation is a first visual pass, not full pixel-identical UI
+coverage. Detailed menus and remaining screens need further owner references.
+
 ## Scheduled transactions
 
 Scheduled transactions are essential.

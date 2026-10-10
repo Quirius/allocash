@@ -1,5 +1,5 @@
 import { AmountInput } from "./AmountInput";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   createManualTransfer,
   deleteRegisterEntry,
@@ -91,6 +91,7 @@ export function TransactionComposer({
   initialDraft,
   onSaved,
   onCancel,
+  inline = false,
 }: {
   account: AccountOverview;
   accounts: AccountOverview[];
@@ -98,6 +99,7 @@ export function TransactionComposer({
   initialDraft?: TransactionDraft;
   onSaved: () => Promise<void>;
   onCancel: () => void;
+  inline?: boolean;
 }) {
   const [kind, setKind] = useState<"transaction" | "transfer">(initialDraft?.kind ?? "transaction");
   const [date, setDate] = useState(initialDraft?.date ?? localCalendarDate());
@@ -111,7 +113,14 @@ export function TransactionComposer({
   const [outflow, setOutflow] = useState(initialDraft?.outflow ?? "");
   const [inflow, setInflow] = useState(initialDraft?.inflow ?? "");
   const [status, setStatus] = useState<"editing" | "saving">("editing");
+  const savingRef = useRef(false);
+  const [refreshPending, setRefreshPending] = useState<"close" | "another" | null>(null);
+  const [sourceDraft, setSourceDraft] = useState(initialDraft);
+  const payeeInputRef = useRef<HTMLInputElement>(null);
+  const [focusAfterReset, setFocusAfterReset] = useState(0);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => { if (focusAfterReset > 0) payeeInputRef.current?.focus(); }, [focusAfterReset]);
 
   const direction = inflow.trim() ? "inflow" : "outflow";
   let resolvedPayeeTransfer: AccountOverview | undefined;
@@ -125,13 +134,13 @@ export function TransactionComposer({
     ? accounts.find((item) => item.id === counterpartId)
     : resolvedPayeeTransfer;
   const categoryRule = categoryPolicy(account, direction, transferDestination);
-  const initialDirection = initialDraft ? (initialDraft.inflow.trim() ? "inflow" : "outflow") : null;
-  const initialTransferDestination = initialDraft?.kind === "transfer"
-    ? accounts.find((item) => item.id === initialDraft.counterpartId)
-    : initialDraft && isTransferPayee(initialDraft.payee)
+  const initialDirection = sourceDraft ? (sourceDraft.inflow.trim() ? "inflow" : "outflow") : null;
+  const initialTransferDestination = sourceDraft?.kind === "transfer"
+    ? accounts.find((item) => item.id === sourceDraft.counterpartId)
+    : sourceDraft && isTransferPayee(sourceDraft.payee)
       ? (() => {
           try {
-            const id = resolveTransferPayee(initialDraft.payee, account.id, accounts);
+            const id = resolveTransferPayee(sourceDraft.payee, account.id, accounts);
             return accounts.find((item) => item.id === id);
           } catch { return undefined; }
         })()
@@ -143,7 +152,7 @@ export function TransactionComposer({
     if (inheritedReadyNeedsReset({
       origin: categoryOrigin, categoryId, initiallyDefaultedToReady: !!initialCategoryRule?.readyToAssignDefault,
       nextScopeVisible: categoryRule.show, nextRequiresChoice: categoryRule.required, readyToAssignId: readyId,
-      categoryGroupName: initialDraft?.categoryGroupName, categoryName: initialDraft?.categoryName,
+      categoryGroupName: sourceDraft?.categoryGroupName, categoryName: sourceDraft?.categoryName,
     })) {
       setCategoryId(""); setCategoryOrigin("empty");
       return;
@@ -156,23 +165,47 @@ export function TransactionComposer({
     if (next.origin !== categoryOrigin) setCategoryOrigin(next.origin);
   }, [categoryId, categoryOrigin, categoryRule.required, categoryRule.show, initialCategoryRule?.readyToAssignDefault, readyId]);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function resetComposer() {
+    setSourceDraft(undefined);
+    setKind("transaction"); setDate(localCalendarDate()); setRepeat("never"); setPayee("");
+    setCategoryId(""); setCategoryOrigin("empty"); setCounterpartId(""); setMemo(""); setFlagId("");
+    setOutflow(""); setInflow(""); setError(null); setRefreshPending(null); setStatus("editing");
+    savingRef.current = false;
+    setFocusAfterReset((value) => value + 1);
+  }
+
+  function finishAfterRefresh(action: "close" | "another") {
+    if (action === "another") resetComposer();
+    else onCancel();
+  }
+
+  async function retryRefresh() {
+    if (!refreshPending) return;
+    const action = refreshPending;
+    setStatus("saving"); setError(null);
+    try { await onSaved(); finishAfterRefresh(action); }
+    catch { setStatus("editing"); setError("The entry was saved, but the register still could not refresh. Retry refresh to continue."); }
+  }
+
+  async function saveComposer(action: "close" | "another") {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setError(null);
+    let writeCompleted = false;
     try {
       formatDate(date);
       const parsed = signedAmount(outflow, inflow);
       const applicableRule = categoryPolicy(account, parsed.direction, transferDestination);
-      const submittedCategoryId = applicableRule.show ? categoryId || null : initialDraft?.categoryId ?? null;
+      const submittedCategoryId = applicableRule.show ? categoryId || null : sourceDraft?.categoryId ?? null;
       const inheritedReadyMustReset = inheritedReadyNeedsReset({
         origin: categoryOrigin, categoryId, initiallyDefaultedToReady: !!initialCategoryRule?.readyToAssignDefault,
         nextScopeVisible: applicableRule.show, nextRequiresChoice: applicableRule.required, readyToAssignId: readyId,
-        categoryGroupName: initialDraft?.categoryGroupName, categoryName: initialDraft?.categoryName,
+        categoryGroupName: sourceDraft?.categoryGroupName, categoryName: sourceDraft?.categoryName,
       });
       if (applicableRule.required && (!categoryId || categoryOrigin === "automatic-ready" || inheritedReadyMustReset)) throw new Error("Choose a category for this budget outflow.");
       setStatus("saving");
       const schedule = scheduleForEntry(date, repeat, localCalendarDate());
-      const dayOfMonth = initialDraft && date === initialDraft.date && repeat !== "never" ? initialDraft.repeatDayOfMonth : undefined;
+      const dayOfMonth = sourceDraft && date === sourceDraft.date && repeat !== "never" ? sourceDraft.repeatDayOfMonth : undefined;
       if (kind === "transfer") {
         if (!counterpartId) throw new Error("Choose the other transfer account.");
         if (BigInt(parsed.positive) > 9223372036854775807n) throw new Error("Transfer amounts must fit the supported positive HUF range.");
@@ -204,12 +237,25 @@ export function TransactionComposer({
         if (schedule) await createScheduledPayeeEntry({ ...input, startDate: date, endDate: schedule.endDate, intervalMonths: schedule.intervalMonths, ...(dayOfMonth ? { dayOfMonth } : {}) }, accounts);
         else await createPayeeEntry(input, accounts);
       }
+      writeCompleted = true;
       await onSaved();
-      onCancel();
+      finishAfterRefresh(action);
     } catch (caught) {
-      setError(errorText(caught));
+      if (writeCompleted) {
+        setRefreshPending(action);
+        setError("The entry was saved, but the register could not refresh. Retry refresh to continue.");
+      } else {
+        setError(errorText(caught));
+        savingRef.current = false;
+      }
       setStatus("editing");
     }
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+    await saveComposer(submitter?.value === "another" ? "another" : "close");
   }
 
   const openCounterparts = accounts.filter((item) => !item.closed && item.id !== account.id);
@@ -217,21 +263,28 @@ export function TransactionComposer({
   const scheduled = scheduleForEntry(date, repeat, localCalendarDate()) !== null;
 
   return (
-    <form className="transaction-editor" onSubmit={submit}>
-      <div className="editor-heading">
+    <form className={`transaction-editor${inline ? " transaction-inline" : ""}`} onSubmit={submit}>
+      {!inline && <div className="editor-heading">
         <div><span>NEW ENTRY</span><h3>Add transaction</h3></div>
         <div className="entry-kind" role="group" aria-label="Entry type">
           <button type="button" className={kind === "transaction" ? "active" : ""} onClick={() => setKind("transaction")}>Transaction</button>
           <button type="button" className={kind === "transfer" ? "active" : ""} onClick={() => setKind("transfer")}>Transfer</button>
         </div>
-      </div>
+      </div>}
 
-      <div className="editor-fields">
-        <DateRepeatPicker date={date} onDateChange={setDate} repeat={repeat} onRepeatChange={setRepeat} disabled={status === "saving"} />
-        {kind === "transaction" ? <>
-          <label>Payee
+      <div className="inline-controls" inert={status === "saving" || refreshPending !== null}>
+      <div className="editor-fields inline-fields">
+        <label>Flag
+          <select value={flagId} onChange={(event) => setFlagId(event.target.value)}>
+            <option value="">No flag</option>
+            {options.flags.map((option) => <option key={option.id} value={option.id}>{option.color} {option.name}</option>)}
+          </select>
+        </label>
+        <div className="inline-date"><DateRepeatPicker date={date} onDateChange={setDate} repeat={repeat} onRepeatChange={setRepeat} disabled={status === "saving"} /></div>
+        {kind === "transaction" ? <label>Payee
             <input
               autoFocus
+              ref={payeeInputRef}
               list={`payees-${account.id}`}
               value={payee}
               onChange={(event) => setPayee(event.target.value)}
@@ -241,48 +294,35 @@ export function TransactionComposer({
               {openCounterparts.map((option) => <option key={`transfer-${option.id}`} value={`Transfer: ${option.name}`} />)}
               {options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => <option key={option.id} value={option.name} />)}
             </datalist>
-          </label>
-          {categoryRule.show && <label>Category
-            <select required={categoryRule.required} value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setCategoryOrigin(event.target.value ? "explicit" : "empty"); }}>
-              <option value="">{categoryRule.readyToAssignDefault ? "Ready to Assign (automatic)" : "Choose category"}</option>
-              {categoryId && !options.categories.some((option) => option.id === categoryId) && <option value={categoryId}>{categoryId === initialDraft?.categoryId ? "Existing hidden category" : "Unavailable category"}</option>}
-              {options.categories.map((option) => (
-                <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>
-              ))}
-            </select>
-          </label>}
-        </> : (
-          <label>Other account
-            <select required autoFocus value={counterpartId} onChange={(event) => setCounterpartId(event.target.value)}>
-              <option value="">Choose account…</option>
-              {openCounterparts.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
-            </select>
-          </label>
-        )}
-        {(kind === "transfer" && categoryRule.show) && <label>Category
+          </label> : <div className="inline-fixed-payee" aria-label="Payee">Transfer: {accounts.find((item) => item.id === counterpartId)?.name ?? "Choose account"}</div>}
+        {categoryRule.show ? <label>Category
           <select required={categoryRule.required} value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setCategoryOrigin(event.target.value ? "explicit" : "empty"); }}><option value="">{categoryRule.readyToAssignDefault ? "Ready to Assign (automatic)" : "Choose category"}</option>
-            {categoryId && !options.categories.some((option) => option.id === categoryId) && <option value={categoryId}>{categoryId === initialDraft?.categoryId ? "Existing hidden category" : "Unavailable category"}</option>}
+            {categoryId && !options.categories.some((option) => option.id === categoryId) && <option value={categoryId}>{categoryId === sourceDraft?.categoryId ? "Existing hidden category" : "Unavailable category"}</option>}
             {options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}
           </select>
-        </label>}
+        </label> : <label>Category<select disabled value=""><option value="">Not used</option></select></label>}
         <label className="memo-field">Memo<input value={memo} onChange={(event) => setMemo(event.target.value)} placeholder="Optional note" /></label>
-        <label>Flag
-          <select value={flagId} onChange={(event) => setFlagId(event.target.value)}>
-            <option value="">No flag</option>
-            {options.flags.map((option) => (
-              <option key={option.id} value={option.id}>{option.color} {option.name && `— ${option.name}`}</option>
-            ))}
-          </select>
-        </label>
         <label>Outflow<AmountInput inputMode="numeric" value={outflow} onChange={(event) => { setOutflow(event.target.value); if (event.target.value) setInflow(""); }} placeholder="0 Ft" /></label>
         <label>Inflow<AmountInput inputMode="numeric" value={inflow} onChange={(event) => { setInflow(event.target.value); if (event.target.value) setOutflow(""); }} placeholder="0 Ft" /></label>
+        <div className="inline-status" aria-label="Transaction status">{scheduled ? "Uncleared · scheduled" : "Cleared"}</div>
       </div>
 
-      <div className="editor-footer">
+      {(inline || kind === "transfer") && <details className="inline-secondary"><summary>Account and entry options</summary><div>
+        <span>Account: {account.name}</span>
+        {inline && <label>Entry type<select value={kind} onChange={(event) => setKind(event.target.value as "transaction" | "transfer")}><option value="transaction">Transaction</option><option value="transfer">Transfer</option></select></label>}
+        {kind === "transfer" && <label>Other account<select required value={counterpartId} onChange={(event) => setCounterpartId(event.target.value)}><option value="">Choose account…</option>{openCounterparts.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></label>}
+      </div></details>}
+      </div>
+      <div className={`editor-footer${inline ? " inline-footer" : ""}`}>
         <p className={error ? "form-error" : "form-hint"} role={error ? "alert" : undefined}>
           {error || (scheduled ? "Scheduled entries are pending and Uncleared until they are posted." : kind === "transfer" || transferPayee ? "Saving creates both linked transfer entries. The entered side will be Cleared; its counterpart will be Uncleared." : "New manual transactions default to Cleared.")}
         </p>
-        <div><button type="button" className="secondary" onClick={onCancel}>Cancel</button><button type="submit" disabled={status === "saving"}>{status === "saving" ? "Saving…" : "Save transaction"}</button></div>
+        <div>
+          {refreshPending && <button type="button" className="secondary" disabled={status === "saving"} onClick={() => void retryRefresh()}>Retry refresh</button>}
+          <button type="button" className="secondary" disabled={status === "saving" || refreshPending !== null} onClick={onCancel}>Cancel</button>
+          {inline && <button type="submit" name="action" value="another" disabled={status === "saving" || refreshPending !== null}>{status === "saving" ? "Saving…" : "Save and add another"}</button>}
+          <button type="submit" disabled={status === "saving" || refreshPending !== null}>{status === "saving" ? "Saving…" : "Save transaction"}</button>
+        </div>
       </div>
     </form>
   );
@@ -296,6 +336,7 @@ export function RegisterEntryEditor({
   onMakeRepeating,
   onSaved,
   onCancel,
+  inline = false,
 }: {
   entry: RegisterEntry;
   account: AccountOverview;
@@ -304,6 +345,7 @@ export function RegisterEntryEditor({
   onMakeRepeating: () => void;
   onSaved: () => Promise<void>;
   onCancel: () => void;
+  inline?: boolean;
 }) {
   const initialAmount = BigInt(entry.amount);
   const [direction, setDirection] = useState<"outflow" | "inflow">(initialAmount < 0n ? "outflow" : "inflow");
@@ -323,6 +365,8 @@ export function RegisterEntryEditor({
     entry.repeatIntervalMonths === 1 || entry.repeatIntervalMonths === 3 || entry.repeatIntervalMonths === 12 ? entry.repeatIntervalMonths : 0,
   );
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [refreshPending, setRefreshPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const editAccount = accounts.find((option) => option.id === accountId) ?? account;
   const transferPeer = entry.transferId
@@ -358,11 +402,14 @@ export function RegisterEntryEditor({
   }, [account.id, accountId, categoryId, categoryOrigin, categoryTouched, direction, editCategoryRule.readyToAssignDefault, editCategoryRule.required, editCategoryRule.show, initialCategoryRule.readyToAssignDefault, initialDirection, readyId]);
 
   async function save(confirmed: boolean) {
+    if (savingRef.current && !confirmed) return;
+    if (!savingRef.current) savingRef.current = true;
     setError(null);
     setSaving(true);
+    let writeCompleted = false;
     try {
       formatDate(date);
-      const positive = parseHufInput(amount);
+      const parsed = signedAmount(direction === "outflow" ? amount : "", direction === "inflow" ? amount : "");
       const inheritedReadyMustReset = inheritedReadyNeedsReset({
         origin: categoryOrigin, categoryId, initiallyDefaultedToReady: initialCategoryRule.readyToAssignDefault,
         nextScopeVisible: editCategoryRule.show, nextRequiresChoice: editCategoryRule.required, readyToAssignId: readyId,
@@ -379,7 +426,7 @@ export function RegisterEntryEditor({
         categoryId: editCategoryRule.show ? categoryId || null : entry.categoryId,
         memo,
         flagId: flagId || null,
-        amount: (direction === "outflow" ? -positive : positive).toString(),
+        amount: parsed.amount,
         clearedState: scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? "uncleared" : clearedState,
         confirmed,
         ...(scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? { repeatIntervalMonths } : {}),
@@ -389,17 +436,26 @@ export function RegisterEntryEditor({
       } else {
         await updateRegisterEntry(edit);
       }
+      writeCompleted = true;
       await onSaved();
       onCancel();
     } catch (caught) {
+      if (writeCompleted) {
+        setRefreshPending(true);
+        setError("The entry was saved, but the register could not refresh. Retry refresh to continue.");
+        setSaving(false);
+        return;
+      }
       if (caught === RECONCILED_CONFIRMATION_REQUIRED && !confirmed) {
         const approved = window.confirm("This change affects reconciled history. Apply it anyway?");
         if (approved) return save(true);
         setSaving(false);
+        savingRef.current = false;
         return;
       }
       setError(errorText(caught));
       setSaving(false);
+      savingRef.current = false;
     }
   }
 
@@ -408,96 +464,84 @@ export function RegisterEntryEditor({
     await save(false);
   }
 
-  async function remove() {
-    const deletePrompt = scheduled
-      ? "Delete this upcoming entry and stop its repeats?"
-      : entry.transferId ? "Delete both sides of this transfer?" : "Delete this transaction?";
-    if (!window.confirm(deletePrompt)) return;
+  async function retryRefresh() {
+    if (!refreshPending) return;
+    setSaving(true); setError(null);
+    try { await onSaved(); onCancel(); }
+    catch { setSaving(false); setError("The change was saved, but the register still could not refresh. Retry refresh to continue."); }
+  }
+
+  async function remove(confirmed = false) {
+    if (savingRef.current && !confirmed) return;
+    if (!savingRef.current) savingRef.current = true;
+    if (!confirmed) {
+      const deletePrompt = scheduled
+        ? "Delete this upcoming entry and stop its repeats?"
+        : entry.transferId ? "Delete both sides of this transfer?" : "Delete this transaction?";
+      if (!window.confirm(deletePrompt)) { savingRef.current = false; return; }
+    }
     setError(null);
     setSaving(true);
+    let writeCompleted = false;
     try {
-      await deleteRegisterEntry(entry.id, false);
+      await deleteRegisterEntry(entry.id, confirmed);
+      writeCompleted = true;
       await onSaved();
       onCancel();
     } catch (caught) {
-      if (caught === RECONCILED_CONFIRMATION_REQUIRED) {
+      if (writeCompleted) {
+        setRefreshPending(true);
+        setError("The entry was deleted, but the register could not refresh. Retry refresh to continue.");
+        setSaving(false);
+        return;
+      }
+      if (caught === RECONCILED_CONFIRMATION_REQUIRED && !confirmed) {
         const approved = window.confirm("This deletion affects reconciled history. Delete it anyway?");
-        if (approved) {
-          try {
-            await deleteRegisterEntry(entry.id, true);
-            await onSaved();
-            onCancel();
-            return;
-          } catch (confirmedError) {
-            setError(errorText(confirmedError));
-          }
-        }
+        if (approved) return remove(true);
+        savingRef.current = false;
       } else {
         setError(errorText(caught));
+        savingRef.current = false;
       }
       setSaving(false);
     }
   }
 
   return (
-    <form className="transaction-editor compact" onSubmit={submit}>
-      <div className="editor-heading">
+    <form className={`transaction-editor compact${inline ? " transaction-inline" : ""}`} onSubmit={submit}>
+      {!inline && <div className="editor-heading">
         <div><span>EDIT ENTRY</span><h3>{entry.transferAccountName ? `Transfer: ${entry.transferAccountName}` : entry.payeeName || "No payee"}</h3>
           {scheduled && <p>Changes apply to this upcoming entry and future repeats. Posted history is unchanged.</p>}
         </div>
         {entry.transferId && <span className="paired-badge">Paired transfer</span>}
-      </div>
-      <div className="editor-fields edit-fields">
-        {!entry.transferId && <label>Account
-          <select autoFocus value={accountId} onChange={(event) => setAccountId(event.target.value)}>
-            {accounts.filter((option) => !option.closed || option.id === account.id).map((option) =>
-              <option key={option.id} value={option.id}>{option.name}{option.closed ? " (closed)" : ""}</option>)}
-          </select>
-        </label>}
-        <div className="editor-date-field">
+      </div>}
+      <div className="inline-controls" inert={saving || refreshPending}>
+      <div className="editor-fields inline-fields">
+        <label>Flag<select value={flagId} onChange={(event) => setFlagId(event.target.value)}><option value="">No flag</option>{options.flags.map((option) => <option key={option.id} value={option.id}>{option.color} {option.name}</option>)}</select></label>
+        <div className="inline-date editor-date-field">
         <DateRepeatPicker date={date} onDateChange={setDate} {...(scheduled || upcomingRepeatEligible ? { repeat: repeatIntervalMonths === 1 ? "monthly" as const : repeatIntervalMonths === 3 ? "quarterly" as const : repeatIntervalMonths === 12 ? "yearly" as const : "never" as const, onRepeatChange: (value: EntryRepeat) => setRepeatIntervalMonths(value === "monthly" ? 1 : value === "quarterly" ? 3 : value === "yearly" ? 12 : 0) } : {})} disabled={saving} />
-          {(scheduled || upcomingRepeatEligible) && repeatIntervalMonths === 0 && <button type="button" className="secondary" disabled={saving} onClick={() => setRepeatIntervalMonths(1)}>Make repeating</button>}
-          {!scheduled && !upcomingRepeatEligible && entry.postingState === "posted" && entry.date <= localCalendarDate() && <button type="button" className="secondary" disabled={saving} onClick={onMakeRepeating}>Make repeating</button>}
+          {!inline && (scheduled || upcomingRepeatEligible) && repeatIntervalMonths === 0 && <button type="button" className="secondary" disabled={saving} onClick={() => setRepeatIntervalMonths(1)}>Make repeating</button>}
+          {!inline && !scheduled && !upcomingRepeatEligible && entry.postingState === "posted" && entry.date <= localCalendarDate() && <button type="button" className="secondary" disabled={saving} onClick={onMakeRepeating}>Make repeating</button>}
         </div>
-        {!entry.transferId && <label>Payee
-          <input list={`edit-payees-${entry.id}`} value={payee} onChange={(event) => setPayee(event.target.value)} />
-          <datalist id={`edit-payees-${entry.id}`}>
-            {options.payees.map((option) => <option key={option.id} value={option.name} />)}
-          </datalist>
-        </label>}
-        {editCategoryRule.show && <label>Category
-          <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setCategoryOrigin(event.target.value ? "explicit" : "empty"); setCategoryTouched(true); }}>
-            <option value="">{categoryEmptyLabel}</option>
-            {entry.categoryId && !options.categories.some((option) => option.id === entry.categoryId) &&
-              <option value={entry.categoryId}>{entry.categoryGroupName} / {entry.categoryName} (hidden)</option>}
-            {options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}
-          </select>
-        </label>}
-        {!entry.transferId && <label>Direction
-          <select value={direction} onChange={(event) => setDirection(event.target.value as "outflow" | "inflow")}>
-            <option value="outflow">Outflow</option><option value="inflow">Inflow</option>
-          </select>
-        </label>}
-        <label>Amount<AmountInput required inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
-        <label>Cleared state
-          <select disabled={scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0)} value={scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? "uncleared" : clearedState} onChange={(event) => setClearedState(event.target.value as RegisterEntry["clearedState"])}>
-            <option value="uncleared">Uncleared</option>
-            <option value="cleared">Cleared</option>
-            <option value="reconciled">Reconciled</option>
-          </select>
-        </label>
+        {entry.transferId ? <div className="inline-fixed-payee" aria-label="Payee">Transfer: {transferPeer?.name ?? entry.transferAccountName ?? "Other account"}</div> : <label>Payee<input list={`edit-payees-${entry.id}`} value={payee} onChange={(event) => setPayee(event.target.value)} /><datalist id={`edit-payees-${entry.id}`}>{options.payees.map((option) => <option key={option.id} value={option.name} />)}</datalist></label>}
+        {editCategoryRule.show ? <label>Category<select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setCategoryOrigin(event.target.value ? "explicit" : "empty"); setCategoryTouched(true); }}><option value="">{categoryEmptyLabel}</option>{entry.categoryId && !options.categories.some((option) => option.id === entry.categoryId) && <option value={entry.categoryId}>{entry.categoryGroupName} / {entry.categoryName} (hidden)</option>}{options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}</select></label> : <label>Category<select disabled value=""><option value="">Not used</option></select></label>}
         <label className="memo-field">Memo<input value={memo} onChange={(event) => setMemo(event.target.value)} /></label>
-        <label>Flag
-          <select value={flagId} onChange={(event) => setFlagId(event.target.value)}>
-            <option value="">No flag</option>
-            {options.flags.map((option) => <option key={option.id} value={option.id}>{option.color} {option.name}</option>)}
-          </select>
-        </label>
+        <label>Outflow<AmountInput required={direction === "outflow"} inputMode="numeric" value={direction === "outflow" ? amount : ""} onChange={(event) => { setAmount(event.target.value); if (event.target.value) setDirection("outflow"); }} placeholder="0 Ft" /></label>
+        <label>Inflow<AmountInput required={direction === "inflow"} inputMode="numeric" value={direction === "inflow" ? amount : ""} onChange={(event) => { setAmount(event.target.value); if (event.target.value) setDirection("inflow"); }} placeholder="0 Ft" /></label>
+        <div className="inline-status">{scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? "Uncleared · scheduled" : clearedState}</div>
       </div>
-      <div className="editor-footer">
-        <div className="edit-actions"><button type="button" className="danger" disabled={saving} onClick={remove}>Delete</button></div>
+      <details className="inline-secondary"><summary>Account and entry options</summary><div>
+        {!entry.transferId && <label>Account<select value={accountId} onChange={(event) => setAccountId(event.target.value)}>{accounts.filter((option) => !option.closed || option.id === account.id).map((option) => <option key={option.id} value={option.id}>{option.name}{option.closed ? " (closed)" : ""}</option>)}</select></label>}
+        <label>Cleared state<select disabled={scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0)} value={scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? "uncleared" : clearedState} onChange={(event) => setClearedState(event.target.value as RegisterEntry["clearedState"])}><option value="uncleared">Uncleared</option><option value="cleared">Cleared</option><option value="reconciled">Reconciled</option></select></label>
+        {entry.transferId && <span>Paired transfer · amount changes update both sides</span>}
+        {inline && (scheduled || upcomingRepeatEligible) && repeatIntervalMonths === 0 && <button type="button" className="secondary" disabled={saving} onClick={() => setRepeatIntervalMonths(1)}>Make repeating</button>}
+        {inline && !scheduled && !upcomingRepeatEligible && entry.postingState === "posted" && entry.date <= localCalendarDate() && <button type="button" className="secondary" disabled={saving} onClick={onMakeRepeating}>Make repeating</button>}
+      </div></details>
+      </div>
+      <div className={`editor-footer${inline ? " inline-footer" : ""}`}>
+        <div className="edit-actions"><button type="button" className="danger" disabled={saving || refreshPending} onClick={() => void remove()}>Delete</button></div>
         <p className={error ? "form-error" : "form-hint"} role={error ? "alert" : undefined}>{error || (entry.transferId ? "Amount changes update both linked sides." : "Memo-only edits never require reconciliation confirmation.")}</p>
-        <div><button type="button" className="secondary" onClick={onCancel}>Cancel</button><button type="submit" disabled={saving}>{saving ? "Saving…" : "Save changes"}</button></div>
+        <div>{refreshPending && <button type="button" className="secondary" disabled={saving} onClick={() => void retryRefresh()}>Retry refresh</button>}<button type="button" className="secondary" disabled={saving || refreshPending} onClick={onCancel}>Cancel</button><button type="submit" disabled={saving || refreshPending}>{saving ? "Saving…" : "Save changes"}</button></div>
       </div>
     </form>
   );

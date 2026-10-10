@@ -1,5 +1,34 @@
 # Implementation and validation status
 
+On 2026-10-10, the owner requested a close YNAB dark-theme visual match and
+supplied Plan, account-register and transaction-editing references. The first
+visual pass now has a compact collapsible sidebar, sidebar view navigation,
+full-height independently scrolling tables, a centered Ready to Assign card,
+Plan search/filter tabs, group totals/collapse, target bars and Available pills.
+Group identity uses IDs; same-name groups remain independent. An unselected
+Plan shows derived category monthly totals. Existing credit details, targets,
+notes, moves and rename remain available. Backups are under Budget & backups;
+Auto-Assign remains omitted. Plan opens by default.
+Historical and upcoming edits replace their own table row. New transactions open
+at the top, including empty registers; Save and add another starts a fresh draft
+only after save and refresh succeed. Secondary options retain account/type,
+cleared state and repeat shortcuts. Date/Repeat is portaled outside table scrolling
+and positioned within the viewport. Immediate form locks reject pending duplicate
+submissions; saved-write refresh failures retry only the refresh. The existing
+signed amount parser now also handles the minimum i64 outflow in register edits.
+All 204 frontend tests and the production/native installer builds passed, with
+independent review of write routing, transfer identity, category rules and
+reconciled confirmation. Synthetic headless-browser checks and image inspection
+covered expanded/collapsed Plan, register, new/edit states and bottom-row calendar
+positioning at desktop widths. No owner data was used in UI tests. Rust accounting,
+IPC shapes and schema are unchanged; the prior 183 Rust test result still applies
+to the unchanged backend. After the owner closed the app, installation exited
+successfully, preserved budget bytes, matched the release executable and reopened
+a responsive native window.
+This is a first visual pass, not a complete pixel-identical copy. Owner visual and
+interaction acceptance and detailed dropdown/secondary-screen references remain
+open; no milestone or migration-readiness percentage was advanced.
+
 On 2026-10-10, the owner requested a right-click account editor and clarified
 that closed accounts must be emptied manually before deletion. Edit Account now
 supports nickname, persistent notes and the open account's Working Balance.
