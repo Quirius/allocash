@@ -1,7 +1,7 @@
 import { CategoryNameEditor } from "./CategoryNameEditor";
 import { AmountInput } from "./AmountInput";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { getSavedMutationVersion, hasSavedMutationPending, loadPlanMonth, movePlanMoney, renameCategory, setCategoryNotes, setCategoryTarget, setCategoryTargetSnoozed, setCreditPaymentCategory, setPlanAssignment, type CreditPaymentCategory, type PlanCategory, type PlanSnapshot, type RecurrenceMonths } from "../lib/desktop";
+import { getSavedMutationVersion, hasSavedMutationPending, loadPlanMonth, movePlanMoney, renameCategory, setCategoryNotes, setCategoryTarget, setCategoryTargetSnoozed, setPlanAssignment, type CreditPaymentCategory, type PlanCategory, type PlanSnapshot, type RecurrenceMonths } from "../lib/desktop";
 import { formatHuf, localCalendarMonth, parseSignedHufInput, shiftCalendarMonth } from "../lib/format";
 import { CreditPaymentDetails } from "./CreditPaymentDetails";
 import { creditPaymentStatus } from "./credit-payment";
@@ -190,7 +190,6 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     return () => { document.removeEventListener("pointerdown", onPointerDown); document.removeEventListener("keydown", onKeyDown); window.removeEventListener("resize", update); window.removeEventListener("scroll", update, true); };
   }, [moveSource, moveError, plan]);
   useEffect(() => { if (mutationPending && !moveBusy) closeMove(false); }, [mutationPending, moveBusy]);
-  async function mapPayment(accountId: string, categoryId: string) { if (!canWritePlan()) return; try { await setCreditPaymentCategory(accountId, categoryId || null); setActionError(null); } catch { setActionError("Could not save this credit-card payment category."); } }
   async function saveTarget(event: FormEvent) {
     event.preventDefault(); if (!canWritePlan()) return; const categoryId = selectedCategoryId; const targetMonth = month;
     try {
@@ -269,7 +268,6 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     {error && <p className="editor-error" role="alert">{error}</p>}
     {!plan || plan.month !== month ? <><div className="register-message" role="status">Loading Plan…</div><div className="plan-content loading">{detailsPanel}</div></> : <>
       <span className="sr-only" role="status">{planCurrent ? "" : "Updating Plan…"}</span>
-      {plan.creditPaymentCategories.length > 0 && <details className="plan-credit" inert={moveBusy}><summary>Credit payment mappings</summary><strong>Credit card payment categories</strong><p>Funded card spending adds the funded portion to its mapped payment category.</p>{plan.creditPaymentCategories.map((mapping) => <label key={mapping.accountId}>{mapping.accountName}<select value={mapping.categoryId ?? ""} onChange={(event) => void mapPayment(mapping.accountId, event.target.value)}><option value="">Not mapped</option>{plan.categories.map((category) => <option key={category.categoryId} value={category.categoryId} disabled={plan.creditPaymentCategories.some((other) => other.accountId !== mapping.accountId && other.categoryId === category.categoryId)}>{category.groupName} / {category.categoryName}</option>)}</select></label>)}</details>}
       <div className="plan-content">
       <div className="plan-main">
       <nav className="plan-filters" aria-label="Filter categories">{["All", "Snoozed", "Underfunded", "Overfunded", "Money Available"].map((filter) => <button key={filter} type="button" className={planFilter === filter ? "active" : ""} aria-pressed={planFilter === filter} onClick={() => setPlanFilter(filter)}>{filter}</button>)}</nav>

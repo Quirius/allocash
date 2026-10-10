@@ -2,7 +2,7 @@ import { AccountEditor } from "./AccountEditor";
 import { AddAccountDialog } from "./AddAccountDialog";
 import { TransactionContextMenu } from "./TransactionContextMenu";
 import { TransactionStatusIcon } from "./TransactionStatusIcon";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   createNativeBackup,
   deleteRegisterEntry,
@@ -36,6 +36,8 @@ import { PlanView } from "./PlanView";
 import { ReportsView } from "./ReportsView";
 import { isUndoShortcutEligible } from "../lib/undo";
 import { createRequestSequence } from "../lib/request-sequence";
+
+const CreditPaymentSettings = lazy(() => import("./CreditPaymentSettings").then((module) => ({ default: module.CreditPaymentSettings })));
 
 type Startup =
   | { status: "loading" }
@@ -124,6 +126,11 @@ export function App() {
   const [restore, setRestore] = useState<
     { status: "idle" } | { status: "restoring" } | { status: "ready"; message: string; path: string } | { status: "error"; message: string }
   >({ status: "idle" });
+  const [advancedCreditSettingsOpen, setAdvancedCreditSettingsOpen] = useState(false);
+
+  useEffect(() => {
+    if (view !== "settings" || startup.status !== "ready") setAdvancedCreditSettingsOpen(false);
+  }, [view, startup.status]);
 
   useEffect(() => {
     let active = true;
@@ -430,6 +437,10 @@ export function App() {
               <div><dt>Storage</dt><dd>{startup.status === "ready" ? "Local SQLite database" : "Available in the desktop app"}</dd></div>
               <div><dt>Connection</dt><dd>No account or internet required</dd></div>
             </dl>
+            {startup.status === "ready" && view === "settings" && <details onToggle={(event) => setAdvancedCreditSettingsOpen(event.currentTarget.open)}>
+              <summary>Advanced credit payment settings</summary>
+              {advancedCreditSettingsOpen && <Suspense fallback={<p role="status">Loading settings…</p>}><CreditPaymentSettings refreshRevision={refreshRevision} readEpoch={mutation.version} mutationPending={mutation.pending} restoreBusy={restore.status === "restoring"} /></Suspense>}
+            </details>}
             {startup.status === "ready" && <details>
               <summary>Local data location</summary>
               <p className="database-path">{startup.workspace.budget.databasePath}</p>

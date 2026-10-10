@@ -15,6 +15,9 @@ loaded data; credit payment shortfalls are included in Underfunded. Group identi
 uses group IDs, even when names match. A cleared selection displays actual monthly
 category totals. Auto-Assign remains omitted. No placeholder supplies invented
 financial values; unsupported reference controls require a later scoped decision.
+Credit payment mapping controls belong in collapsed advanced Budget & backups
+settings, outside the normal Plan. Each newly created credit account receives its
+own payment category automatically; existing account-category links are retained.
 The current implementation is a first visual pass, not full pixel-identical UI
 coverage. Detailed menus and remaining screens need further owner references.
 

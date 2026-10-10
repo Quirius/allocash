@@ -1,5 +1,15 @@
 # Implementation and validation status
 
+On 2026-10-10, credit payment mapping controls moved out of Plan into a collapsed
+Advanced credit payment settings section under Budget & backups. The section
+loads only when opened and guards saves against stale reads, pending mutations
+and restore activity. Existing links and automatic payment-category creation are
+unchanged. All 249 frontend tests and synthetic browser checks passed, including
+mapping absence on Plan and availability in Settings. Production and native
+builds passed. Installation preserved budget bytes, the executable matches the
+release build and Allocash reopened a responsive window. Rust accounting and
+schema are unchanged; owner visual confirmation remains open.
+
 On 2026-10-10, register editing gained transfer destination retargeting and
 conversion between ordinary transactions and linked transfers. Retargeting
 preserves both entry IDs and recalculates the category's budget-side ownership.
