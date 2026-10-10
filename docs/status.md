@@ -1,5 +1,12 @@
 # Implementation and validation status
 
+On 2026-10-10, the owner confirmed the latest Plan interaction checks passed:
+changing Assigned keeps the screen steady, editing a target or note preserves
+the selected category and open editor, and Ctrl+Z reverts values without flashing.
+This closes those smooth-refresh interaction checks. Money-move-specific checks,
+notes across months/reopening and the remaining migration rehearsal gates are
+not inferred complete from this confirmation.
+
 On 2026-10-09, the owner reported that any Plan change flashed the whole screen.
 The same-month table and category sidebar now remain mounted during saved writes
 and background reads; only initial loading and a different selected month use
@@ -17,7 +24,8 @@ and the per-user NSIS build passed. No DOM test environment is installed, and
 visual interaction was not inspected. Installation exited successfully,
 preserved budget bytes and matched the release executable after its expected
 bundle marker. A responsive native window reopened. Owner confirmation that
-assignment, target, note, move and undo updates no longer flash remains open.
+assignment, target, note and undo updates no longer flash subsequently passed
+on 2026-10-10; move-specific confirmation remains open.
 
 On 2026-10-09, the owner requested moving category targets into a vertical
 right-hand selected-category panel, persistent category notes and no Auto-Assign.
