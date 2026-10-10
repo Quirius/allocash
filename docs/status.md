@@ -8,9 +8,11 @@ and selection dismiss it, keyboard focus is restored, and the portal clamps to
 the viewport with an independently scrolling interior. All 252 frontend tests,
 focused follow-up checks and synthetic browser checks passed, including year
 browsing, selection, Escape and narrow-window bounds. Production and native builds
-passed. Installation is awaiting closure of the existing native window; the
-upgrade stopped before replacing the executable. Rust accounting and schema are
-unchanged; owner visual confirmation remains open.
+passed. After the owner closed the window, its remaining background process was
+stopped and installation completed. Budget bytes were unchanged during the
+installation, the executable matches the release build, and Allocash reopened a
+responsive window. Rust accounting and schema are unchanged; owner visual
+confirmation remains open.
 
 On 2026-10-10, credit payment mapping controls moved out of Plan into a collapsed
 Advanced credit payment settings section under Budget & backups. The section
