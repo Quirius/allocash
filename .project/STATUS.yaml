@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Confirm account editor Save/Cancel/undo, close/reopen and empty-account deletion safeguards; confirm category rename and amount editing keyboard behavior; check credit payment breakdowns and warnings; check upcoming repeating Save/Cancel/undo and continue target/recurrence recreation and native backup/reopen checks."
-updated_at: "2026-10-10T18:47:50Z"
+next_action: "Compare the first YNAB-style pass, confirm inline past/future edits and Save and add another, and collect dropdown and secondary-screen references; confirm account editing and amount keyboard behavior; check credit payment breakdowns and warnings; check upcoming repeating Save/Cancel/undo and continue target/recurrence recreation and native backup/reopen checks."
+updated_at: "2026-10-10T19:12:20Z"
 source:
   branch: "main"
-  commit: "67dc38f1c78ec8a602bb6f5dd6eb2086de47c9cd"
-  verified_at: "2026-10-10T18:47:50Z"
+  commit: "2eb5ff84f02f0488a458cb49b7107b6ff3a39c56"
+  verified_at: "2026-10-10T19:12:20Z"
 summary:
   completed:
+    - "The first YNAB-style visual pass adds compact collapsible navigation, dense Plan and register tables, category search and filters, independent group totals/collapse, funding bars and the right details panel. Existing past and future transactions edit in their original row; new transactions open at the top. Save and add another resets after successful save and refresh. Date popups stay within the viewport, pending duplicate submissions are blocked, and refresh retries never repeat a successful write. All 204 frontend tests, independent review, synthetic browser visual checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Rust accounting and schema are unchanged. Full pixel matching, detailed dropdown and secondary-screen references, and owner visual acceptance remain open."
     - "Accounts now open an Edit Account dialog by right-click, with nickname, persistent notes, working balance adjustment, close/reopen and session undo. Balance adjustments are atomic, use checked integer HUF and reject stale balances; active repeat rules prevent closure. Closed-account deletion requires manual removal of all transactions and transfers first, then confirmation and a safety backup. It removes only empty metadata and orphan repeat definitions and preserves category Plan state and raw imports. All 183 Rust and 186 frontend tests, formatting, independent review and frontend/native builds passed. The installed upgrade preserved budget bytes, matches the release executable and reopened a responsive window; owner account interaction checks remain open."
     - "Categories can now be renamed from the selected Plan sidebar with Save/Enter and Cancel/Escape. Trimmed Unicode names retain stable category IDs and all linked transactions, assignments, targets, notes and credit mappings. Renaming is atomic and undoable and refreshes category options in Register and Reports. Exact SQLite classifier guards prevent changing the special Ready to Assign role. All 172 Rust and 176 frontend tests, formatting, Cargo check, independent review and frontend/native builds passed. The installed upgrade preserved budget bytes, matches the release executable and reopened a responsive window; owner rename, cancel, undo and cross-view name checks remain open."
     - "All eight monetary controls now select their complete value on focus or click. Plain numbers replace the selected amount, operator keys seed a calculation from it, Tab/Enter commit and Escape restores the pre-edit value. The exact bigint parser supports precedence and parentheses and rejects fractional final HUF, malformed expressions, zero division and signed-range overflow. Plan blur saves and form-specific validation/save workflows remain intact. All 170 frontend tests, frontend/native builds and independent review passed, including actual React keyboard and blur events and outflow sign/limit regressions. Installation preserved budget bytes, the installed executable matches the release build and Allocash reopened a responsive window; owner interaction and undo confirmation remain open."
@@ -61,6 +62,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
+    - "The first YNAB-style layout pass is implemented; owner visual and inline-editing acceptance and detailed dropdown and secondary-screen matching remain open."
     - "Account editing is implemented; owner Save/Cancel/undo, balance adjustment, close/reopen and empty-account deletion checks remain open."
     - "Category rename is implemented; owner Save/Cancel/undo and cross-view name checks remain open."
     - "Shared amount selection and calculator input are implemented; owner replacement, keyboard commit/reset and undo checks remain open."
@@ -79,6 +81,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "2eb5ff84f02f0488a458cb49b7107b6ff3a39c56"
+    note: "Records the first YNAB-style visual pass, inline register editing, refresh-only retries, 204 frontend tests, synthetic browser checks and installation; full visual matching and owner acceptance remain open."
   - path: "docs/status.md"
     ref: "67dc38f1c78ec8a602bb6f5dd6eb2086de47c9cd"
     note: "Records account editor, exact balance adjustments, manual-empty deletion safeguard, repeat closure guard, undo, tests and installation; owner interaction confirmation remains open."
