@@ -20,7 +20,9 @@
 .transaction-status-icon { box-sizing: border-box; width: 22px; height: 22px; padding: 2px; display: inline-grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: inherit; vertical-align: middle; }
 button.transaction-status-icon { cursor: pointer; }
 button.transaction-status-icon:disabled { cursor: default; }
-.transaction-status-dot { width: 16px; height: 16px; display: grid; place-items: center; border: 1.5px solid #898695; border-radius: 50%; color: #898695; font: 700 10px/1 system-ui, sans-serif; }
-.transaction-status-dot.cleared { border-color: #b6e85f; background: #b6e85f; color: #252b16; }
 .transaction-status-icon.reconciled { color: #b6e85f; }
 .transaction-status-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }
+.transaction-status-icon .transaction-status-circle { width: 18px; height: 18px; stroke-width: 2.8; color: #9697a8; }
+.transaction-status-circle path { stroke-width: 3.8; }
+.transaction-status-circle.cleared circle { fill: #76b900; stroke: #76b900; }
+.transaction-status-circle.cleared path { stroke: #141426; stroke-width: 4.5; }

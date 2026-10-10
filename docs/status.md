@@ -1,5 +1,16 @@
 # Implementation and validation status
 
+On 2026-10-10, owner feedback refined clearing icons to crisp SVG circle/C
+shapes with grey outlined Uncleared and green filled Cleared states. A saved
+status change patches its row in place, then reads workspace balances silently;
+it never sets the register to Loading or reloads its rows. Scroll, row identity
+and other open editor inputs remain mounted. Failed writes leave the icon
+unchanged; a failed balance read retains the saved icon and retries only that
+read. All 222 frontend tests, independent review, synthetic browser node-identity
+and popup checks, and the production build passed. The native installer passed; installation preserved budget bytes, the installed
+executable matches the release build, and a responsive window reopened. Owner
+visual confirmation remains open. Rust and schema are unchanged.
+
 On 2026-10-10, register status icons, context actions and due-schedule catch-up
 were implemented.
 New ordinary manual entries default to Uncleared; the entered and generated

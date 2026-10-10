@@ -221,6 +221,19 @@ export function App() {
     setRefreshRevision((value) => value + 1);
   }
 
+  async function refreshTransactionStatus(id: string, clearedState: "cleared" | "uncleared") {
+    // The status write already succeeded. Keep every row mounted, even if the
+    // balance read fails; a retry must never replay the write.
+    setRegister((current) => current.status === "ready" ? {
+      ...current, entries: current.entries.map((entry) => entry.id === id ? { ...entry, clearedState } : entry),
+    } : current);
+    const request = ledgerRefreshSequence.current.begin();
+    const workspace = await loadWorkspace(localCalendarDate());
+    if (!ledgerRefreshSequence.current.isCurrent(request)) return;
+    if (!workspace) throw new Error("The desktop ledger is unavailable.");
+    setStartup({ status: "ready", workspace });
+  }
+
   useEffect(() => {
     if (startup.status !== "ready") return;
     async function checkDay() {
@@ -397,6 +410,7 @@ export function App() {
               register={register}
               onRetry={() => setRegisterAttempt((value) => value + 1)}
               onChanged={refreshLedger}
+              onStatusChanged={refreshTransactionStatus}
             />
           )}
 
@@ -467,6 +481,7 @@ export function AccountRegister({
   register,
   onRetry,
   onChanged,
+  onStatusChanged,
 }: {
   account: AccountOverview;
   accounts: AccountOverview[];
@@ -474,10 +489,12 @@ export function AccountRegister({
   register: RegisterState;
   onRetry: () => void;
   onChanged: () => Promise<void>;
+  onStatusChanged?: (id: string, state: "cleared" | "uncleared") => Promise<void>;
 }) {
   const [editor, setEditor] = useState<"new" | "reconcile" | RegisterEntry | { kind: "duplicate"; key: number; draft: TransactionDraft } | null>(null);
   const [scheduleAction, setScheduleAction] = useState(false);
   const actionLock = useRef(false);
+  const retryRead = useRef<() => Promise<void>>(onChanged);
   const [refreshPending, setRefreshPending] = useState(false);
   const [menu, setMenu] = useState<{ entry: RegisterEntry; x: number; y: number } | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
@@ -520,14 +537,15 @@ export function AccountRegister({
     if (upcomingPage !== safeUpcomingPage) setUpcomingPage(safeUpcomingPage);
   }, [upcomingPage, safeUpcomingPage]);
 
-  async function mutate(operation: () => Promise<void>) {
+  async function mutate(operation: () => Promise<void>, refresh = onChanged) {
     if (actionLock.current || refreshPending || hasSavedMutationPending()) return;
     actionLock.current = true;
     setScheduleAction(true); setScheduleError(null);
     let saved = false;
+    retryRead.current = refresh;
     try {
       await operation(); saved = true;
-      await onChanged();
+      await refresh();
     } catch (error) {
       setRefreshPending(saved);
       setScheduleError(saved ? "Saved, but the register could not refresh. Retry the refresh below." : typeof error === "string" ? error : error instanceof Error ? error.message : "Could not update this transaction.");
@@ -537,7 +555,7 @@ export function AccountRegister({
   async function retryRefresh() {
     if (actionLock.current) return;
     actionLock.current = true; setScheduleAction(true);
-    try { await onChanged(); setRefreshPending(false); setScheduleError(null); }
+    try { await retryRead.current(); setRefreshPending(false); setScheduleError(null); }
     catch { setScheduleError("Could not refresh the register. Your change is already saved."); }
     finally { actionLock.current = false; setScheduleAction(false); }
   }
@@ -574,7 +592,8 @@ export function AccountRegister({
 
   function changeStatus(entry: RegisterEntry, next: "cleared" | "uncleared") {
     if (entry.postingState === "scheduled" || entry.date > today || entry.clearedState === "reconciled") return;
-    void mutate(() => setRegisterEntryClearedState(entry.id, next, today));
+    void mutate(() => setRegisterEntryClearedState(entry.id, next, today),
+      onStatusChanged ? () => onStatusChanged(entry.id, next) : onChanged);
   }
 
   return (

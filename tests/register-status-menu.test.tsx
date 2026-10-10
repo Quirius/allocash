@@ -13,6 +13,8 @@ let root: Root;
 let host: HTMLDivElement;
 let workspaceReads: number;
 let rejectFirstRefresh: boolean;
+let failStatusWrite: boolean;
+let finishStatusWrite: (() => void) | null;
 const account = {
   id: "cash", name: "Everyday", kind: "cash" as const, sortOrder: 0, closed: false,
   balance: { working: "1000", cleared: "500", uncleared: "500", reconciled: "0" },
@@ -35,6 +37,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers(); vi.setSystemTime(new Date(2026, 9, 10, 12));
   workspaceReads = 0; rejectFirstRefresh = false;
+  failStatusWrite = false; finishStatusWrite = null;
   vi.mocked(isTauri).mockReturnValue(true);
   vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.mocked(invoke).mockImplementation(async (command, args) => {
@@ -45,6 +48,10 @@ beforeEach(() => {
         if (rejectFirstRefresh && workspaceReads === 2) throw new Error("refresh failed");
         return workspace;
       case "get_account_register": return [item()];
+      case "set_register_entry_cleared_state":
+        if (failStatusWrite) throw new Error("status write failed");
+        if (finishStatusWrite) return new Promise<void>((resolve) => { finishStatusWrite = () => resolve(); });
+        return undefined;
       case "get_plan_month": return plan;
       case "get_undo_status": return { canUndo: false, label: null };
       case "list_native_backups": return { directory: "", names: [] };
@@ -69,6 +76,10 @@ async function mount(entries: RegisterEntry[] = [item()]) {
         if (rejectFirstRefresh && workspaceReads === 2) throw new Error("refresh failed");
         return workspace;
       case "get_account_register": return entries;
+      case "set_register_entry_cleared_state":
+        if (failStatusWrite) throw new Error("status write failed");
+        if (finishStatusWrite) return new Promise<void>((resolve) => { finishStatusWrite = () => resolve(); });
+        return undefined;
       case "get_plan_month": return plan;
       case "get_undo_status": return { canUndo: false, label: null };
       case "list_native_backups": return { directory: "", names: [] };
@@ -102,16 +113,61 @@ it("realizes due schedules before loading the workspace on startup", async () =>
   expect(vi.mocked(invoke)).toHaveBeenCalledWith("realize_due_scheduled_transactions", { asOf: "2026-10-10" });
 });
 
-it("uses the dedicated status command for a past non-reconciled icon and does not repeat it after refresh retry", async () => {
+it("keeps the register, scroll, and editor mounted across status refresh failure and retry", async () => {
   rejectFirstRefresh = true;
-  await mount();
+  finishStatusWrite = () => {};
+  await mount([item(), item({ id: "other", date: "2026-10-08", payeeName: "Other" })]);
+  await act(async () => {
+    host.querySelector('[data-entry-id="other"]')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    for (let i = 0; i < 30; i += 1) await Promise.resolve();
+  });
+  const table = host.querySelector<HTMLElement>(".register-table-wrap")!;
+  table.scrollTop = 42;
+  const targetRow = host.querySelector('[data-entry-id="past"]')!;
+  const editor = host.querySelector("form.transaction-inline")!;
+  const editorInput = editor.querySelector("input")!;
+  const accountRegisterReads = vi.mocked(invoke).mock.calls.filter(([command]) => command === "get_account_register").length;
   const toggle = host.querySelector<HTMLButtonElement>('[aria-label="Mark as cleared"]')!;
-  await act(async () => { toggle.click(); for (let i = 0; i < 30; i += 1) await Promise.resolve(); });
+  act(() => toggle.click());
+  expect(host.querySelector<HTMLButtonElement>('[aria-label="Mark as cleared"]')?.disabled).toBe(true);
+  act(() => toggle.click());
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "set_register_entry_cleared_state")).toHaveLength(1);
+  act(() => { finishStatusWrite?.(); finishStatusWrite = null; });
+  await flush();
   expect(invoke).toHaveBeenCalledWith("set_register_entry_cleared_state", { id: "past", clearedState: "cleared", asOf: "2026-10-10" });
   expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "set_register_entry_cleared_state")).toHaveLength(1);
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "get_workspace")).toHaveLength(2);
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "get_account_register")).toHaveLength(accountRegisterReads);
+  expect(host.querySelector('[data-entry-id="past"]')).toBe(targetRow);
+  expect(host.querySelector(".register-table-wrap")).toBe(table);
+  expect(table.scrollTop).toBe(42);
+  expect(host.querySelector("form.transaction-inline")).toBe(editor);
+  expect(editor.querySelector("input")).toBe(editorInput);
+  expect(host.querySelector('[data-entry-id="past"] [aria-label="Mark as uncleared"]')).not.toBeNull();
   expect(host.textContent).toContain("Saved, but the register could not refresh.");
   await act(async () => { [...host.querySelectorAll("button")].find((button) => button.textContent === "Retry refresh")?.click(); for (let i = 0; i < 30; i += 1) await Promise.resolve(); });
   expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "set_register_entry_cleared_state")).toHaveLength(1);
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "get_workspace")).toHaveLength(3);
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "get_account_register")).toHaveLength(accountRegisterReads);
+  expect(host.querySelector('[data-entry-id="past"]')).toBe(targetRow);
+  expect(host.querySelector(".register-table-wrap")).toBe(table);
+  expect(table.scrollTop).toBe(42);
+  expect(host.querySelector("form.transaction-inline")).toBe(editor);
+  expect(editor.querySelector("input")).toBe(editorInput);
+});
+
+it("does not patch or refresh when the dedicated status write fails", async () => {
+  failStatusWrite = true;
+  await mount();
+  const accountRegisterReads = vi.mocked(invoke).mock.calls.filter(([command]) => command === "get_account_register").length;
+  const workspaceReadCount = workspaceReads;
+  const toggle = host.querySelector<HTMLButtonElement>('[aria-label="Mark as cleared"]')!;
+  await act(async () => { toggle.click(); for (let i = 0; i < 30; i += 1) await Promise.resolve(); });
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "set_register_entry_cleared_state")).toHaveLength(1);
+  expect(workspaceReads).toBe(workspaceReadCount);
+  expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "get_account_register")).toHaveLength(accountRegisterReads);
+  expect(host.querySelector('[data-entry-id="past"] [aria-label="Mark as cleared"]')).not.toBeNull();
+  expect(host.querySelector('[data-entry-id="past"] [aria-label="Mark as uncleared"]')).toBeNull();
 });
 
 it("locks reconciled, pending, and future status changes in the register and menu", async () => {
