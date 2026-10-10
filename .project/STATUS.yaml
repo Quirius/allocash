@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Recreate required category targets and recurring transactions, then verify notes across months and native backup/reopen persistence; prior move, category and Make repeating interaction checks remain open."
-updated_at: "2026-10-10T12:25:07Z"
+next_action: "Confirm Make repeating on an existing upcoming bill keeps its first date and only one occurrence, including Save, Cancel and undo; continue actual target/recurrence recreation and notes/native backup/reopen checks."
+updated_at: "2026-10-10T14:06:50Z"
 source:
   branch: "main"
-  commit: "70b4a258c82c7cba2e6dfa5e1f828bb143ae8bc0"
-  verified_at: "2026-10-10T12:25:07Z"
+  commit: "2545e84ab3d7ad6d82ca8de85a02f2e97b45b4e9"
+  verified_at: "2026-10-10T14:06:50Z"
 summary:
   completed:
+    - "The owner confirmed a category target test worked, then found imported upcoming entries lacked Repeat. Eligible future Uncleared ordinary entries and one-off schedules now expose Make repeating and date-picker Repeat. Ordinary entries convert in place on Save, including transfer pairs from either leg, retaining the first date and identity without a duplicate. Existing scheduled edits and past-entry repeating drafts remain supported. All 168 Rust and 147 frontend tests, formatting, review and frontend/native builds passed. The installed upgrade preserved budget bytes and reopened a responsive window; owner upcoming repeat interaction confirmation remains open."
     - "On October 10, the owner confirmed installed account balances and the current month Ready to Assign match their latest YNAB data. This verifies the requested owner-facing balance comparison; it does not complete target/recurrence recreation, additional report comparisons or the full native backup/reopen migration rehearsal."
     - "Same-month Plan saves now keep the table and category sidebar mounted while fresh data loads, preserving selection, scroll and open target details. Stable assignment inputs retain drafts and avoid submitting unchanged canonical values. Current-version guards block stale financial writes; loading replacement remains for initial/month changes. All 145 frontend tests and frontend/native builds passed, with focused code review. Installation preserved budget bytes and reopened a responsive window; the owner confirmed Assigned, target/note and undo updates behave correctly without flashing on October 10; move-specific checks remain open."
     - "Category row clicks and control focus select a category whose balance summary, target progress, editor and month-specific snooze appear in a vertical right sidebar. Notes preserve exact text per category across months, reopening and native backups, with undo, autosave and explicit retry. Auto-Assign is omitted. All 162 Rust and 145 frontend tests, formatting, independent review and frontend/native builds passed. The installed upgrade preserved budget bytes and reopened a responsive window; owner sidebar and notes interaction confirmation remains open."
@@ -55,6 +56,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
+    - "Upcoming in-place recurrence is tested and installed; owner first-occurrence, Save/Cancel and undo checks remain open, followed by actual recurring-rule recreation."
     - "The selected-category target sidebar and persistent notes are tested and installed; owner month/reopen note persistence and remaining selection checks are open; target/note edit continuity and undo passed on October 10."
     - "The Plan Available-click move popup is tested and installed; owner category moves, return-to-Ready, cancellation and undo checks remain open."
     - "Budget-aware category rules are tested and installed; owner ordinary entry and crossing-transfer checks from both account sides remain open."
@@ -67,6 +69,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "2545e84ab3d7ad6d82ca8de85a02f2e97b45b4e9"
+    note: "Records owner target test success and the upcoming Repeat gap fix, in-place ordinary/transfer schedule conversion, identity/provenance preservation, rollback/undo checks and installed upgrade; owner upcoming repeat confirmation remains open."
   - path: "docs/status.md"
     ref: "70b4a258c82c7cba2e6dfa5e1f828bb143ae8bc0"
     note: "Records owner confirmation that installed account balances and current-month Ready to Assign match latest YNAB data; target/recurrence recreation and full backup/reopen rehearsal remain open."
