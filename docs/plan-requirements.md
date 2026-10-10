@@ -71,6 +71,12 @@ with negative assignments and balances already supported by the Plan.
 
 ## Targets
 
+Categories mapped to budgeted credit-card payments do not offer category targets
+or target snoozing. Their sidebar shows payment availability and notes instead.
+Existing target definitions remain stored but are inactive in the Plan while the
+category is mapped to a card; removing the mapping makes them available again.
+This changes target eligibility, not card balances, funding or payment calculations.
+
 YNAB target definitions may not survive export.
 
 The user is willing to recreate targets once after migration, but the app must support comparable functionality afterward.

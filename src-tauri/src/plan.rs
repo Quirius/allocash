@@ -213,6 +213,11 @@ impl Database {
             return Err(LedgerError::NotFound);
         }
         if let Some(definition) = definition {
+            if is_credit_payment_category(&self.connection, category_id)? {
+                return Err(LedgerError::InvalidValue(
+                    "A credit payment category cannot have a target.",
+                ));
+            }
             validate_target_definition(definition, effective_month)?;
         }
         let id: String = self.connection.query_row(
@@ -246,6 +251,11 @@ impl Database {
         )?;
         if !exists {
             return Err(LedgerError::NotFound);
+        }
+        if snoozed && is_credit_payment_category(&self.connection, category_id)? {
+            return Err(LedgerError::InvalidValue(
+                "A credit payment category cannot have a target snooze.",
+            ));
         }
         if snoozed && !target_definitions_for(&self.connection, month)?.contains_key(category_id) {
             return Err(LedgerError::InvalidValue(
@@ -407,6 +417,7 @@ impl Database {
         let ready_category_ids = ready_to_assign_category_ids(&self.connection)?;
         let target_definitions = target_definitions_for(&self.connection, month)?;
         let target_snoozes = target_snoozes_for(&self.connection, month)?;
+        let credit_payment_category_ids = credit_payment_category_ids(&self.connection)?;
         let mut categories = Vec::new();
         let mut category_query = self.connection.prepare("SELECT g.id,g.name,c.id,c.name,c.notes FROM category_groups g JOIN categories c ON c.group_id=g.id WHERE g.hidden=0 AND c.hidden=0 ORDER BY g.sort_order,c.sort_order,c.id")?;
         let mut rows = category_query.query([])?;
@@ -430,6 +441,7 @@ impl Database {
                     let assigned = *derivation.assigned.get(&category_id).unwrap_or(&0);
                     let target = target_definitions
                         .get(&category_id)
+                        .filter(|_| !credit_payment_category_ids.contains(&category_id))
                         .map(|definition| {
                             if definition.definition.interval_months == 1 {
                                 target_progress(
@@ -489,6 +501,26 @@ impl Database {
             credit_payment_categories,
         })
     }
+}
+
+fn is_credit_payment_category(
+    connection: &rusqlite::Connection,
+    category_id: &str,
+) -> LedgerResult<bool> {
+    Ok(connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM credit_payment_categories p JOIN accounts a ON a.id=p.account_id WHERE p.category_id=?1 AND a.kind='credit')",
+        [category_id],
+        |row| row.get(0),
+    )?)
+}
+
+fn credit_payment_category_ids(
+    connection: &rusqlite::Connection,
+) -> LedgerResult<BTreeSet<String>> {
+    Ok(connection
+        .prepare("SELECT p.category_id FROM credit_payment_categories p JOIN accounts a ON a.id=p.account_id WHERE a.kind='credit'")?
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?)
 }
 
 fn ready_to_assign_category_ids(
@@ -2434,6 +2466,112 @@ mod tests {
             .unwrap()
             .target
             .is_none());
+    }
+
+    #[test]
+    fn credit_payment_categories_hide_targets_and_allow_legacy_cleanup() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "card".into(),
+                name: "Card".into(),
+                kind: AccountKind::Credit,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database
+            .create_category("payment", "g", "Card payment", 0)
+            .unwrap();
+        database.create_category("food", "g", "Food", 1).unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        let october = PlanMonth::parse("2026-10").unwrap();
+        let definition = CategoryTargetDefinition {
+            behavior: "set_aside".into(),
+            amount: Huf(120),
+            due_kind: "day".into(),
+            due_day: Some(10),
+            interval_months: 1,
+            first_due_month: None,
+        };
+        database
+            .set_category_target("payment", &september, Some(&definition))
+            .unwrap();
+        database
+            .set_category_target_snoozed("payment", &september, true)
+            .unwrap();
+        database
+            .set_category_target_snoozed("payment", &october, true)
+            .unwrap();
+        database
+            .set_category_target("food", &september, Some(&definition))
+            .unwrap();
+        database
+            .set_monthly_assignment("food", &september, Huf(45))
+            .unwrap();
+
+        database
+            .set_credit_payment_category("card", Some("payment"))
+            .unwrap();
+        let mapped = database.plan_month(&september).unwrap();
+        assert!(mapped
+            .categories
+            .iter()
+            .find(|category| category.category_id == "payment")
+            .unwrap()
+            .target
+            .is_none());
+        let food = mapped
+            .categories
+            .iter()
+            .find(|category| category.category_id == "food")
+            .unwrap();
+        let food_target = food.target.as_ref().unwrap();
+        assert_eq!(food_target.definition.amount, Huf(120));
+        assert_eq!(food_target.needed_this_month, Huf(120));
+        assert_eq!(food_target.funded, Huf(45));
+        assert_eq!(food_target.to_go, Huf(75));
+        assert!(database
+            .set_category_target("payment", &october, Some(&definition))
+            .is_err());
+        assert!(database
+            .set_category_target_snoozed("payment", &october, true)
+            .is_err());
+
+        let stored_target_count: i64 = database
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM category_target_revisions WHERE category_id='payment' AND effective_month='2026-09' AND active=1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored_target_count, 1);
+        let stored_snooze_count: i64 = database
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM category_target_snoozes WHERE category_id='payment'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored_snooze_count, 2);
+        database
+            .set_category_target_snoozed("payment", &october, false)
+            .unwrap();
+        database
+            .set_category_target("payment", &october, None)
+            .unwrap();
+        database.set_credit_payment_category("card", None).unwrap();
+        let unmapped = database.plan_month(&september).unwrap();
+        let restored = category_available_target(&unmapped, "payment");
+        assert_eq!(restored.definition.amount, Huf(120));
+        assert!(restored.snoozed);
+        database
+            .set_category_target_snoozed("payment", &september, false)
+            .unwrap();
     }
 
     #[test]

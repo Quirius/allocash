@@ -1,5 +1,21 @@
 # Implementation and validation status
 
+On 2026-10-10, the owner requested excluding targets from budgeted credit-card
+payment categories. The selected-category sidebar now hides target progress,
+the target editor, no-target prompts and snooze controls for mapped credit
+payment categories, and labels their balance Available for Payment. Notes and
+the existing balance summary remain available. The backend rejects new target
+definitions and snoozing for live credit mappings, including closed cards.
+Existing definitions and snoozes remain stored and can be cleared explicitly;
+removing the mapping restores ordinary target eligibility. Financial derivation,
+budget amounts and the schema are unchanged.
+All 169 Rust library tests and 147 frontend tests passed, including target
+rejection, preservation, cleanup and unmapping behavior. Formatting, Cargo check,
+independent review, frontend and per-user NSIS builds passed. The installer is
+ready; the upgrade stopped before installation because Allocash did not exit
+after a graceful close request. Manual closing is pending. Owner credit and
+ordinary category sidebar confirmation remains open.
+
 On 2026-10-10, the owner confirmed a category target test worked, then reported
 that upcoming transactions lacked a way to make them repeating. Imported future
 ordinary entries had no schedule link, so their editor hid Repeat. Future

@@ -200,6 +200,11 @@ mutation and undo boundary. Notes have no month key and need no schema migration
 native database backups preserve them. The selected-category sidebar keeps
 category-specific note drafts while monthly Plan reads refresh.
 
+Credit-card payment mappings determine target eligibility. Plan reads suppress
+targets for mapped credit payment categories; writes reject new target definitions
+and snoozing for them. Clearing a legacy target or snooze remains allowed, and
+mapping changes preserve stored definitions. Financial derivation is unchanged.
+
 The default Cargo feature is `desktop`. Disabling it permits the actual SQLite
 and ledger tests to run without Tauri, using the same database implementation.
 Rust dependencies are locked in `src-tauri/Cargo.lock`.
