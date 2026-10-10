@@ -131,6 +131,22 @@ and [positive balance](https://support.ynab.com/en_us/credit-cards-with-a-positi
 behavior. Imported history and assignments remain unchanged; these are derived
 Plan calculations.
 
+Mapped card payment details are read-only components of the same Plan snapshot.
+Current Balance equals Prior Balance plus the selected month's signed Spending
+and Outflows and Payments and Inflows; these use posted card entries within the
+Plan's inclusive cutoff, including uncleared entries. Available for Payment
+remains the category's existing Available. Its breakdown equals Cash Left Over
+From Last Month plus Assigned plus net Funded Spending minus Payments Made plus
+any Other Activity. Purchase funding and refund reversals are captured from the
+existing derivation rather than recalculated by the frontend.
+
+For payment warnings, debt is the nonnegative magnitude of a negative card
+balance. Negative payment Available is red (overspent), otherwise Available
+below debt is yellow (underfunded), and sufficient Available is green.
+Total Underfunded is the nonnegative difference between debt and Available, so
+it includes a negative payment category's deficit as well as remaining debt.
+These warnings never assign money or alter ledger or Plan values.
+
 ## Plan targets
 
 Monthly targets are advisory: they never automatically assign money or change

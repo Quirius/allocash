@@ -209,7 +209,7 @@ export interface ReconciliationResult {
 export interface CategoryTargetDefinition { behavior: "set_aside" | "refill"; amount: string; dueKind: "day" | "last_day"; dueDay: number | null; intervalMonths?: RecurrenceMonths; firstDueMonth?: string | null; }
 export interface CategoryTargetProgress extends CategoryTargetDefinition { neededThisMonth: string; funded: string; toGo: string; snoozed: boolean; dueMonth: string | null; }
 export interface PlanCategory { groupId: string; groupName: string; categoryId: string; categoryName: string; notes: string; assigned: string; activity: string; available: string; target: CategoryTargetProgress | null; }
-export interface CreditPaymentCategory { accountId: string; accountName: string; categoryId: string | null; }
+export interface CreditPaymentCategory { accountId: string; accountName: string; categoryId: string | null; currentBalance: string; priorBalance: string; spendingAndOutflows: string; paymentsAndInflows: string; cashLeftOverFromLastMonth: string; fundedSpending: string; paymentsMade: string; otherActivity: string; }
 export interface PlanSnapshot { month: string; readyToAssign: string; categories: PlanCategory[]; creditPaymentCategories: CreditPaymentCategory[]; }
 
 export const RECONCILED_CONFIRMATION_REQUIRED = "reconciled_confirmation_required";

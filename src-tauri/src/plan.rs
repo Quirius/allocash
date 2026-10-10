@@ -77,6 +77,16 @@ pub struct CreditPaymentCategory {
     pub account_id: String,
     pub account_name: String,
     pub category_id: Option<String>,
+    pub current_balance: Huf,
+    pub prior_balance: Huf,
+    pub spending_and_outflows: Huf,
+    pub payments_and_inflows: Huf,
+    pub cash_left_over_from_last_month: Huf,
+    pub funded_spending: Huf,
+    pub payments_made: Huf,
+    /// Signed activity outside mapped purchase funding and card payments.
+    /// Kept as a residual so the displayed breakdown reconciles to Plan Available.
+    pub other_activity: Huf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,6 +144,8 @@ struct CreditSpend {
 struct MonthActivity {
     categories: BTreeMap<String, CategoryMonthActivity>,
     payment_deltas: BTreeMap<String, i128>,
+    payment_funded: BTreeMap<String, i128>,
+    payment_made: BTreeMap<String, i128>,
     ready_income: i128,
 }
 
@@ -142,6 +154,8 @@ struct PlanDerivation {
     activity: BTreeMap<String, i128>,
     available: BTreeMap<String, i128>,
     starting_available: BTreeMap<String, i128>,
+    payment_funded: BTreeMap<String, i128>,
+    payment_made: BTreeMap<String, i128>,
     ready_to_assign: i128,
 }
 
@@ -484,16 +498,89 @@ impl Database {
                 },
             )
             .collect::<LedgerResult<Vec<_>>>()?;
+        let mut balances = BTreeMap::<String, (i128, i128, i128, i128)>::new();
+        let mut balance_query = self.connection.prepare(
+            "SELECT t.account_id,t.transaction_date,t.amount_huf FROM ledger_entries t
+             JOIN accounts a ON a.id=t.account_id
+             WHERE a.kind='credit' AND t.posting_state='posted' AND t.transaction_date<?1
+               AND (?2 IS NULL OR t.transaction_date<=?2)",
+        )?;
+        for row in balance_query.query_map(
+            params![month.next_start(), as_of.map(CalendarDate::as_str)],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            },
+        )? {
+            let (id, date, amount) = row?;
+            let amount = i128::from(amount);
+            let totals = balances.entry(id).or_default();
+            totals.0 = checked_add(totals.0, amount)?;
+            if date < month.as_str().to_owned() + "-01" {
+                totals.1 = checked_add(totals.1, amount)?;
+            } else if amount < 0 {
+                totals.2 = checked_add(totals.2, amount)?;
+            } else if amount > 0 {
+                totals.3 = checked_add(totals.3, amount)?;
+            }
+        }
         let mut mapping_query = self.connection.prepare("SELECT a.id,a.name,p.category_id FROM accounts a LEFT JOIN credit_payment_categories p ON p.account_id=a.id WHERE a.kind='credit' ORDER BY a.sort_order,a.id")?;
-        let credit_payment_categories = mapping_query
+        let mappings = mapping_query
             .query_map([], |row| {
-                Ok(CreditPaymentCategory {
-                    account_id: row.get(0)?,
-                    account_name: row.get(1)?,
-                    category_id: row.get(2)?,
-                })
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
             })?
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
+        let credit_payment_categories = mappings
+            .into_iter()
+            .map(
+                |(account_id, account_name, category_id)| -> LedgerResult<_> {
+                    let (current, prior, outflows, inflows) =
+                        balances.get(&account_id).copied().unwrap_or_default();
+                    let carry = category_id
+                        .as_ref()
+                        .map_or(0, |id| *derivation.starting_available.get(id).unwrap_or(&0));
+                    let assigned = category_id
+                        .as_ref()
+                        .map_or(0, |id| *derivation.assigned.get(id).unwrap_or(&0));
+                    let available = category_id
+                        .as_ref()
+                        .map_or(0, |id| *derivation.available.get(id).unwrap_or(&0));
+                    let funded = category_id
+                        .as_ref()
+                        .map_or(0, |id| *derivation.payment_funded.get(id).unwrap_or(&0));
+                    let payments = category_id
+                        .as_ref()
+                        .map_or(0, |id| *derivation.payment_made.get(id).unwrap_or(&0));
+                    let other_activity = checked_sub(
+                        checked_add(
+                            checked_sub(available, carry)?,
+                            checked_sub(payments, funded)?,
+                        )?,
+                        assigned,
+                    )?;
+                    Ok(CreditPaymentCategory {
+                        account_id,
+                        account_name,
+                        category_id,
+                        current_balance: narrow(current)?,
+                        prior_balance: narrow(prior)?,
+                        spending_and_outflows: narrow(outflows)?,
+                        payments_and_inflows: narrow(inflows)?,
+                        cash_left_over_from_last_month: narrow(carry)?,
+                        funded_spending: narrow(funded)?,
+                        payments_made: narrow(payments)?,
+                        other_activity: narrow(other_activity)?,
+                    })
+                },
+            )
+            .collect::<LedgerResult<Vec<_>>>()?;
         Ok(PlanSnapshot {
             month: month.0.clone(),
             ready_to_assign: narrow(derivation.ready_to_assign)?,
@@ -654,6 +741,11 @@ fn derive_plan(
                         .entry(payment_category.clone())
                         .or_default();
                     *delta = checked_add(*delta, -amount)?;
+                    let made = month_activity
+                        .payment_made
+                        .entry(payment_category.clone())
+                        .or_default();
+                    *made = checked_add(*made, amount)?;
                 }
             }
             if kind == "cash" && amount > 0 && counterpart_kind.as_deref() == Some("credit") {
@@ -721,7 +813,7 @@ fn derive_plan(
     let mut ready_income = 0i128;
     let mut closed_cash_overspending = 0i128;
 
-    loop {
+    let (target_payment_funded, target_payment_made) = loop {
         let is_target = current == *target;
         if is_target {
             starting_available = available.clone();
@@ -729,6 +821,8 @@ fn derive_plan(
         let MonthActivity {
             categories: month_categories,
             mut payment_deltas,
+            payment_funded: mut month_payment_funded,
+            payment_made: month_payment_made,
             ready_income: month_ready_income,
         } = months.remove(current.as_str()).unwrap_or_default();
         ready_income = checked_add(ready_income, month_ready_income)?;
@@ -778,6 +872,10 @@ fn derive_plan(
                         if let Some(payment_category) = payment_categories.get(account_id) {
                             let delta = payment_deltas.entry(payment_category.clone()).or_default();
                             *delta = checked_add(*delta, -net)?;
+                            let funded = month_payment_funded
+                                .entry(payment_category.clone())
+                                .or_default();
+                            *funded = checked_sub(*funded, net)?;
                         }
                         continue;
                     }
@@ -807,6 +905,10 @@ fn derive_plan(
                     if let Some(payment_category) = payment_categories.get(&purchase.account_id) {
                         let delta = payment_deltas.entry(payment_category.clone()).or_default();
                         *delta = checked_add(*delta, funded)?;
+                        let payment_funded = month_payment_funded
+                            .entry(payment_category.clone())
+                            .or_default();
+                        *payment_funded = checked_add(*payment_funded, funded)?;
                     }
                 }
             }
@@ -828,7 +930,7 @@ fn derive_plan(
                 let current_activity = target_activity.entry(category_id).or_default();
                 *current_activity = checked_add(*current_activity, delta)?;
             }
-            break;
+            break (month_payment_funded, month_payment_made);
         }
         for (category_id, delta) in payment_deltas {
             let current_available = available.entry(category_id).or_default();
@@ -844,12 +946,14 @@ fn derive_plan(
             *value = (*value).max(0);
         }
         current = current.next();
-    }
+    };
     Ok(PlanDerivation {
         assigned: target_assigned,
         activity: target_activity,
         available,
         starting_available,
+        payment_funded: target_payment_funded,
+        payment_made: target_payment_made,
         ready_to_assign: checked_sub(
             checked_sub(ready_income, assignment_total)?,
             closed_cash_overspending,
@@ -1973,6 +2077,18 @@ mod tests {
                 Huf(40),
             )
             .unwrap();
+        let positive_balance_plan = database
+            .plan_month_as_of(&month, &CalendarDate::parse("2026-09-01").unwrap())
+            .unwrap();
+        let first_card = positive_balance_plan
+            .credit_payment_categories
+            .iter()
+            .find(|card| card.account_id == "first")
+            .unwrap();
+        assert_eq!(first_card.current_balance, Huf(40));
+        assert_eq!(first_card.prior_balance, Huf(0));
+        assert_eq!(first_card.spending_and_outflows, Huf(0));
+        assert_eq!(first_card.payments_and_inflows, Huf(40));
         let mut second_purchase = Entry::manual(
             "second_purchase",
             "second",
@@ -2346,12 +2462,25 @@ mod tests {
         database
             .create_category("payment", "g", "Card payment", 1)
             .unwrap();
+        let august = PlanMonth::parse("2026-08").unwrap();
         let september = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &august, Huf(40))
+            .unwrap();
         database
             .set_monthly_assignment("food", &september, Huf(100))
             .unwrap();
         database
             .set_credit_payment_category("card", Some("payment"))
+            .unwrap();
+        let mut august_purchase = Entry::manual(
+            "august-purchase",
+            "card",
+            CalendarDate::parse("2026-08-10").unwrap(),
+        );
+        august_purchase.category_id = Some("food".into());
+        database
+            .create_transaction(&august_purchase, Huf(-40))
             .unwrap();
         for (id, amount) in [("purchase", -100), ("refund", 40)] {
             let mut entry = Entry::manual(id, "card", CalendarDate::parse("2026-09-10").unwrap());
@@ -2360,7 +2489,16 @@ mod tests {
         }
         let september_plan = database.plan_month(&september).unwrap();
         assert_eq!(category_available(&september_plan, "food"), Huf(40));
-        assert_eq!(category_available(&september_plan, "payment"), Huf(60));
+        assert_eq!(category_available(&september_plan, "payment"), Huf(100));
+        let breakdown = &september_plan.credit_payment_categories[0];
+        assert_eq!(breakdown.current_balance, Huf(-100));
+        assert_eq!(breakdown.prior_balance, Huf(-40));
+        assert_eq!(breakdown.spending_and_outflows, Huf(-100));
+        assert_eq!(breakdown.payments_and_inflows, Huf(40));
+        assert_eq!(breakdown.cash_left_over_from_last_month, Huf(40));
+        assert_eq!(breakdown.funded_spending, Huf(60));
+        assert_eq!(breakdown.payments_made, Huf(0));
+        assert_eq!(breakdown.other_activity, Huf(0));
         let transfer = TransferDraft::manual(
             "card-payment",
             Huf(60),
@@ -2377,9 +2515,50 @@ mod tests {
             Direction::Outflow,
         );
         database.create_transfer(&transfer).unwrap();
+        let mut other_payment_activity = Entry::manual(
+            "payment-category-cash-spend",
+            "cash",
+            CalendarDate::parse("2026-09-19").unwrap(),
+        );
+        other_payment_activity.category_id = Some("payment".into());
+        database
+            .create_transaction(&other_payment_activity, Huf(-10))
+            .unwrap();
         let after_payment = database.plan_month(&september).unwrap();
-        assert_eq!(category_available(&after_payment, "payment"), Huf(0));
-        assert_eq!(after_payment.ready_to_assign, Huf(-100));
+        assert_eq!(category_available(&after_payment, "payment"), Huf(30));
+        assert_eq!(after_payment.ready_to_assign, Huf(-140));
+        let breakdown = &after_payment.credit_payment_categories[0];
+        assert_eq!(breakdown.current_balance, Huf(-40));
+        assert_eq!(breakdown.spending_and_outflows, Huf(-100));
+        assert_eq!(breakdown.payments_and_inflows, Huf(100));
+        assert_eq!(breakdown.funded_spending, Huf(60));
+        assert_eq!(breakdown.payments_made, Huf(60));
+        assert_eq!(breakdown.other_activity, Huf(-10));
+        assert_eq!(
+            breakdown.cash_left_over_from_last_month.0 + 0 + breakdown.funded_spending.0
+                - breakdown.payments_made.0
+                + breakdown.other_activity.0,
+            category_available(&after_payment, "payment").0
+        );
+        let mut future_purchase = Entry::manual(
+            "future-purchase",
+            "card",
+            CalendarDate::parse("2026-09-25").unwrap(),
+        );
+        future_purchase.category_id = Some("food".into());
+        database
+            .create_transaction(&future_purchase, Huf(-20))
+            .unwrap();
+        let cutoff = database
+            .plan_month_as_of(&september, &CalendarDate::parse("2026-09-20").unwrap())
+            .unwrap();
+        let cutoff_breakdown = &cutoff.credit_payment_categories[0];
+        assert_eq!(cutoff_breakdown.current_balance, Huf(-40));
+        assert_eq!(cutoff_breakdown.spending_and_outflows, Huf(-100));
+        assert_eq!(cutoff_breakdown.payments_and_inflows, Huf(100));
+        assert_eq!(cutoff_breakdown.payments_made, Huf(60));
+        assert_eq!(cutoff_breakdown.other_activity, Huf(-10));
+        assert_eq!(category_available(&cutoff, "payment"), Huf(30));
     }
 
     #[test]

@@ -77,6 +77,18 @@ Existing target definitions remain stored but are inactive in the Plan while the
 category is mapped to a card; removing the mapping makes them available again.
 This changes target eligibility, not card balances, funding or payment calculations.
 
+Mapped credit payment categories show expandable Current Balance and Available
+for Payment views in the sidebar. The former separates prior balance from this
+month's spending/outflows and payments/inflows. The latter separates carried
+payment money, Assigned, net Funded Spending and Payments Made, with Other
+Activity shown when needed to explain the exact balance. Both use the Plan's
+posted-entry date cutoff. The sidebar and category Available amount are red when
+payment availability is negative, yellow when nonnegative payment availability
+is below the outstanding card debt, and green when that debt is fully covered.
+Total Underfunded includes both any negative payment availability and the
+remaining card debt. These are payment warnings, independent of category targets;
+Auto-Assign and debt payoff targets are omitted from this owner workflow.
+
 YNAB target definitions may not survive export.
 
 The user is willing to recreate targets once after migration, but the app must support comparable functionality afterward.

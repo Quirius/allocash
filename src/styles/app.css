@@ -127,6 +127,27 @@ details { border-top: 1px solid #323d49; padding-top: 16px; margin-top: 20px; fo
 .category-notes textarea { resize: vertical; min-height: 100px; line-height: 1.45; white-space: pre-wrap; }
 .category-notes span { min-height: 14px; color: #91a3ad; font-size: 10px; }
 .category-details.empty { color: #91a3ad; }
+.plan-row .plan-available.funded,.credit-payment-amount.funded { color: #b0efbd; background: #24452d; }
+.plan-row .plan-available.underfunded,.credit-payment-amount.underfunded { color: #ffeb9b; background: #554413; }
+.plan-row .plan-available.overspent,.credit-payment-amount.overspent { color: #ffc2c2; background: #612b32; }
+.credit-payment-details { display: grid; gap: 12px; }
+.credit-payment-status,.credit-payment-shortfall,.credit-payment-breakdown { margin: 0; padding: 14px; border-radius: 7px; background: #202c35; }
+.credit-payment-status { border-top: 3px solid #6eac80; }
+.credit-payment-status h4 { margin: 0 0 14px; font-size: 12px; }
+.credit-payment-status > strong { display: block; text-align: center; color: #b0efbd; }
+.credit-payment-status p { margin: 10px 0 0; line-height: 1.6; text-align: center; }
+.credit-payment-status.underfunded { border-color: #e6c24b; }.credit-payment-status.underfunded > strong { color: #ffeb9b; }
+.credit-payment-status.overspent { border-color: #e36576; }.credit-payment-status.overspent > strong { color: #ffc2c2; }
+.credit-payment-shortfall > div,.credit-payment-breakdown dl > div:not(.credit-payment-subheading) { display: flex; justify-content: space-between; gap: 12px; }
+.credit-payment-details dd { margin: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.credit-payment-shortfall { font-weight: 600; }
+.credit-payment-breakdown summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; }
+.credit-payment-breakdown summary > span::after { content: " ▸"; color: #a1b4be; }.credit-payment-breakdown[open] summary > span::after { content: " ▾"; }
+.credit-payment-breakdown summary:focus-visible { outline: 2px solid #71ae89; outline-offset: 4px; }
+.credit-payment-breakdown dl { display: grid; gap: 8px; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid #3b4b55; }
+.credit-payment-subheading { margin-top: 6px; font-weight: 600; }
+.credit-payment-amount { padding: 3px 7px; border-radius: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.credit-payment-warning { margin: 12px 0 0; padding: 10px; border-radius: 5px; color: #ffc2c2; background: #49232c; line-height: 1.5; }
 .plan-content.loading { grid-template-columns: minmax(0, 1fr) 320px; }
 .plan-content.loading .category-details { grid-column: 2; }
 @media (max-width: 1280px) { .plan-content,.plan-content.loading { grid-template-columns: minmax(0, 1fr); }.plan-content.loading .category-details { grid-column: 1; }.category-details { position: static; } }

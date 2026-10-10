@@ -1,5 +1,27 @@
 # Implementation and validation status
 
+On 2026-10-10, the owner requested YNAB-style Current Balance and Available for
+Payment views for mapped credit categories. The sidebar now has expandable
+balance and funding breakdowns, a payment funding message and Total Underfunded.
+Both the sidebar amount and category Available use red for negative payment
+availability, yellow for nonnegative availability below outstanding card debt,
+and green when that debt is covered. The shortfall includes any negative
+payment-category deficit. Warnings have text and accessible row descriptions.
+The read-only backend fields use the Plan posted/as-of cutoff and checked wide
+integer accumulation. Funded spending and refund reversals are observed from
+existing derivation, with Other Activity explicitly reconciling unusual activity
+to Available. Current Balance reconciles prior balance and monthly inflows and
+outflows. Stored assignments, targets, ledger data, funding rules and schema are
+unchanged; Auto-Assign and credit category targets remain omitted.
+All 169 Rust tests and 151 frontend tests passed, including extended checks for
+carry, positive card balances, refunds, payments, other activity and cutoff
+exclusion, plus warning thresholds and integer precision. Formatting, Cargo
+check, frontend/native builds and independent review passed. The per-user NSIS
+installer exited successfully, budget database bytes were unchanged, and the
+installed executable matches the release build. Allocash reopened a responsive
+native window. Owner credit sidebar interaction and warning confirmation remain
+open.
+
 On 2026-10-10, the owner requested excluding targets from budgeted credit-card
 payment categories. The selected-category sidebar now hides target progress,
 the target editor, no-target prompts and snooze controls for mapped credit

@@ -205,6 +205,14 @@ targets for mapped credit payment categories; writes reject new target definitio
 and snoozing for them. Clearing a legacy target or snooze remains allowed, and
 mapping changes preserve stored definitions. Financial derivation is unchanged.
 
+Credit payment mappings in a Plan snapshot also carry the selected month's card
+balance split and payment category funding breakdown as decimal HUF strings.
+Card entries use the same posted/as-of cutoff as the Plan; funded spending and
+payments are collected alongside the existing derivation. Any other activity is
+reported explicitly so the parts reconcile to authoritative category Available.
+The frontend uses integer comparisons to display payment funding warnings;
+these read-only fields require no migration and do not alter financial writes.
+
 The default Cargo feature is `desktop`. Disabling it permits the actual SQLite
 and ledger tests to run without Tauri, using the same database implementation.
 Rust dependencies are locked in `src-tauri/Cargo.lock`.
