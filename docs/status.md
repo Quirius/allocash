@@ -1,5 +1,11 @@
 # Implementation and validation status
 
+On 2026-10-10, the owner confirmed that installed account balances and the current
+month's Ready to Assign match their latest YNAB data. This closes the owner-facing
+balance comparison requested after the Plan refresh checks. It does not imply
+completion of target/recurrence recreation, additional report comparisons or
+the full native backup/reopen migration rehearsal.
+
 On 2026-10-10, the owner confirmed the latest Plan interaction checks passed:
 changing Assigned keeps the screen steady, editing a target or note preserves
 the selected category and open editor, and Ctrl+Z reverts values without flashing.
