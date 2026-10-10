@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Confirm credit payment Current Balance and Available for Payment breakdowns and yellow/red warnings; check upcoming repeating Save/Cancel/undo and continue target/recurrence recreation and native backup/reopen checks."
-updated_at: "2026-10-10T17:57:28Z"
+next_action: "Confirm amount selection, replacement, operator calculations, Tab/Enter commits and Escape reset with undo; check credit payment breakdowns and warnings; check upcoming repeating Save/Cancel/undo and continue target/recurrence recreation and native backup/reopen checks."
+updated_at: "2026-10-10T18:12:48Z"
 source:
   branch: "main"
-  commit: "14cf45f4417f0f6af4899dd98f48f773ab6073f1"
-  verified_at: "2026-10-10T17:57:28Z"
+  commit: "663891ffc8ba22552b0612700175166fa658238f"
+  verified_at: "2026-10-10T18:12:48Z"
 summary:
   completed:
+    - "All eight monetary controls now select their complete value on focus or click. Plain numbers replace the selected amount, operator keys seed a calculation from it, Tab/Enter commit and Escape restores the pre-edit value. The exact bigint parser supports precedence and parentheses and rejects fractional final HUF, malformed expressions, zero division and signed-range overflow. Plan blur saves and form-specific validation/save workflows remain intact. All 170 frontend tests, frontend/native builds and independent review passed, including actual React keyboard and blur events and outflow sign/limit regressions. Installation preserved budget bytes, the installed executable matches the release build and Allocash reopened a responsive window; owner interaction and undo confirmation remain open."
     - "Credit payment categories now show expandable Current Balance and Available for Payment breakdowns with carried funds, assignments, funded spending, payments and other activity. Yellow indicates nonnegative payment availability below card debt, red negative payment availability, and green sufficient funding. Total Underfunded includes debt and any payment deficit. All 169 Rust and 151 frontend tests, formatting, Cargo check, independent review and frontend/native builds passed. The installed upgrade preserved budget bytes, matches the release executable and reopened a responsive window; owner sidebar interaction and warning confirmation remain open."
     - "Mapped credit card payment categories no longer expose targets, target progress or snooze controls. Their sidebar retains Available for Payment, balances and notes. Backend writes reject target creation and snoozing while preserving existing definitions for unmapping and allowing cleanup. Financial derivation and schema are unchanged. All 169 Rust and 147 frontend tests, formatting, Cargo check, review and frontend/native builds passed. Installation subsequently passed after the owner closed the window and its remaining background process was stopped. Budget bytes were unchanged, the installed executable matches the build and a responsive native window reopened; owner credit sidebar confirmation remains open."
     - "The owner confirmed a category target test worked, then found imported upcoming entries lacked Repeat. Eligible future Uncleared ordinary entries and one-off schedules now expose Make repeating and date-picker Repeat. Ordinary entries convert in place on Save, including transfer pairs from either leg, retaining the first date and identity without a duplicate. Existing scheduled edits and past-entry repeating drafts remain supported. All 168 Rust and 147 frontend tests, formatting, review and frontend/native builds passed. The installed upgrade preserved budget bytes and reopened a responsive window; owner upcoming repeat interaction confirmation remains open."
@@ -58,6 +59,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
+    - "Shared amount selection and calculator input are implemented; owner replacement, keyboard commit/reset and undo checks remain open."
     - "Credit payment Current Balance and Available for Payment views and funding warnings are implemented; owner balance breakdown, disclosure and warning checks remain open."
     - "Credit payment target exclusion is tested and installed; owner credit and ordinary category sidebar checks remain open."
     - "Upcoming in-place recurrence is tested and installed; owner first-occurrence, Save/Cancel and undo checks remain open, followed by actual recurring-rule recreation."
@@ -73,6 +75,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "663891ffc8ba22552b0612700175166fa658238f"
+    note: "Records all-field amount selection, replacement and calculator input, keyboard commit/reset behavior, exact arithmetic, DOM verification and installation evidence; owner interaction confirmation remains open."
   - path: "docs/status.md"
     ref: "14cf45f4417f0f6af4899dd98f48f773ab6073f1"
     note: "Records credit payment balance and funding breakdowns, yellow/red payment warnings, exact read-only derivation, validation and installation evidence; owner interaction confirmation remains open."
