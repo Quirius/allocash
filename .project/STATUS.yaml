@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Confirm category rename Save/Cancel/undo and names in Register/Reports; confirm amount editing keyboard behavior; check credit payment breakdowns and warnings; check upcoming repeating Save/Cancel/undo and continue target/recurrence recreation and native backup/reopen checks."
-updated_at: "2026-10-10T18:31:11Z"
+next_action: "Confirm account editor Save/Cancel/undo, close/reopen and empty-account deletion safeguards; confirm category rename and amount editing keyboard behavior; check credit payment breakdowns and warnings; check upcoming repeating Save/Cancel/undo and continue target/recurrence recreation and native backup/reopen checks."
+updated_at: "2026-10-10T18:47:50Z"
 source:
   branch: "main"
-  commit: "f6471774c7fe753d82629b586dcc6ec6f89ec3fe"
-  verified_at: "2026-10-10T18:31:11Z"
+  commit: "67dc38f1c78ec8a602bb6f5dd6eb2086de47c9cd"
+  verified_at: "2026-10-10T18:47:50Z"
 summary:
   completed:
+    - "Accounts now open an Edit Account dialog by right-click, with nickname, persistent notes, working balance adjustment, close/reopen and session undo. Balance adjustments are atomic, use checked integer HUF and reject stale balances; active repeat rules prevent closure. Closed-account deletion requires manual removal of all transactions and transfers first, then confirmation and a safety backup. It removes only empty metadata and orphan repeat definitions and preserves category Plan state and raw imports. All 183 Rust and 186 frontend tests, formatting, independent review and frontend/native builds passed. The installed upgrade preserved budget bytes, matches the release executable and reopened a responsive window; owner account interaction checks remain open."
     - "Categories can now be renamed from the selected Plan sidebar with Save/Enter and Cancel/Escape. Trimmed Unicode names retain stable category IDs and all linked transactions, assignments, targets, notes and credit mappings. Renaming is atomic and undoable and refreshes category options in Register and Reports. Exact SQLite classifier guards prevent changing the special Ready to Assign role. All 172 Rust and 176 frontend tests, formatting, Cargo check, independent review and frontend/native builds passed. The installed upgrade preserved budget bytes, matches the release executable and reopened a responsive window; owner rename, cancel, undo and cross-view name checks remain open."
     - "All eight monetary controls now select their complete value on focus or click. Plain numbers replace the selected amount, operator keys seed a calculation from it, Tab/Enter commit and Escape restores the pre-edit value. The exact bigint parser supports precedence and parentheses and rejects fractional final HUF, malformed expressions, zero division and signed-range overflow. Plan blur saves and form-specific validation/save workflows remain intact. All 170 frontend tests, frontend/native builds and independent review passed, including actual React keyboard and blur events and outflow sign/limit regressions. Installation preserved budget bytes, the installed executable matches the release build and Allocash reopened a responsive window; owner interaction and undo confirmation remain open."
     - "Credit payment categories now show expandable Current Balance and Available for Payment breakdowns with carried funds, assignments, funded spending, payments and other activity. Yellow indicates nonnegative payment availability below card debt, red negative payment availability, and green sufficient funding. Total Underfunded includes debt and any payment deficit. All 169 Rust and 151 frontend tests, formatting, Cargo check, independent review and frontend/native builds passed. The installed upgrade preserved budget bytes, matches the release executable and reopened a responsive window; owner sidebar interaction and warning confirmation remain open."
@@ -60,6 +61,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
+    - "Account editing is implemented; owner Save/Cancel/undo, balance adjustment, close/reopen and empty-account deletion checks remain open."
     - "Category rename is implemented; owner Save/Cancel/undo and cross-view name checks remain open."
     - "Shared amount selection and calculator input are implemented; owner replacement, keyboard commit/reset and undo checks remain open."
     - "Credit payment Current Balance and Available for Payment views and funding warnings are implemented; owner balance breakdown, disclosure and warning checks remain open."
@@ -77,6 +79,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "67dc38f1c78ec8a602bb6f5dd6eb2086de47c9cd"
+    note: "Records account editor, exact balance adjustments, manual-empty deletion safeguard, repeat closure guard, undo, tests and installation; owner interaction confirmation remains open."
   - path: "docs/status.md"
     ref: "f6471774c7fe753d82629b586dcc6ec6f89ec3fe"
     note: "Records category rename, stable identity and financial preservation, exact classification guards, shared option refresh, undo and installation evidence; owner interaction confirmation remains open."
