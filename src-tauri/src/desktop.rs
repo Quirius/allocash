@@ -310,6 +310,9 @@ fn update_register_entry(
     edit: RegisterEntryEdit,
 ) -> Result<(), String> {
     with_database(&app, &state, |database| {
+        if edit.confirmed || edit.convert_transfer_to_transaction {
+            create_safety_backup(database)?;
+        }
         database.undoable("Edit transaction", |database| {
             database.update_register_entry(&edit).map_err(ledger_error)
         })
@@ -324,6 +327,9 @@ fn make_upcoming_register_entry_repeating(
     as_of_date: CalendarDate,
 ) -> Result<(), String> {
     with_database(&app, &state, |database| {
+        if edit.confirmed || edit.convert_transfer_to_transaction {
+            create_safety_backup(database)?;
+        }
         database.undoable("Make repeating", |database| {
             database
                 .make_upcoming_register_entry_repeating(&edit, &as_of_date)

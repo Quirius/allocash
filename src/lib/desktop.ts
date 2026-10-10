@@ -191,6 +191,8 @@ export interface ScheduledOccurrence { scheduleId: string; transactionId: string
 
 export interface RegisterEntryEdit {
   id: string;
+  transferAccountId?: string | null;
+  convertTransferToTransaction?: boolean;
   accountId: string | null;
   date: string;
   payeeName: string | null;

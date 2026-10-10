@@ -58,8 +58,8 @@ deletes the pair in one SQL transaction. Any failure rolls back the entire write
 New ordinary manual entries default to Uncleared. For a manually created
 transfer, the side entered by the user defaults to Uncleared and the generated
 counterpart defaults to Cleared, in either transfer direction. Scheduled
-occurrences are Uncleared while pending; posting a due or explicitly posted
-occurrence marks it Cleared, including both legs of a scheduled transfer.
+occurrences are Uncleared while pending; automatic due realization and explicit
+posting mark realized entries Cleared, including both legs of a scheduled transfer.
 
 The register may change a posted entry dated through the local as-of date between
 Uncleared and Cleared. Reconciled and scheduled entries cannot use that command,
@@ -195,13 +195,20 @@ and adjacent months continue to use their normal target guidance.
 
 Memo-only edits are allowed without confirmation. Account, date, payee, category,
 flag, amount and clearing-state changes away from Reconciled, and deletions require
-explicit confirmation for reconciled entries. Shared transfer amount changes
-check both legs, so the unreconciled side cannot bypass a reconciled counterpart's
-warning. Budget-boundary category changes also check the budget leg when editing
-from its counterpart. Other per-leg metadata changes check the selected leg. Ordinary transactions
-can move to another open account and change sign; linked transfer account and
-direction remain fixed in register editing. Confirmation allows the
-change; history is not hard-locked. Basic reconciliation reviews an account's
+explicit confirmation for reconciled entries. Shared transfer amount, date,
+memo, flag, category, destination and conversion changes check both legs, so the
+unreconciled side cannot bypass a reconciled counterpart's warning. Other
+per-leg status changes check the selected leg. Transfer destination edits retain
+both transaction IDs and update the peer account atomically; category ownership
+is recomputed from the new budget scope. Editing a transfer payee into an
+ordinary payee converts it to a transaction while retaining the selected ID and
+removing its peer; editing an ordinary payee into an exact `Transfer:` or
+`Payment:` account creates a Cleared mirror for a posted entry and retains the
+ordinary ID. Pending mirrors remain Uncleared until realization. These
+conversions and destination edits are undoable; confirmed writes and transfer
+mirror removal create a pre-write safety backup. Ordinary transactions can move
+to another open account and change sign. Confirmation allows the change; history
+is not hard-locked. Basic reconciliation reviews an account's
 cleared balance through an inclusive date, lets the owner match each eligible
 posted uncleared/cleared account leg, and then promotes only cleared rows to
 Reconciled. Future, scheduled and already reconciled rows remain unchanged.
@@ -238,10 +245,14 @@ skipped occurrence and advances instead. Recurrence retains the start date's
 original day, clamping short months to their last day. Pending rows are excluded
 from balances and the Plan. Register editing updates the pending occurrence and
 its recurrence template, preserving posted history and pending identities. A
-scheduled transfer keeps its direction/accounts, shares pending dates, amount,
-memo and flag changes, and places a budget-boundary category on its on-budget leg.
-Editing from either leg shows the shared pending category. Scheduled rows remain
-Uncleared until posted. Register deletion cancels the template and removes its
+scheduled transfer supports destination edits and conversion in either direction;
+the selected ID is preserved, conversion to ordinary reanchors the pending
+occurrence to that ID, and
+the template's account, counterpart, signed amount, category and payee follow the
+converted entry. Transfer dates, amount, memo and flag remain shared, and a
+budget-boundary category stays on its on-budget leg. Editing from either leg
+shows the shared pending category. Scheduled rows remain Uncleared until posted.
+Register deletion cancels the template and removes its
 pending occurrence; it uses the existing pre-deletion safety backup.
 An optional end date prevents generation after its inclusive date. Canceling a
 schedule removes its pending occurrence, including both linked transfer entries,

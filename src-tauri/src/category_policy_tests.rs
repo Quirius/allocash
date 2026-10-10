@@ -315,7 +315,9 @@ fn boundary_transfer_category_edit_from_peer_routes_to_budget_and_reconciled_pee
         .id;
     let mut edit = RegisterEntryEdit {
         id: peer.clone(),
+        convert_transfer_to_transaction: false,
         account_id: None,
+        transfer_account_id: None,
         date: date("2026-09-10"),
         payee_name: None,
         category_id: Some("groceries".into()),
@@ -459,7 +461,9 @@ fn sign_changes_apply_policy_and_legacy_offbudget_memo_edits_preserve_category()
     db.create_transaction(&entry, Huf(-50)).unwrap();
     let edit = RegisterEntryEdit {
         id: "legacy".into(),
+        convert_transfer_to_transaction: false,
         account_id: None,
+        transfer_account_id: None,
         date: date("2026-09-10"),
         payee_name: None,
         category_id: None,
@@ -489,7 +493,9 @@ fn sign_changes_apply_policy_and_legacy_offbudget_memo_edits_preserve_category()
     db.create_transaction(&offbudget, Huf(-5)).unwrap();
     let edit = RegisterEntryEdit {
         id: "imported-offbudget".into(),
+        convert_transfer_to_transaction: false,
         account_id: None,
+        transfer_account_id: None,
         date: date("2026-09-10"),
         payee_name: None,
         category_id: Some("groceries".into()),
@@ -527,7 +533,9 @@ fn scheduled_account_scope_changes_clear_offbudget_category_and_validate_budget_
     let first = db.scheduled_occurrences().unwrap().remove(0);
     db.update_register_entry(&RegisterEntryEdit {
         id: first.transaction_id.clone(),
+        convert_transfer_to_transaction: false,
         account_id: Some("asset".into()),
+        transfer_account_id: None,
         date: date("2026-09-10"),
         payee_name: None,
         category_id: Some("groceries".into()),
@@ -564,7 +572,9 @@ fn scheduled_account_scope_changes_clear_offbudget_category_and_validate_budget_
     assert!(db
         .update_register_entry(&RegisterEntryEdit {
             id: second.transaction_id,
+            convert_transfer_to_transaction: false,
             account_id: Some("cash".into()),
+            transfer_account_id: None,
             date: date("2026-09-10"),
             payee_name: None,
             category_id: None,
@@ -598,7 +608,9 @@ fn schedule_peer_category_routing_rejects_minimum_integer_without_changing_templ
     let occurrence = db.scheduled_occurrences().unwrap().remove(0);
     let edit = RegisterEntryEdit {
         id: occurrence.transaction_id.clone(),
+        convert_transfer_to_transaction: false,
         account_id: None,
+        transfer_account_id: None,
         date: occurrence.date.clone(),
         payee_name: None,
         category_id: Some("fuel".into()),

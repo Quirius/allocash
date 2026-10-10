@@ -246,6 +246,16 @@ Requirements:
 
 - paired sides remain linked
 - editing an amount updates both sides safely
+- destination edits retain both entry IDs and update the peer account atomically
+- changing an ordinary entry to a transfer retains its ID and creates a Cleared
+  counterpart for posted entries (Uncleared while scheduled); changing a transfer
+  to an ordinary transaction retains the selected
+  ID and removes the paired entry
+- conversion to/from a transfer and destination changes require reconciled-history
+  confirmation when either leg is reconciled; confirmed writes and mirror removal
+  create a safety backup before the undoable write
+- transfer category ownership is recalculated when the destination changes, and
+  remains on the budget leg only
 - deleting one side handles the other consistently
 - account balances remain correct
 - transfer flows must not be reported as ordinary spending/income where YNAB-like behavior requires exclusion

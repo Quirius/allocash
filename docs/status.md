@@ -1,5 +1,25 @@
 # Implementation and validation status
 
+On 2026-10-10, register editing gained transfer destination retargeting and
+conversion between ordinary transactions and linked transfers. Retargeting
+preserves both entry IDs and recalculates the category's budget-side ownership.
+Conversion retains the selected entry ID; ordinary-to-transfer creates a Cleared
+mirror for posted entries (Uncleared while pending), while transfer-to-ordinary
+removes the peer and keeps the selected
+transaction's provenance. Pending schedule conversion reanchors the occurrence
+and updates its template, and future posted entries can combine conversion with
+Make repeating. Changes involving either reconciled transfer leg require
+confirmation. Confirmed writes and transfer-to-ordinary conversion create a
+pre-write safety backup and remain undoable. The full 203-test Rust library suite
+passed, including both conversion directions, pending mirror-side reanchoring,
+both Make repeating combinations, posted retargeting from either leg, pending
+mirror-side retargeting,
+and invalid/reconciled retarget guards. All 249 frontend tests, formatting, Cargo
+check, independent review, synthetic browser checks and production/native builds
+passed. Installation preserved budget bytes, the installed executable matches
+the release build, and Allocash reopened a responsive window. Owner workflow
+rehearsal remains open.
+
 On 2026-10-10, the sidebar gained an Add Account popup. Its type labels map to
 the existing cash, credit, loan and tracking kinds; subtypes add no schema.
 Creating an account, its nonzero cleared starting-balance entry, Ready to Assign
