@@ -107,6 +107,27 @@
 .plan-view .category-totals > div { padding: 7px 0; border-bottom: 1px solid #2a2a40; }
 .plan-view .target-progress, .plan-view .target-editor, .plan-view .category-notes { margin-top: 14px; padding-top: 12px; border-top: 1px solid #303047; }
 .plan-view .category-details button:focus-visible, .plan-view .category-details input:focus, .plan-view .category-details textarea:focus, .plan-view .category-details select:focus { outline: 2px solid var(--plan-purple); outline-offset: 1px; }
+.plan-view .plan-toolbar .eyebrow { display: none; }
+.plan-view .plan-month-nav { gap: 12px; }
+.plan-view .plan-month-nav h2 { margin: 0; font-size: 21px; }
+.plan-view .plan-month-arrow, .plan-month-year button { display: grid; place-items: center; width: 34px !important; height: 34px !important; padding: 0 !important; border: 0 !important; border-radius: 50% !important; color: #737cff !important; background: transparent !important; }
+.plan-view .plan-month-arrow svg, .plan-month-year button svg { width: 29px; height: 29px; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.plan-view .plan-month-arrow:hover, .plan-month-year button:hover { background: #737cff1c !important; }
+.plan-view .plan-month-arrow:disabled, .plan-month-year button:disabled { opacity: .35; cursor: default; }
+.plan-view .plan-month-trigger { display: inline-flex; align-items: center; width: auto !important; height: auto !important; min-width: 0; white-space: nowrap; gap: 8px; padding: 3px 0 !important; border: 0 !important; border-radius: 0 !important; color: #f4f3fb !important; background: transparent !important; font-size: 21px !important; font-weight: 700; cursor: pointer; }
+.plan-view .plan-month-trigger svg { width: 11px; height: 8px; color: #737cff; fill: currentColor; }
+.plan-view .plan-month-trigger:focus-visible, .plan-view .plan-month-arrow:focus-visible, .plan-month-popup button:focus-visible { outline: 2px solid #737cff; outline-offset: 2px; }
+.plan-month-popup { box-sizing: border-box; width: 240px; border: 1px solid #34344d; border-radius: 9px; color: #f4f3fb; background: #202037; box-shadow: 0 12px 32px #0008; }
+.plan-month-popup-scroll { box-sizing: border-box; padding: 12px; max-height: calc(100dvh - 18px); overflow-y: auto; border-radius: inherit; }
+.plan-month-popup-notch { position: absolute; top: -6px; left: 24px; width: 10px; height: 10px; transform: rotate(45deg); border-left: 1px solid #34344d; border-top: 1px solid #34344d; background: #202037; }
+.plan-month-year { display: flex; align-items: center; justify-content: space-between; padding: 0 2px 10px; border-bottom: 1px solid #3a3a50; }
+.plan-month-year strong { font-size: 18px; }
+.plan-month-year button { width: 30px; height: 30px; }
+.plan-month-year button svg { width: 26px; height: 26px; }
+.plan-month-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding-top: 11px; }
+.plan-month-grid button { min-height: 38px; border: 0; border-radius: 7px; color: #e5e4ef; background: transparent; cursor: pointer; font-size: 14px; font-weight: 600; }
+.plan-month-grid button:hover { background: #ffffff12; }
+.plan-month-grid button.active { color: #fff; background: #737cff; font-weight: 700; }
 @media (max-width: 1050px) { .plan-view .plan-content { grid-template-columns: minmax(0, 1fr) 320px; } }
 @media (max-width: 1450px) {
   .plan-view .plan-content { grid-template-columns: minmax(0, 1fr) 320px; }

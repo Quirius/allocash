@@ -9,6 +9,7 @@ import { recurrenceLabel } from "../lib/recurrence";
 import { createRequestSequence } from "../lib/request-sequence";
 import { editCategoryNote, finishCategoryNoteSave, markCategoryNoteSaving, reconcileCategoryNoteDrafts, type CategoryNoteDrafts } from "./category-notes";
 import { canSubmitPlanMove, createPlanMovePayload, defaultPlanMoveAmount, isPlanMoveRequestCurrent, ownedPlanMoveVersion, planMoveDestinations, READY_TO_ASSIGN_DESTINATION, shouldDismissPlanMove } from "./plan-move";
+import { PlanMonthArrow, PlanMonthPicker } from "./PlanMonthPicker";
 
 export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending = false, onCategoryRenamed }: { refreshRevision?: number; readEpoch?: number; mutationPending?: boolean; onCategoryRenamed?: () => Promise<void> }) {
   const [month, setMonth] = useState(localCalendarMonth());
@@ -245,7 +246,6 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
   const [planFilter, setPlanFilter] = useState("All");
   const [categorySearch, setCategorySearch] = useState("");
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
-  const monthTitle = new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 1));
   const visibleCategories = (plan?.categories ?? []).filter((category) => {
     const target = category.target;
     const query = categorySearch.trim().toLocaleLowerCase();
@@ -264,7 +264,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
   }), { assigned: 0n, activity: 0n, available: 0n, carryover: 0n }) : null;
   const detailsPanel = <CategoryDetailsPanel key={`${selectedCategory?.categoryId ?? "none"}:${month}`} category={selectedCategory} summary={monthlySummary} onRename={rename} renameBusy={!planCurrent || moveBusy || mutationPending} creditPayment={plan?.creditPaymentCategories.find((mapping) => mapping.categoryId === selectedCategory?.categoryId) ?? null} month={plan?.month ?? month} notes={selectedCategory ? (selectedNote?.value ?? selectedCategory.notes ?? "") : ""} noteStatus={selectedNote?.status ?? ""} noteBusy={mutationPending} onNotesChange={editNotes} onSaveNotes={saveNotes} targetBusy={!planCurrent || moveBusy} target={{ behavior: targetBehavior, amount: targetAmount, interval: targetInterval, dueKind, dueDay, firstDueMonth }} onTargetChange={(field, value) => { targetDirty.current = true; if (field === "behavior") setTargetBehavior(value as "refill" | "set_aside"); else if (field === "amount") setTargetAmount(value); else if (field === "interval") selectTargetInterval(Number(value) as RecurrenceMonths); else if (field === "dueKind") setDueKind(value as "day" | "last_day"); else if (field === "dueDay") setDueDay(value); else setFirstDueMonth(value); }} onSaveTarget={saveTarget} onClearTarget={clearTarget} onSnooze={(id, value) => toggleTargetSnooze(id, value)} />;
   return <section className="plan-view" aria-labelledby="plan-title">
-    <div className="plan-toolbar"><div className="plan-month-nav"><button aria-label="Previous month" onClick={() => setMonth(shiftCalendarMonth(month, -1))}>‹</button><div><p className="eyebrow">MONTHLY PLAN</p><h2 id="plan-title" tabIndex={-1}>{monthTitle}</h2></div><button aria-label="Next month" onClick={() => setMonth(shiftCalendarMonth(month, 1))}>›</button></div><div className={`plan-rta${BigInt(plan?.readyToAssign ?? "0") < 0n ? " negative" : ""}`}><span>Ready to Assign</span><strong>{plan ? formatHuf(BigInt(plan.readyToAssign)) : "—"}</strong></div><button className="plan-today" onClick={() => setMonth(localCalendarMonth())}>Today</button></div>
+    <div className="plan-toolbar"><div className="plan-month-nav"><PlanMonthArrow direction="previous" disabled={month <= "0001-01"} onClick={() => setMonth(shiftCalendarMonth(month, -1))} /><h2 id="plan-title" tabIndex={-1}><PlanMonthPicker month={month} onMonthChange={setMonth} /></h2><PlanMonthArrow direction="next" disabled={month >= "9999-12"} onClick={() => setMonth(shiftCalendarMonth(month, 1))} /></div><div className={`plan-rta${BigInt(plan?.readyToAssign ?? "0") < 0n ? " negative" : ""}`}><span>Ready to Assign</span><strong>{plan ? formatHuf(BigInt(plan.readyToAssign)) : "—"}</strong></div><button className="plan-today" onClick={() => setMonth(localCalendarMonth())}>Today</button></div>
     {error && <p className="editor-error" role="alert">{error}</p>}
     {!plan || plan.month !== month ? <><div className="register-message" role="status">Loading Plan…</div><div className="plan-content loading">{detailsPanel}</div></> : <>
       <span className="sr-only" role="status">{planCurrent ? "" : "Updating Plan…"}</span>

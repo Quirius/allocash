@@ -18,6 +18,9 @@ financial values; unsupported reference controls require a later scoped decision
 Credit payment mapping controls belong in collapsed advanced Budget & backups
 settings, outside the normal Plan. Each newly created credit account receives its
 own payment category automatically; existing account-category links are retained.
+The Plan month heading opens a year/month popup with twelve month choices and
+separate year navigation. Browsing years changes only the popup; selecting a
+month changes the Plan. Escape, outside clicks and selection dismiss the popup.
 The current implementation is a first visual pass, not full pixel-identical UI
 coverage. Detailed menus and remaining screens need further owner references.
 
