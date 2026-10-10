@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Check status-icon toggles, reconciled locks, right-click actions and automatic scheduled realization, and collect remaining dropdown and secondary-screen references; confirm account editing and amount keyboard behavior; check credit payment breakdowns and warnings; check upcoming repeating Save/Cancel/undo and continue target/recurrence recreation and native backup/reopen checks."
-updated_at: "2026-10-10T19:41:03Z"
+next_action: "Check sidebar reopen, Add Account Save/Cancel and undo, alongside status-icon toggles and automatic scheduled realization, and collect remaining dropdown and secondary-screen references; confirm account editing and amount keyboard behavior; check credit payment breakdowns and warnings; check upcoming repeating Save/Cancel/undo and continue target/recurrence recreation and native backup/reopen checks."
+updated_at: "2026-10-10T19:56:34Z"
 source:
   branch: "main"
-  commit: "2aaa2183a0cef08a84dec2356a68d2d250436c1c"
-  verified_at: "2026-10-10T19:41:03Z"
+  commit: "c1d64d66771223ced6b129004e4dd4e9c0b7938f"
+  verified_at: "2026-10-10T19:56:34Z"
 summary:
   completed:
+    - "The sidebar now retains visible collapse/reopen controls and Add Account opens a centered nickname, type-picker and signed starting-balance dialog. Existing account kinds handle all supplied subtype labels. Account creation, cleared opening entry and visible credit payment-category mapping are atomic and one undoable action; zero balances create no transaction and failed refreshes retry without duplicate creation. All 239 frontend tests, the full 194-test Rust suite plus a hidden-category mapping regression, formatting, Cargo check, independent review, synthetic browser checks at 700 and 500 pixels, and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Owner interaction confirmation remains open."
     - "Clearing icons now use sharp SVG circle/C shapes matching the supplied grey outlined and green filled references. Status changes patch the saved row in place and silently refresh balances without a register reload; scroll and editor inputs stay mounted. Failed writes leave the icon unchanged, and failed balance reads retry without repeating the saved status write. All 222 frontend tests, independent review, synthetic browser node-identity checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Owner visual confirmation remains open; Rust and schema are unchanged."
     - "Transaction icons now toggle posted non-reconciled entries between Cleared and Uncleared. New manual entries default to Uncleared and generated transfer mirrors to Cleared. Due schedules realize automatically as Cleared in an atomic backed-up undoable batch. Right-click actions and double-click replace row Edit buttons; upcoming clearing controls are hidden, unsupported actions remain disabled, and refresh retries never repeat saved writes. All 221 frontend tests, the 188-test Rust suite plus two date regressions, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Owner interaction acceptance remains open."
     - "The first YNAB-style visual pass adds compact collapsible navigation, dense Plan and register tables, category search and filters, independent group totals/collapse, funding bars and the right details panel. Existing past and future transactions edit in their original row; new transactions open at the top. Save and add another resets after successful save and refresh. Date popups stay within the viewport, pending duplicate submissions are blocked, and refresh retries never repeat a successful write. All 204 frontend tests, independent review, synthetic browser visual checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Rust accounting and schema are unchanged. Full pixel matching, detailed dropdown and secondary-screen references, and owner visual acceptance remain open."
@@ -64,6 +65,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
+    - "Sidebar reopen and Add Account are implemented and installed; owner interaction confirmation and further YNAB matching remain open."
     - "Clearing icons and in-place status changes are refined and installed; owner visual confirmation and further YNAB matching remain open."
     - "Transaction statuses, context actions and automatic due-schedule realization are implemented and installed; owner interaction acceptance and further YNAB visual matching remain open."
     - "The first YNAB-style layout pass is implemented; owner visual and inline-editing acceptance and detailed dropdown and secondary-screen matching remain open."
@@ -85,6 +87,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "c1d64d66771223ced6b129004e4dd4e9c0b7938f"
+    note: "Records sidebar reopen visibility and centered Add Account workflow, atomic undoable starting balance and visible credit category mapping, 239 frontend tests, 194 Rust tests plus hidden mapping regression, review and installation; owner interaction confirmation remains open."
   - path: "docs/status.md"
     ref: "2aaa2183a0cef08a84dec2356a68d2d250436c1c"
     note: "Records SVG clearing icons and in-place status changes preserving register rows, scroll and editor inputs, 222 frontend tests, review, synthetic browser checks and installation; owner visual confirmation remains open."
