@@ -55,6 +55,9 @@ it("preserves the minimum signed HUF amount as an outflow draft", () => {
 it("validates composer outflows including signed limits and zero", () => {
   expect(signedAmount("9223372036854775808", "").amount).toBe("-9223372036854775808");
   expect(signedAmount("9223372036854775807", "").amount).toBe("-9223372036854775807");
+  expect(signedAmount("3000+3000", "").amount).toBe("-6000");
+  expect(signedAmount("1000/3*3 Ft", "").amount).toBe("-1000");
+  expect(signedAmount("", "3000+3000").amount).toBe("6000");
   expect(() => signedAmount("0", "")).toThrow("greater than zero");
   expect(() => signedAmount("-5", "")).toThrow();
   expect(() => signedAmount("10", "1")).toThrow("either an outflow or an inflow");

@@ -1,3 +1,4 @@
+import { AmountInput } from "./AmountInput";
 import { useEffect, useState } from "react";
 import {
   RECONCILIATION_OUT_OF_DATE, loadAccountRegister, previewAccountReconciliation,
@@ -82,7 +83,7 @@ export function ReconciliationEditor({ account, onSaved, onCancel }: {
   return <section className="transaction-editor reconciliation-editor" aria-labelledby="reconcile-title">
     <div className="editor-heading"><div><p className="eyebrow">RECONCILIATION</p><h2 id="reconcile-title">Reconcile {account.name}</h2></div><button className="text-button" onClick={onCancel} disabled={saving}>Cancel</button></div>
     <p className="editor-help">Enter the cleared balance shown by your bank, then match cleared transactions before creating an adjustment. Pending items stay uncleared.</p>
-    <div className="editor-grid"><label>Through date<input type="date" value={asOf} onChange={(event) => { setAsOf(event.target.value); invalidate(); }} disabled={saving} /></label><label>Bank cleared balance<input value={bankBalance} onChange={(event) => { setBankBalance(event.target.value); invalidate(); }} placeholder="e.g. -12 500" inputMode="text" disabled={saving} /></label></div>
+    <div className="editor-grid"><label>Through date<input type="date" value={asOf} onChange={(event) => { setAsOf(event.target.value); invalidate(); }} disabled={saving} /></label><label>Bank cleared balance<AmountInput value={bankBalance} onChange={(event) => { setBankBalance(event.target.value); invalidate(); }} placeholder="e.g. -12 500" inputMode="text" disabled={saving} /></label></div>
     {error && <p className="editor-error" role="alert">{error}</p>}
     {!review ? <button onClick={reviewAccount} disabled={saving}>{saving ? "Reviewing…" : "Review reconciliation"}</button> : <div className="reconciliation-review">
       <dl><div><dt>Allocash cleared</dt><dd>{formatHuf(BigInt(review.appClearedBalance))}</dd></div><div><dt>Bank cleared</dt><dd>{formatHuf(BigInt(review.bankClearedBalance))}</dd></div><div><dt>Entries to reconcile</dt><dd>{review.clearedEntryCount}</dd></div></dl>

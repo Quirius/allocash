@@ -1,3 +1,4 @@
+import { AmountInput } from "./AmountInput";
 import { useEffect, useState, type FormEvent } from "react";
 import { deactivateSchedule, loadScheduledOccurrences, postScheduledOccurrence, skipScheduledOccurrence, type AccountOverview, type ScheduledOccurrence, type TransactionFormOptions, type RecurrenceMonths } from "../lib/desktop";
 import { formatDate, formatHuf, localCalendarDate, parseSignedHufInput } from "../lib/format";
@@ -88,7 +89,7 @@ export function ScheduleView({ accounts, options }: { accounts: AccountOverview[
       <select aria-label="Repeat frequency" value={intervalMonths} onChange={(event) => setIntervalMonths(Number(event.target.value) as RecurrenceMonths)}><option value={1}>Monthly</option><option value={3}>Quarterly</option><option value={12}>Yearly</option></select>
       {kind === "transfer" ? <select aria-label="Other transfer account" required value={counterpartId} onChange={(event) => setCounterpartId(event.target.value)}><option value="">Other account</option>{activeAccounts.filter((account) => account.id !== selectedAccountId).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select> : <><input aria-label="Payee" list="scheduled-payees" value={payeeName} onChange={(event) => setPayeeName(event.target.value)} placeholder="Payee or Transfer: account" /><datalist id="scheduled-payees">{activeAccounts.filter((account) => account.id !== selectedAccountId).map((account) => <option key={`transfer-${account.id}`} value={`Transfer: ${account.name}`} />)}{options.payees.filter((payee) => !isTransferPayee(payee.name)).map((payee) => <option key={payee.id} value={payee.name} />)}</datalist></>}
       <select aria-label="Category" value={categoryId} onChange={(event) => setCategoryId(event.target.value)}><option value="">Uncategorized</option>{options.categories.map((category) => <option key={category.id} value={category.id}>{category.groupName} / {category.name}</option>)}</select>
-      <input aria-label="Amount" required value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="HUF, - for outflow" inputMode="numeric" />
+      <AmountInput aria-label="Amount" required value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="HUF, - for outflow" inputMode="numeric" />
       <input aria-label="Memo" value={memo} onChange={(event) => setMemo(event.target.value)} placeholder="Memo" />
       <button disabled={!selectedAccountId}>Schedule</button>
     </form>

@@ -1,5 +1,27 @@
 # Implementation and validation status
 
+On 2026-10-10, the owner requested selection and calculator-style editing in all
+amount fields, then clarified replacement, Tab/Enter commit and Escape reset.
+All eight monetary controls now share select-all-on-focus/click behavior. Plain
+numbers overwrite the selected amount; leading operator keys seed the existing
+amount, so selected Assigned 3000 plus typed +3000 becomes 6000. Tab/Enter
+commits the field and Escape restores the pre-edit value. Plan blur saves and
+form-specific validation/save workflows remain intact. A bounded bigint
+arithmetic parser supports precedence, parentheses and exact rational
+intermediates, rejecting fractional final HUF, division by zero, malformed input
+and signed-range overflow. Outflow expressions are negated as a whole, including
+the supported signed minimum. Frontend tests now use jsdom for actual React key,
+input, focus and blur ordering. No ledger, schema or backend write changes.
+All 170 frontend tests and the frontend build passed, including relative
+operators with Shift, replacement, Escape without save, Enter/Tab commit and
+canonical value emission before blur saves. Independent review found the Shift
+key and outflow precedence issues, both fixed before final checks. The native
+Windows installer built successfully. After the owner closed Allocash, its
+remaining background process was stopped and the installer exited successfully.
+Budget database bytes were unchanged, the installed executable matches the
+release build, and Allocash reopened a responsive native window. Owner amount
+interaction and undo confirmation remain open.
+
 On 2026-10-10, the owner requested YNAB-style Current Balance and Available for
 Payment views for mapped credit categories. The sidebar now has expandable
 balance and funding breakdowns, a payment funding message and Total Underfunded.

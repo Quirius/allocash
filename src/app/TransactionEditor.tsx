@@ -1,3 +1,4 @@
+import { AmountInput } from "./AmountInput";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   createManualTransfer,
@@ -71,7 +72,7 @@ export function signedAmount(outflow: string, inflow: string) {
     throw new Error("Enter an outflow or inflow amount.");
   }
   if (outflow.trim()) {
-    const amount = parseSignedHufInput(`-${outflow.trim()}`);
+    const amount = parseSignedHufInput(`-(${outflow.trim().replace(/\s*Ft$/i, "")})`);
     if (amount >= 0n) throw new Error("The amount must be greater than zero.");
     return { amount: amount.toString(), positive: (-amount).toString(), direction: "outflow" as const };
   }
@@ -273,8 +274,8 @@ export function TransactionComposer({
             ))}
           </select>
         </label>
-        <label>Outflow<input inputMode="numeric" value={outflow} onChange={(event) => { setOutflow(event.target.value); if (event.target.value) setInflow(""); }} placeholder="0 Ft" /></label>
-        <label>Inflow<input inputMode="numeric" value={inflow} onChange={(event) => { setInflow(event.target.value); if (event.target.value) setOutflow(""); }} placeholder="0 Ft" /></label>
+        <label>Outflow<AmountInput inputMode="numeric" value={outflow} onChange={(event) => { setOutflow(event.target.value); if (event.target.value) setInflow(""); }} placeholder="0 Ft" /></label>
+        <label>Inflow<AmountInput inputMode="numeric" value={inflow} onChange={(event) => { setInflow(event.target.value); if (event.target.value) setOutflow(""); }} placeholder="0 Ft" /></label>
       </div>
 
       <div className="editor-footer">
@@ -477,7 +478,7 @@ export function RegisterEntryEditor({
             <option value="outflow">Outflow</option><option value="inflow">Inflow</option>
           </select>
         </label>}
-        <label>Amount<input required inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
+        <label>Amount<AmountInput required inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
         <label>Cleared state
           <select disabled={scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0)} value={scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? "uncleared" : clearedState} onChange={(event) => setClearedState(event.target.value as RegisterEntry["clearedState"])}>
             <option value="uncleared">Uncleared</option>

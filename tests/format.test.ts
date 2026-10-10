@@ -27,8 +27,8 @@ describe("integer HUF formatting", () => {
 });
 
 describe("signed Plan HUF input", () => {
-  it.each([["0", 0n], ["12 500", 12500n], ["-12 500 Ft", -12500n]])("parses %s", (value, expected) => expect(parseSignedHufInput(value)).toBe(expected));
-  it.each(["+1", "12 50", "1.5", "-9223372036854775809"])("rejects %s", (value) => expect(() => parseSignedHufInput(value)).toThrow());
+  it.each([["0", 0n], ["+1", 1n], ["3000+3000", 6000n], ["12 500", 12500n], ["-12 500 Ft", -12500n]])("parses %s", (value, expected) => expect(parseSignedHufInput(value)).toBe(expected));
+  it.each(["12 50", "1.5", "-9223372036854775809"])("rejects %s", (value) => expect(() => parseSignedHufInput(value)).toThrow());
 });
 
 describe("timezone-free calendar dates", () => {

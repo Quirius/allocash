@@ -14,6 +14,17 @@ filesystem or shell plugins exposed to the webview. Assets and fonts are local.
 `src/lib/desktop.ts` is the IPC boundary. A browser preview explicitly reports
 that local storage is unavailable. It never substitutes localStorage or fake data.
 
+All eight monetary controls share `AmountInput`, which selects values on entry,
+seeds relative calculations for operator keys, commits on blur/Enter and restores
+the pre-edit draft on Escape. Valid blur results are emitted before the parent's
+save callback, preserving the Plan's ref-based save ordering. Form parsers share
+a bounded arithmetic parser with bigint rational intermediates, conventional
+precedence and final whole-HUF/signed-range checks. It never evaluates JavaScript
+or rounds fractions. Outflow expressions are evaluated as a whole before
+negation, preserving the signed minimum. Only decimal strings cross IPC; Rust
+validation, undo boundaries and the schema are unchanged. DOM tests exercise
+actual React focus, input, key and blur events using the jsdom dev dependency.
+
 `src-tauri/src/database.rs` owns the connection. Foreign keys are enabled on open,
 a busy timeout handles brief lock contention, and an immediate SQL transaction
 protects schema initialization. A mutex serializes access within the application.

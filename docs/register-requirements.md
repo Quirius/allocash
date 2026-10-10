@@ -4,6 +4,18 @@ Owner requirements moved from the original project brief. These describe intende
 behavior and scope, not completion status. See [status](status.md) for implementation
 and validation limits; read only sections relevant to the task.
 
+## Amount entry
+
+All monetary entry fields select their full contents on focus or click. Typing a
+plain number replaces the selected value; typing `+`, `-`, `*` or `/` first uses
+the selected existing amount as the left operand. For example, `+3000` applied
+to a selected `3000` becomes `6000`. Expressions use normal precedence and may
+include parentheses. Tab or Enter commits the field; Escape restores its value
+from before editing. Plan assignments save on blur, while transaction, schedule,
+target and reconciliation forms retain their existing validation/save workflow.
+Only whole HUF results in the applicable signed range are accepted, with no
+silent rounding; invalid drafts remain available for correction.
+
 ## Account model
 
 Top-level account groups must appear in this order:
