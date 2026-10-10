@@ -1,3 +1,4 @@
+pub mod account_management;
 mod backup;
 pub mod database;
 pub mod ledger;

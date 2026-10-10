@@ -1,3 +1,4 @@
+import { AccountEditor } from "./AccountEditor";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   createNativeBackup,
@@ -97,6 +98,7 @@ export function App() {
   const [register, setRegister] = useState<RegisterState>({ status: "idle" });
   const [startupAttempt, setStartupAttempt] = useState(0);
   const [registerAttempt, setRegisterAttempt] = useState(0);
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [view, setView] = useState<"register" | "plan" | "reports">("register");
   const [undoStatus, setUndoStatus] = useState<UndoStatus>({ canUndo: false, label: null });
   const [undoBusy, setUndoBusy] = useState(false);
@@ -284,6 +286,7 @@ export function App() {
 
   return (
     <div className="app-shell">
+      {editingAccountId && <AccountEditor key={editingAccountId} accountId={editingAccountId} pending={mutation.pending || undoBusy} onChanged={refreshLedger} onClose={() => setEditingAccountId(null)} />}
       <a className="skip-link" href="#workspace">Skip to workspace</a>
       <aside className="sidebar" aria-label="Budget sidebar">
         <div className="brand"><span className="brand-mark" aria-hidden="true">A</span>Allocash</div>
@@ -308,6 +311,8 @@ export function App() {
                     className={`account-link ${selectedAccountId === account.id ? "selected" : ""}`}
                     key={account.id}
                     onClick={() => setSelectedAccountId(account.id)}
+                    onContextMenu={(event) => { event.preventDefault(); if (!hasSavedMutationPending() && !undoBusy) { event.currentTarget.focus(); setEditingAccountId(account.id); } }}
+                    onKeyDown={(event) => { if ((event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) && !hasSavedMutationPending() && !undoBusy) { event.preventDefault(); setEditingAccountId(account.id); } }}
                     aria-current={selectedAccountId === account.id ? "page" : undefined}
                   >
                     <span>{account.name}</span>
@@ -333,6 +338,7 @@ export function App() {
             <button className="undo-button" onClick={() => void undo()} disabled={!undoStatus.canUndo || mutation.pending || undoBusy || startup.status !== "ready"} title={undoStatus.label ? `Undo ${undoStatus.label} (Ctrl+Z)` : "Undo (Ctrl+Z)"}>
               {undoBusy ? "Undoing…" : undoStatus.label ? `Undo ${undoStatus.label}` : "Undo"} <kbd>Ctrl+Z</kbd>
             </button>
+            {selectedAccount && <button disabled={mutation.pending || undoBusy} onClick={() => setEditingAccountId(selectedAccount.id)}>Edit account</button>}
             <span className="stage-badge">Local ledger</span>
           </div>
         </header>

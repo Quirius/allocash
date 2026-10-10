@@ -184,6 +184,17 @@ commands create normal transactions and paired transfers, update an entry, or de
 an ordinary/paired entry; Rust keeps the writes atomic and enforces reconciled-history
 confirmation.
 
+`account_management.rs` supplies account details and editing over typed commands.
+Working balances use posted ledger entries through the local calendar cutoff.
+`edit_account` checks the displayed balance and writes metadata plus any checked
+integer balance adjustment in one immediate transaction. `set_account_closed`
+retains account kind/history; active recurring schedules must be stopped before
+closure. `delete_closed_account` revalidates closed/empty status and absence of
+linked schedule history before removing metadata, payment mappings and orphan
+schedule definitions. The desktop command validates first, creates a safety backup
+and invokes the saved undo boundary. Transaction rows are never deleted by it;
+raw import data and category Plan state remain intact. No migration is needed.
+
 Manual transaction, transfer and schedule inputs validate categories against the
 account's budget scope inside their write transaction. `ManualTransferInput`
 accepts an optional category ID for the budget leg of a boundary transfer. New

@@ -58,11 +58,32 @@ affect net worth and relevant reports but do not fund budget categories.
 
 Closed accounts:
 
-- remain in the database
+- remain in the database unless explicitly deleted after being emptied
 - preserve full history
 - appear under Closed
 - can be reopened
 - must never lose transaction history when reopened
+
+### Account editing and explicit deletion
+
+Right-clicking an account opens Edit Account; the register also offers an Edit
+account button. Nickname and persistent notes are editable without changing its
+ID or account kind. For open accounts, Working Balance is the posted balance
+through today. Saving a changed balance creates one cleared adjustment dated
+today, with Ready to Assign for budget accounts and no category for off-budget
+accounts. The displayed balance is checked again before saving; stale or invalid
+changes fail atomically. Cancel does not write. Close/Re-open preserves history.
+Active repeat rules involving the account must be stopped before closing it.
+
+The owner explicitly permits deleting a closed account only after manually
+emptying it. Delete remains disabled while transactions or transfers remain,
+including future and scheduled rows. Register deletion retains existing paired
+transfer, reconciliation confirmation and backup safeguards; removing history
+can change Plan values. Account deletion requires confirmation and a verified
+backup, rejects linked schedule history, and removes only empty account metadata,
+its payment mapping and orphan repeat definitions. Categories, assignments,
+targets and raw import records remain. Editing, close/reopen and deletion can be
+undone within the session.
 
 ## Money and date formatting
 

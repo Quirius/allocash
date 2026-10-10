@@ -9,6 +9,14 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 360px; }
+.account-editor { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; color: #e7ebef; background: #182129; border: 1px solid #526875; border-radius: 9px; padding: 20px; }
+.account-editor::backdrop { background: rgb(0 0 0 / .65); }
+.account-editor header,.account-editor footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.account-editor header { margin-bottom: 20px; }.account-editor h2 { margin: 0; font-size: 20px; }
+.account-editor fieldset { min-width: 0; padding: 0; border: 0; }.account-editor legend { font-weight: 600; margin-bottom: 16px; }.account-editor label { display: grid; gap: 8px; margin-bottom: 18px; font-size: 13px; }
+.account-editor input,.account-editor textarea { width: 100%; padding: 9px; font: inherit; border: 1px solid #586d7a; border-radius: 5px; background: #26343e; color: #e7ebef; }.account-editor textarea { resize: vertical; }
+.account-working-balance { padding-top: 18px; border-top: 1px solid #3c505a; }.account-working-balance small,.account-delete-help { color: #adbdc5; font-size: 11px; line-height: 1.6; }
+.account-editor footer { flex-wrap: wrap; margin-top: 20px; }.account-editor footer > div,.account-delete-confirm > div { display: flex; gap: 8px; }.account-editor .danger { color: #ffc4c4; background: #612b32; }
+.account-delete-confirm { padding: 14px; border: 1px solid #a45a66; border-radius: 6px; background: #35242c; font-size: 12px; line-height: 1.6; }
 button, summary { cursor: pointer; }
 button { font: inherit; border: 1px solid #62798b; border-radius: 5px; padding: 5px 12px; }
 button:disabled { cursor: not-allowed; opacity: .48; }

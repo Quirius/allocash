@@ -26,6 +26,73 @@ fn database() -> (tempfile::TempDir, Database) {
         .unwrap();
     (directory, database)
 }
+
+fn account_schedule(
+    account_id: &str,
+    counterpart: Option<&str>,
+    category_id: Option<&str>,
+) -> MonthlyScheduleDraft {
+    MonthlyScheduleDraft {
+        account_id: account_id.into(),
+        start_date: date("2026-09-10"),
+        day_of_month: None,
+        end_date: None,
+        payee_name: None,
+        category_id: category_id.map(str::to_owned),
+        memo: "Close guard test".into(),
+        flag_id: None,
+        amount: Huf(-100),
+        interval_months: 1,
+        counterpart_account_id: counterpart.map(str::to_owned),
+    }
+}
+
+#[test]
+fn closing_account_rejects_active_primary_schedule_until_deactivated() {
+    let (_directory, mut database) = database();
+    database
+        .create_monthly_schedule(&account_schedule("cash", None, Some("test-expense")))
+        .unwrap();
+    let schedule_id = database.scheduled_occurrences().unwrap()[0]
+        .schedule_id
+        .clone();
+    assert!(matches!(
+        database.set_account_closed("cash", true),
+        Err(LedgerError::InvalidValue(
+            "Stop repeating transactions for this account before closing it."
+        ))
+    ));
+    assert!(!database.accounts().unwrap()[0].closed);
+    database.deactivate_schedule(&schedule_id).unwrap();
+    database.set_account_closed("cash", true).unwrap();
+    assert!(database.accounts().unwrap()[0].closed);
+}
+
+#[test]
+fn closing_counterparty_account_rejects_active_transfer_schedule() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("other", AccountKind::Cash, 1))
+        .unwrap();
+    database
+        .create_monthly_schedule(&account_schedule("cash", Some("other"), None))
+        .unwrap();
+    assert!(matches!(
+        database.set_account_closed("other", true),
+        Err(LedgerError::InvalidValue(
+            "Stop repeating transactions for this account before closing it."
+        ))
+    ));
+    assert!(
+        !database
+            .accounts()
+            .unwrap()
+            .iter()
+            .find(|a| a.id == "other")
+            .unwrap()
+            .closed
+    );
+}
 fn entry(id: &str, account: &str) -> Entry {
     Entry::manual(id, account, date("2026-09-10"))
 }
@@ -773,7 +840,12 @@ fn closed_schedule_counterpart_failure_rolls_back_skip_and_keeps_pending_pair() 
         })
         .unwrap();
     let pending = database.scheduled_occurrences().unwrap().remove(0);
-    database.set_account_closed("other", true).unwrap();
+    // Simulate a pre-guard or externally modified budget so the posting guard
+    // still protects a pending pair that refers to a closed counterpart.
+    database
+        .connection
+        .execute("UPDATE accounts SET closed=1 WHERE id='other'", [])
+        .unwrap();
     assert!(matches!(
         database.skip_scheduled_occurrence(&pending.transaction_id),
         Err(LedgerError::InvalidValue(_))

@@ -1,5 +1,29 @@
 # Implementation and validation status
 
+On 2026-10-10, the owner requested a right-click account editor and clarified
+that closed accounts must be emptied manually before deletion. Edit Account now
+supports nickname, persistent notes and the open account's Working Balance.
+Changing the balance creates one cleared adjustment dated today; budget accounts
+use Ready to Assign and off-budget accounts have no category. Exact integer delta
+checks, a stale-balance guard and one SQL transaction prevent partial writes.
+Cancel writes nothing; failed saves retain the draft, and failed refreshes can be
+retried without saving twice. Close/Re-open preserves kind and history; closing
+rejects active repeat rules involving either side of the account.
+Delete is disabled while any transaction or transfer remains, including future
+and scheduled rows. The backend independently rejects nonempty accounts and
+linked schedule history. Confirmed deletion creates a safety backup and removes
+only empty account metadata, payment mapping and orphan repeat definitions.
+Categories, Plan assignments, targets and raw imports remain; manual removal of
+history can change Plan values. All account actions participate in session undo.
+No schema migration or owner-data edit was performed. All 183 Rust and 186
+frontend tests passed, including balance cutoff/overflow, negative adjustments,
+atomicity, deletion/history safeguards, repeat closure guards, undo, React editor
+behavior and decimal-string IPC contracts. Formatting, independent review and
+frontend/native builds passed. The installer exited successfully, budget bytes
+were unchanged, and the installed executable matches the release build. Allocash
+reopened a responsive native window. Owner account editing, cancel, adjustment,
+close/reopen, deletion safeguards and undo confirmation remain open.
+
 On 2026-10-10, the owner requested category renaming. The selected-category Plan
 sidebar now offers Rename with a selected name field, Save/Enter and Cancel/Escape.
 Failed saves preserve the draft; saving locks duplicate submissions. Names are

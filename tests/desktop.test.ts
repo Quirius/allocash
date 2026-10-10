@@ -5,6 +5,9 @@ import {
   createManualTransfer,
   createNativeBackup,
   deleteRegisterEntry,
+  deleteClosedAccount,
+  editAccount,
+  loadAccountDetails,
   loadAccountRegister,
   loadBalanceOverTime,
   loadBudgetInfo,
@@ -20,6 +23,7 @@ import {
   previewAccountReconciliation,
   reconcileAccount,
   setPlanAssignment,
+  setAccountClosed,
   setCreditPaymentCategory,
   setCategoryTarget,
   setCategoryNotes,
@@ -37,6 +41,36 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn() }));
 
 beforeEach(() => vi.resetAllMocks());
+
+it("loads account details with the requested local calendar date", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  const details = { accountId: "cash", name: "Wallet", notes: "Notes", closed: false, workingBalance: "9223372036854775807", transactionCount: 0, transferCount: 0, scheduleCount: 0, reconciledCount: 0 };
+  vi.mocked(invoke).mockResolvedValue(details);
+  await expect(loadAccountDetails("cash", "2026-10-10")).resolves.toEqual(details);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("get_account_details", { input: { accountId: "cash", asOf: "2026-10-10" } });
+});
+
+it("sends account edits with exact decimal-string balances", async () => {
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  const input = { accountId: "cash", name: "Wallet", notes: "  Exact notes  ", asOf: "2026-10-10", expectedWorkingBalance: "9223372036854775807", workingBalance: "-9223372036854775808" };
+  await editAccount(input);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("edit_account", { input });
+});
+
+it("sends account close and reopen state changes", async () => {
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  await setAccountClosed("cash", true);
+  expect(invoke).toHaveBeenLastCalledWith("set_account_closed", { input: { id: "cash", closed: true } });
+  await setAccountClosed("cash", false);
+  expect(invoke).toHaveBeenLastCalledWith("set_account_closed", { input: { id: "cash", closed: false } });
+  expect(invoke).toHaveBeenCalledTimes(2);
+});
+
+it("confirms deletion of an empty closed account in the IPC payload", async () => {
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  await deleteClosedAccount("closed-account");
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("delete_closed_account", { input: { accountId: "closed-account", confirmed: true } });
+});
 
 it("promotes an existing upcoming entry with its identity and local date cutoff", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);

@@ -736,10 +736,31 @@ impl Database {
     }
 
     pub fn set_account_closed(&self, id: &str, closed: bool) -> LedgerResult<()> {
-        require_changed(self.connection.execute(
-            "UPDATE accounts SET closed=?2 WHERE id=?1",
-            params![id, closed],
-        )?)
+        if closed {
+            let changed = self.connection.execute(
+                "UPDATE accounts SET closed=1 WHERE id=?1 AND NOT EXISTS (SELECT 1 FROM schedules WHERE active=1 AND (account_id=?1 OR counterpart_account_id=?1))",
+                [id],
+            )?;
+            if changed == 0 {
+                let exists: bool = self.connection.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1)",
+                    [id],
+                    |row| row.get(0),
+                )?;
+                if exists {
+                    return Err(LedgerError::InvalidValue(
+                        "Stop repeating transactions for this account before closing it.",
+                    ));
+                }
+                return Err(LedgerError::NotFound);
+            }
+            Ok(())
+        } else {
+            require_changed(
+                self.connection
+                    .execute("UPDATE accounts SET closed=0 WHERE id=?1", [id])?,
+            )
+        }
     }
 
     pub fn create_category_group(&self, id: &str, name: &str, order: i64) -> LedgerResult<()> {

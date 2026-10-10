@@ -78,6 +78,12 @@ export interface AccountOverview {
   balance: AccountBalance;
 }
 
+export interface AccountDetails {
+  accountId: string; name: string; notes: string; closed: boolean; workingBalance: string;
+  transactionCount: number; transferCount: number; scheduleCount: number; reconciledCount: number;
+}
+export interface EditAccountInput { accountId: string; name: string; notes: string; asOf: string; expectedWorkingBalance: string; workingBalance: string | null; }
+
 export interface RegisterEntry {
   id: string;
   date: string;
@@ -295,3 +301,8 @@ export async function setCategoryNotes(categoryId: string, notes: string): Promi
 export async function setCreditPaymentCategory(accountId: string, categoryId: string | null): Promise<void> { return savedMutation(() => invoke("set_credit_payment_category", { input: { accountId, categoryId } })); }
 export async function setCategoryTarget(categoryId: string, effectiveMonth: string, target: CategoryTargetDefinition | null): Promise<void> { return savedMutation(() => invoke("set_category_target", { input: { categoryId, effectiveMonth, target } })); }
 export async function setCategoryTargetSnoozed(categoryId: string, month: string, snoozed: boolean): Promise<void> { return savedMutation(() => invoke("set_category_target_snoozed", { input: { categoryId, month, snoozed } })); }
+
+export async function loadAccountDetails(accountId: string, asOf: string): Promise<AccountDetails | null> { if (!isTauri()) return null; return invoke<AccountDetails>("get_account_details", { input: { accountId, asOf } }); }
+export async function editAccount(input: EditAccountInput): Promise<void> { return savedMutation(() => invoke("edit_account", { input })); }
+export async function setAccountClosed(id: string, closed: boolean): Promise<void> { return savedMutation(() => invoke("set_account_closed", { input: { id, closed } })); }
+export async function deleteClosedAccount(accountId: string): Promise<void> { return savedMutation(() => invoke("delete_closed_account", { input: { accountId, confirmed: true } })); }

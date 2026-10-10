@@ -1,3 +1,7 @@
+use crate::account_management::{
+    AccountDetails, DeleteClosedAccountInput, EditAccountInput, GetAccountDetailsInput,
+    SetAccountClosedInput,
+};
 use crate::database::{
     BudgetInfo, Database, NativeBackupReceipt, NativeRecoveryReceipt, NativeRestoreReceipt,
 };
@@ -105,6 +109,69 @@ fn undo_last_action(
     state: tauri::State<'_, BudgetState>,
 ) -> Result<crate::undo::UndoStatus, String> {
     with_database(&app, &state, |database| database.undo_last_action())
+}
+
+#[tauri::command]
+fn get_account_details(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: GetAccountDetailsInput,
+) -> Result<AccountDetails, String> {
+    with_database(&app, &state, |database| {
+        database.get_account_details(&input).map_err(ledger_error)
+    })
+}
+
+#[tauri::command]
+fn edit_account(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: EditAccountInput,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database.undoable("Edit account", |database| {
+            database.edit_account(&input).map_err(ledger_error)
+        })
+    })
+}
+
+#[tauri::command]
+fn set_account_closed(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: SetAccountClosedInput,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database.undoable(
+            if input.closed {
+                "Close account"
+            } else {
+                "Reopen account"
+            },
+            |database| {
+                database
+                    .set_account_closed(&input.id, input.closed)
+                    .map_err(ledger_error)
+            },
+        )
+    })
+}
+
+#[tauri::command]
+fn delete_closed_account(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: DeleteClosedAccountInput,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database
+            .validate_closed_account_deletion(&input)
+            .map_err(ledger_error)?;
+        create_safety_backup(database)?;
+        database.undoable("Delete account", |database| {
+            database.delete_closed_account(&input).map_err(ledger_error)
+        })
+    })
 }
 
 #[tauri::command]
@@ -688,6 +755,10 @@ pub fn run() {
             get_budget_info,
             get_undo_status,
             undo_last_action,
+            get_account_details,
+            edit_account,
+            set_account_closed,
+            delete_closed_account,
             create_native_backup,
             list_native_backups,
             restore_native_backup,
