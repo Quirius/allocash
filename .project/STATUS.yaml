@@ -10,14 +10,15 @@ progress:
   percent: 76
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Check sidebar reopen, Add Account Save/Cancel and undo, alongside status-icon toggles and automatic scheduled realization, and collect remaining dropdown and secondary-screen references; confirm account editing and amount keyboard behavior; check credit payment breakdowns and warnings; check upcoming repeating Save/Cancel/undo and continue target/recurrence recreation and native backup/reopen checks."
-updated_at: "2026-10-10T19:56:34Z"
+next_action: "Check transfer payee retargeting, normal/transfer conversion, paired Save/Cancel and undo, alongside account creation, status toggles and scheduled realization, and collect remaining dropdown and secondary-screen references; confirm account editing and amount keyboard behavior; check credit payment breakdowns and warnings; check upcoming repeating Save/Cancel/undo and continue target/recurrence recreation and native backup/reopen checks."
+updated_at: "2026-10-10T20:22:15Z"
 source:
   branch: "main"
-  commit: "c1d64d66771223ced6b129004e4dd4e9c0b7938f"
-  verified_at: "2026-10-10T19:56:34Z"
+  commit: "fad57342a4bb059dfa9bf6474b3ad69a49535f4f"
+  verified_at: "2026-10-10T20:22:15Z"
 summary:
   completed:
+    - "Transfer payees are now freely editable in place. Retargeting preserves both transaction IDs and shared metadata; transfer-to-ordinary removes its mirror, and ordinary-to-transfer creates one. Pending conversions update the recurrence template, category rules follow the final budget boundary, reconciled changes require confirmation, and mirror removal creates a safety backup. Saves are atomic and undoable; Cancel and refresh retries do not duplicate writes. All 249 frontend tests, 203 Rust tests, formatting, Cargo check, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Owner interaction confirmation remains open."
     - "The sidebar now retains visible collapse/reopen controls and Add Account opens a centered nickname, type-picker and signed starting-balance dialog. Existing account kinds handle all supplied subtype labels. Account creation, cleared opening entry and visible credit payment-category mapping are atomic and one undoable action; zero balances create no transaction and failed refreshes retry without duplicate creation. All 239 frontend tests, the full 194-test Rust suite plus a hidden-category mapping regression, formatting, Cargo check, independent review, synthetic browser checks at 700 and 500 pixels, and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Owner interaction confirmation remains open."
     - "Clearing icons now use sharp SVG circle/C shapes matching the supplied grey outlined and green filled references. Status changes patch the saved row in place and silently refresh balances without a register reload; scroll and editor inputs stay mounted. Failed writes leave the icon unchanged, and failed balance reads retry without repeating the saved status write. All 222 frontend tests, independent review, synthetic browser node-identity checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Owner visual confirmation remains open; Rust and schema are unchanged."
     - "Transaction icons now toggle posted non-reconciled entries between Cleared and Uncleared. New manual entries default to Uncleared and generated transfer mirrors to Cleared. Due schedules realize automatically as Cleared in an atomic backed-up undoable batch. Right-click actions and double-click replace row Edit buttons; upcoming clearing controls are hidden, unsupported actions remain disabled, and refresh retries never repeat saved writes. All 221 frontend tests, the 188-test Rust suite plus two date regressions, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Owner interaction acceptance remains open."
@@ -65,6 +66,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
+    - "Transfer payee editing and paired conversions are implemented and installed; owner interaction confirmation and further YNAB matching remain open."
     - "Sidebar reopen and Add Account are implemented and installed; owner interaction confirmation and further YNAB matching remain open."
     - "Clearing icons and in-place status changes are refined and installed; owner visual confirmation and further YNAB matching remain open."
     - "Transaction statuses, context actions and automatic due-schedule realization are implemented and installed; owner interaction acceptance and further YNAB visual matching remain open."
@@ -87,6 +89,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "fad57342a4bb059dfa9bf6474b3ad69a49535f4f"
+    note: "Records freely editable transfer payees, paired retargeting and transfer/ordinary conversion, scheduled template updates, reconciliation backup guards, tests, review and installation; owner interaction confirmation remains open."
   - path: "docs/status.md"
     ref: "c1d64d66771223ced6b129004e4dd4e9c0b7938f"
     note: "Records sidebar reopen visibility and centered Add Account workflow, atomic undoable starting balance and visible credit category mapping, 239 frontend tests, 194 Rust tests plus hidden mapping regression, review and installation; owner interaction confirmation remains open."
