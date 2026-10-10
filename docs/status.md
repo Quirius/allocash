@@ -11,10 +11,11 @@ removing the mapping restores ordinary target eligibility. Financial derivation,
 budget amounts and the schema are unchanged.
 All 169 Rust library tests and 147 frontend tests passed, including target
 rejection, preservation, cleanup and unmapping behavior. Formatting, Cargo check,
-independent review, frontend and per-user NSIS builds passed. The installer is
-ready; the upgrade stopped before installation because Allocash did not exit
-after a graceful close request. Manual closing is pending. Owner credit and
-ordinary category sidebar confirmation remains open.
+independent review, frontend and per-user NSIS builds passed. The per-user NSIS installer exited successfully after the owner closed the
+window and its remaining background process was stopped. Installation preserved
+budget database bytes; the installed executable matches the release build and
+reopened a responsive native window. Owner credit and ordinary category sidebar
+confirmation remains open.
 
 On 2026-10-10, the owner confirmed a category target test worked, then reported
 that upcoming transactions lacked a way to make them repeating. Imported future
