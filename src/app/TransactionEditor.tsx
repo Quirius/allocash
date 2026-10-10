@@ -15,6 +15,7 @@ import { formatDate, localCalendarDate, parseHufInput, parseSignedHufInput } fro
 import { createPayeeEntry, createScheduledPayeeEntry, isTransferPayee, resolveTransferPayee, scheduleForEntry, type EntryRepeat } from "../lib/transaction";
 import { categoryPolicy, inheritedReadyNeedsReset, readyToAssignCategoryId, transitionCategoryOrigin } from "../lib/categoryPolicy";
 import { DateRepeatPicker, nextRepeatDate } from "./DateRepeatPicker";
+import { TransactionStatusIcon } from "./TransactionStatusIcon";
 
 export interface TransactionDraft {
   kind: "transaction" | "transfer";
@@ -81,7 +82,7 @@ export function signedAmount(outflow: string, inflow: string) {
 }
 
 export function canMakeUpcomingEntryRepeating(entry: RegisterEntry, asOfDate: string): boolean {
-  return !entry.scheduleId && entry.postingState === "posted" && entry.date > asOfDate && entry.clearedState === "uncleared";
+  return !entry.scheduleId && entry.postingState === "posted" && entry.date > asOfDate && (entry.clearedState === "uncleared" || (!!entry.transferId && entry.clearedState === "cleared"));
 }
 
 export function TransactionComposer({
@@ -304,7 +305,7 @@ export function TransactionComposer({
         <label className="memo-field">Memo<input value={memo} onChange={(event) => setMemo(event.target.value)} placeholder="Optional note" /></label>
         <label>Outflow<AmountInput inputMode="numeric" value={outflow} onChange={(event) => { setOutflow(event.target.value); if (event.target.value) setInflow(""); }} placeholder="0 Ft" /></label>
         <label>Inflow<AmountInput inputMode="numeric" value={inflow} onChange={(event) => { setInflow(event.target.value); if (event.target.value) setOutflow(""); }} placeholder="0 Ft" /></label>
-        <div className="inline-status" aria-label="Transaction status">{scheduled ? "Uncleared · scheduled" : "Cleared"}</div>
+        <div className="inline-status" aria-label="Transaction status"><TransactionStatusIcon state="uncleared" pending={scheduled} />{scheduled ? "Scheduled" : "Uncleared"}</div>
       </div>
 
       {(inline || kind === "transfer") && <details className="inline-secondary"><summary>Account and entry options</summary><div>
@@ -315,7 +316,7 @@ export function TransactionComposer({
       </div>
       <div className={`editor-footer${inline ? " inline-footer" : ""}`}>
         <p className={error ? "form-error" : "form-hint"} role={error ? "alert" : undefined}>
-          {error || (scheduled ? "Scheduled entries are pending and Uncleared until they are posted." : kind === "transfer" || transferPayee ? "Saving creates both linked transfer entries. The entered side will be Cleared; its counterpart will be Uncleared." : "New manual transactions default to Cleared.")}
+          {error || (scheduled ? "Scheduled entries become Cleared when their date arrives." : kind === "transfer" || transferPayee ? "Saving creates both linked transfer entries. The entered side will be Uncleared; its counterpart will be Cleared." : "New manual transactions default to Uncleared.")}
         </p>
         <div>
           {refreshPending && <button type="button" className="secondary" disabled={status === "saving"} onClick={() => void retryRefresh()}>Retry refresh</button>}
@@ -361,6 +362,7 @@ export function RegisterEntryEditor({
   const [clearedState, setClearedState] = useState(entry.clearedState);
   const scheduled = !!entry.scheduleId && entry.postingState === "scheduled";
   const upcomingRepeatEligible = canMakeUpcomingEntryRepeating(entry, localCalendarDate());
+  const pendingOrFuture = scheduled || entry.date > localCalendarDate();
   const [repeatIntervalMonths, setRepeatIntervalMonths] = useState<0 | 1 | 3 | 12>(
     entry.repeatIntervalMonths === 1 || entry.repeatIntervalMonths === 3 || entry.repeatIntervalMonths === 12 ? entry.repeatIntervalMonths : 0,
   );
@@ -528,11 +530,11 @@ export function RegisterEntryEditor({
         <label className="memo-field">Memo<input value={memo} onChange={(event) => setMemo(event.target.value)} /></label>
         <label>Outflow<AmountInput required={direction === "outflow"} inputMode="numeric" value={direction === "outflow" ? amount : ""} onChange={(event) => { setAmount(event.target.value); if (event.target.value) setDirection("outflow"); }} placeholder="0 Ft" /></label>
         <label>Inflow<AmountInput required={direction === "inflow"} inputMode="numeric" value={direction === "inflow" ? amount : ""} onChange={(event) => { setAmount(event.target.value); if (event.target.value) setDirection("inflow"); }} placeholder="0 Ft" /></label>
-        <div className="inline-status">{scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? "Uncleared · scheduled" : clearedState}</div>
+        <div className="inline-status"><TransactionStatusIcon state={clearedState} pending={pendingOrFuture || (upcomingRepeatEligible && repeatIntervalMonths > 0)} />{pendingOrFuture || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? (scheduled ? "Scheduled" : "Upcoming") : clearedState[0]!.toUpperCase() + clearedState.slice(1)}</div>
       </div>
       <details className="inline-secondary"><summary>Account and entry options</summary><div>
         {!entry.transferId && <label>Account<select value={accountId} onChange={(event) => setAccountId(event.target.value)}>{accounts.filter((option) => !option.closed || option.id === account.id).map((option) => <option key={option.id} value={option.id}>{option.name}{option.closed ? " (closed)" : ""}</option>)}</select></label>}
-        <label>Cleared state<select disabled={scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0)} value={scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? "uncleared" : clearedState} onChange={(event) => setClearedState(event.target.value as RegisterEntry["clearedState"])}><option value="uncleared">Uncleared</option><option value="cleared">Cleared</option><option value="reconciled">Reconciled</option></select></label>
+        {!pendingOrFuture && !(upcomingRepeatEligible && repeatIntervalMonths > 0) && <label>Cleared state<select value={clearedState} onChange={(event) => setClearedState(event.target.value as RegisterEntry["clearedState"])}><option value="uncleared">Uncleared</option><option value="cleared">Cleared</option><option value="reconciled">Reconciled</option></select></label>}
         {entry.transferId && <span>Paired transfer · amount changes update both sides</span>}
         {inline && (scheduled || upcomingRepeatEligible) && repeatIntervalMonths === 0 && <button type="button" className="secondary" disabled={saving} onClick={() => setRepeatIntervalMonths(1)}>Make repeating</button>}
         {inline && !scheduled && !upcomingRepeatEligible && entry.postingState === "posted" && entry.date <= localCalendarDate() && <button type="button" className="secondary" disabled={saving} onClick={onMakeRepeating}>Make repeating</button>}

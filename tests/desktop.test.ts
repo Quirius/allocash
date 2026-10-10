@@ -29,6 +29,8 @@ import {
   setCategoryNotes,
   renameCategory,
   setCategoryTargetSnoozed,
+  setRegisterEntryClearedState,
+  realizeDueScheduledTransactions,
   updateRegisterEntry,
   makeUpcomingRegisterEntryRepeating,
   loadUndoStatus,
@@ -334,6 +336,21 @@ it("sends atomic register edits and confirmed deletions", async () => {
     id: "transaction",
     confirmed: true,
   });
+});
+
+it("sends a dedicated posted-entry status change with its inclusive local date", async () => {
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  await setRegisterEntryClearedState("entry-7", "cleared", "2026-10-10");
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("set_register_entry_cleared_state", {
+    id: "entry-7", clearedState: "cleared", asOf: "2026-10-10",
+  });
+});
+
+it("realizes due scheduled transactions through the inclusive local date", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  vi.mocked(invoke).mockResolvedValue(3);
+  await expect(realizeDueScheduledTransactions("2026-10-10")).resolves.toBe(3);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("realize_due_scheduled_transactions", { asOf: "2026-10-10" });
 });
 
 it.each([0, 1, 3, 12] as const)("sends scheduled register edits with exact HUF text and %i-month recurrence metadata", async (repeatIntervalMonths) => {

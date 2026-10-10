@@ -72,7 +72,7 @@ it.each([
   const tbody = host.querySelector("tbody")!;
   const originalRow = tbody.querySelector(`[data-entry-id="${item.id}"]`)!;
   const originalIndex = [...tbody.rows].indexOf(originalRow as HTMLTableRowElement);
-  act(() => button("Edit", originalRow).click());
+  act(() => originalRow.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
   expect(tbody.querySelector(`tr.register-edit-row[data-entry-id="${item.id}"]`)).not.toBeNull();
   const editingRow = tbody.querySelector(`tr.register-edit-row[data-entry-id="${item.id}"]`)!;
   expect([...tbody.rows].indexOf(editingRow as HTMLTableRowElement)).toBe(originalIndex);
@@ -117,7 +117,7 @@ it("uses the existing edit command and requires explicit confirmation for reconc
     return undefined;
   });
   mount([entry()]);
-  act(() => (host.querySelector('button[aria-label^="Edit transaction"]') as HTMLButtonElement).click());
+  act(() => host.querySelector('[data-entry-id="past"]')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
   const form = host.querySelector("form.transaction-inline")!;
   setInput(field("Outflow", form) as HTMLInputElement, "2000");
   await act(async () => button("Save changes", form).click());
@@ -130,7 +130,7 @@ it("uses the existing edit command and requires explicit confirmation for reconc
 
 it("preserves the signed 64-bit minimum while saving an edit", async () => {
   mount([entry({ id: "minimum", amount: "-9223372036854775808", memo: "before" })]);
-  act(() => (host.querySelector('button[aria-label^="Edit transaction"]') as HTMLButtonElement).click());
+  act(() => host.querySelector('[data-entry-id="minimum"]')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
   const form = host.querySelector("form.transaction-inline")!;
   expect((field("Outflow", form) as HTMLInputElement).value).toBe("9223372036854775808");
   setInput(field("Memo", form) as HTMLInputElement, "preserve minimum");

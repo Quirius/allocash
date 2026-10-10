@@ -1,5 +1,31 @@
 # Implementation and validation status
 
+On 2026-10-10, register status icons, context actions and due-schedule catch-up
+were implemented.
+New ordinary manual entries default to Uncleared; the entered and generated
+sides of a manual transfer default to Uncleared and Cleared. Posting a due
+scheduled occurrence marks it Cleared, including both transfer legs. The
+dedicated status command is limited to posted, through-today, non-reconciled
+entries and changes only the selected transfer leg. Catch-up posts through the
+inclusive local date in one atomic batch, creates a safety backup before writes,
+and records one session undo action. A failure rolls back the batch. Due legacy
+occurrences on closed accounts or with a closed transfer peer remain pending
+and are skipped for explicit recovery. Startup and local-day changes realize due
+entries; an open transaction or account editor defers background catch-up.
+The register has no row Edit buttons: double-click and right-click Edit open the
+original row. Its menu provides status changes, unsaved Duplicate/Make Repeating,
+editor routes for flag/memo/category/account, and guarded deletion. Unsupported
+approval, matching and export actions remain disabled placeholders. Upcoming
+entries have no clearing icon or selector; reconciled locks cannot toggle.
+A saved mutation whose refresh fails offers a refresh-only retry.
+All 221 frontend tests, the full 188-test Rust suite and two additional cutoff/
+recurrence regressions passed, along with formatting, Cargo check, independent
+financial review and synthetic browser menu/popup placement checks. Production and native installer builds passed. The installed executable matches
+the release build, installation preserved budget bytes, and a responsive native
+window reopened. Startup can subsequently realize due entries as documented;
+installation preservation is not a claim that automatic realization leaves the
+ledger unchanged. Owner interaction checks remain open.
+
 On 2026-10-10, the owner requested a close YNAB dark-theme visual match and
 supplied Plan, account-register and transaction-editing references. The first
 visual pass now has a compact collapsible sidebar, sidebar view navigation,

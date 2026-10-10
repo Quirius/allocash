@@ -1,7 +1,13 @@
 import { AccountEditor } from "./AccountEditor";
+import { TransactionContextMenu } from "./TransactionContextMenu";
+import { TransactionStatusIcon } from "./TransactionStatusIcon";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   createNativeBackup,
+  deleteRegisterEntry,
+  RECONCILED_CONFIRMATION_REQUIRED,
+  setRegisterEntryClearedState,
+  realizeDueScheduledTransactions,
   listNativeBackups,
   loadAccountRegister,
   loadWorkspace,
@@ -88,12 +94,6 @@ function displayCategory(entry: RegisterEntry, account: AccountOverview): string
 
 function accountKindLabel(kind?: AccountKind): string { return kind === "cash" ? "Cash account" : kind === "credit" ? "Credit account" : kind === "loan" ? "Loan account" : kind === "tracking" ? "Tracking account" : "Accounts"; }
 
-function statusLabel(entry: RegisterEntry): string {
-  if (entry.clearedState === "reconciled") return "Reconciled";
-  if (entry.clearedState === "cleared") return "Cleared";
-  return "Uncleared";
-}
-
 export function App() {
   const [startup, setStartup] = useState<Startup>({ status: "loading" });
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
@@ -108,6 +108,8 @@ export function App() {
   const [undoBusy, setUndoBusy] = useState(false);
   const [undoFeedback, setUndoFeedback] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   const undoLock = useRef(false);
+  const realizedDay = useRef("");
+  const realizing = useRef(false);
   const ledgerRefreshSequence = useRef(createRequestSequence());
   const [mutation, setMutation] = useState({ pending: false, version: 0 });
   const [refreshRevision, setRefreshRevision] = useState(0);
@@ -124,7 +126,8 @@ export function App() {
   useEffect(() => {
     let active = true;
     setStartup({ status: "loading" });
-    loadWorkspace(localCalendarDate()).then(
+    const today = localCalendarDate();
+    realizeDueScheduledTransactions(today).then(() => loadWorkspace(today)).then(
       (workspace) => {
         if (!active) return;
         if (!workspace) {
@@ -137,6 +140,7 @@ export function App() {
             ? selected
             : workspace.accounts[0]?.id ?? null,
         );
+        realizedDay.current = today;
         setStartup({ status: "ready", workspace });
       },
       () => {
@@ -216,6 +220,26 @@ export function App() {
     setRegisterAttempt((value) => value + 1);
     setRefreshRevision((value) => value + 1);
   }
+
+  useEffect(() => {
+    if (startup.status !== "ready") return;
+    async function checkDay() {
+      const day = localCalendarDate();
+      if (day === realizedDay.current || realizing.current || undoLock.current || hasSavedMutationPending()
+        || document.querySelector(".transaction-editor, .account-editor[open]")) return;
+      realizing.current = true;
+      try {
+        await realizeDueScheduledTransactions(day);
+        await refreshLedger();
+        realizedDay.current = day;
+      } catch {
+        setUndoFeedback({ kind: "error", message: "Could not realize due scheduled transactions. Allocash will retry." });
+      } finally { realizing.current = false; }
+    }
+    const timer = window.setInterval(() => void checkDay(), 60_000);
+    window.addEventListener("focus", checkDay);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", checkDay); };
+  }, [startup.status]);
 
   async function undo() {
     if (undoLock.current || undoBusy || mutation.pending || hasSavedMutationPending() || !undoStatus.canUndo) return;
@@ -453,6 +477,9 @@ export function AccountRegister({
 }) {
   const [editor, setEditor] = useState<"new" | "reconcile" | RegisterEntry | { kind: "duplicate"; key: number; draft: TransactionDraft } | null>(null);
   const [scheduleAction, setScheduleAction] = useState(false);
+  const actionLock = useRef(false);
+  const [refreshPending, setRefreshPending] = useState(false);
+  const [menu, setMenu] = useState<{ entry: RegisterEntry; x: number; y: number } | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [registerPage, setRegisterPage] = useState(0);
   const [upcomingPage, setUpcomingPage] = useState(0);
@@ -493,14 +520,61 @@ export function AccountRegister({
     if (upcomingPage !== safeUpcomingPage) setUpcomingPage(safeUpcomingPage);
   }, [upcomingPage, safeUpcomingPage]);
 
-  async function finishSchedule(id: string, post: boolean) {
+  async function mutate(operation: () => Promise<void>) {
+    if (actionLock.current || refreshPending || hasSavedMutationPending()) return;
+    actionLock.current = true;
     setScheduleAction(true); setScheduleError(null);
+    let saved = false;
     try {
-      if (post) await postScheduledOccurrence(id); else await skipScheduledOccurrence(id);
+      await operation(); saved = true;
       await onChanged();
     } catch (error) {
-      setScheduleError(typeof error === "string" ? error : "Could not update this scheduled entry.");
-    } finally { setScheduleAction(false); }
+      setRefreshPending(saved);
+      setScheduleError(saved ? "Saved, but the register could not refresh. Retry the refresh below." : typeof error === "string" ? error : error instanceof Error ? error.message : "Could not update this transaction.");
+    } finally { actionLock.current = false; setScheduleAction(false); }
+  }
+
+  async function retryRefresh() {
+    if (actionLock.current) return;
+    actionLock.current = true; setScheduleAction(true);
+    try { await onChanged(); setRefreshPending(false); setScheduleError(null); }
+    catch { setScheduleError("Could not refresh the register. Your change is already saved."); }
+    finally { actionLock.current = false; setScheduleAction(false); }
+  }
+
+  function edit(entry: RegisterEntry) {
+    if (!actionLock.current && !refreshPending && !hasSavedMutationPending()) setEditor(entry);
+  }
+
+  function duplicate(entry: RegisterEntry, repeating: boolean) {
+    if (actionLock.current || refreshPending || hasSavedMutationPending()) return;
+    if (repeating && (entry.postingState === "scheduled" || entry.date > today)) {
+      setEditor({ ...entry, repeatIntervalMonths: 1 }); return;
+    }
+    try {
+      const draft = draftFromPostedEntry(entry, account.id, accounts);
+      setEditor({ kind: "duplicate", key: Date.now(), draft: repeating ? draft : { ...draft, date: entry.date, repeat: "never", repeatDayOfMonth: undefined } });
+    } catch (error) { setScheduleError(error instanceof Error ? error.message : "Could not prepare this transaction."); }
+  }
+
+  function remove(entry: RegisterEntry) {
+    if (actionLock.current || refreshPending || hasSavedMutationPending()) return;
+    const question = entry.transferId ? "Delete this transfer and both linked transactions?" : entry.postingState === "scheduled" ? "Delete this scheduled transaction and stop its repeating rule?" : "Delete this transaction?";
+    if (!window.confirm(question)) return;
+    void mutate(async () => {
+      try { await deleteRegisterEntry(entry.id, false); }
+      catch (error) {
+        if (String(error).includes(RECONCILED_CONFIRMATION_REQUIRED)) {
+          if (!window.confirm("This changes reconciled history. Delete it after making a safety backup?")) throw new Error("Deletion cancelled.");
+          await deleteRegisterEntry(entry.id, true);
+        } else throw error;
+      }
+    });
+  }
+
+  function changeStatus(entry: RegisterEntry, next: "cleared" | "uncleared") {
+    if (entry.postingState === "scheduled" || entry.date > today || entry.clearedState === "reconciled") return;
+    void mutate(() => setRegisterEntryClearedState(entry.id, next, today));
   }
 
   return (
@@ -529,7 +603,15 @@ export function AccountRegister({
         >+ Add transaction</button>
       </div>
 
-      {scheduleError && <p className="editor-error" role="alert">{scheduleError}</p>}
+      {scheduleError && <p className="editor-error" role="alert">{scheduleError} {refreshPending && <button disabled={scheduleAction} onClick={() => void retryRefresh()}>Retry refresh</button>}</p>}
+      {menu && <TransactionContextMenu entry={menu.entry} x={menu.x} y={menu.y} disabled={scheduleAction || refreshPending || hasSavedMutationPending()}
+        onClose={() => setMenu(null)} onEdit={() => edit(menu.entry)} onDuplicate={() => duplicate(menu.entry, false)}
+        onMakeRepeating={() => duplicate(menu.entry, true)} onDelete={() => remove(menu.entry)}
+        onStatusChange={(next) => changeStatus(menu.entry, next)}
+        onSkip={menu.entry.postingState === "scheduled" ? () => void mutate(() => skipScheduledOccurrence(menu.entry.id)) : undefined}
+        onPost={menu.entry.postingState === "scheduled" ? () => void mutate(() => postScheduledOccurrence(menu.entry.id)) : undefined}
+        onEditMemo={() => { edit(menu.entry); requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".memo-field input")?.focus()); }} />}
+
       {editor === "reconcile" && (
         <ReconciliationEditor account={account} onSaved={onChanged} onCancel={() => setEditor(null)} />
       )}
@@ -566,11 +648,10 @@ export function AccountRegister({
                   <th className="money-column">Outflow</th>
                   <th className="money-column">Inflow</th>
                   <th className="status-column"><span className="sr-only">Cleared status</span>ⓒ</th>
-                  <th className="action-column"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
-                {(editor === "new" || (editor && typeof editor === "object" && "kind" in editor)) && <tr className="register-edit-row new-entry-row"><td colSpan={9}>
+                {(editor === "new" || (editor && typeof editor === "object" && "kind" in editor)) && <tr className="register-edit-row new-entry-row"><td colSpan={8}>
       {editor === "new" && (
         <TransactionComposer inline
           account={account}
@@ -586,14 +667,14 @@ export function AccountRegister({
       />}
 
                 </td></tr>}
-              {partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={9} scope="rowgroup">Upcoming</th></tr>}
+              {partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={8} scope="rowgroup">Upcoming</th></tr>}
               {[...upcomingPageEntries, ...pageEntries].map((entry) => {
                 const amount = BigInt(entry.amount);
                 const isUpcoming = entry.postingState === "scheduled" || entry.date > today;
                 return (
                   <Fragment key={entry.id}>
-                  {!isUpcoming && entry.id === pageEntries[0]?.id && partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={9} scope="rowgroup">Transactions</th></tr>}
-                  {editor && typeof editor === "object" && !("kind" in editor) && editor.id === entry.id ? <tr className="register-edit-row" data-entry-id={entry.id}><td colSpan={9}>
+                  {!isUpcoming && entry.id === pageEntries[0]?.id && partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={8} scope="rowgroup">Transactions</th></tr>}
+                  {editor && typeof editor === "object" && !("kind" in editor) && editor.id === entry.id ? <tr className="register-edit-row" data-entry-id={entry.id}><td colSpan={8}>
       {editor && typeof editor === "object" && !("kind" in editor) && (
         <RegisterEntryEditor inline
           key={editor.id}
@@ -606,7 +687,10 @@ export function AccountRegister({
           onCancel={() => setEditor(null)}
         />
       )}                  </td></tr> : (
-                  <tr className={isUpcoming ? "upcoming-row" : undefined} data-entry-id={entry.id} onDoubleClick={() => { if (!hasSavedMutationPending()) setEditor(entry); }}>
+                  <tr className={isUpcoming ? "upcoming-row" : undefined} data-entry-id={entry.id} tabIndex={0}
+                    onDoubleClick={(event) => { if (!(event.target as HTMLElement).closest("button")) edit(entry); }}
+                    onContextMenu={(event) => { event.preventDefault(); if (!actionLock.current && !refreshPending) setMenu({ entry, x: event.clientX, y: event.clientY }); }}
+                    onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter") edit(entry); if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ entry, x: rect.left + 80, y: rect.top }); } }}>
                     <td className="flag-column">
                       {entry.flagColor && (
                         <span
@@ -622,11 +706,9 @@ export function AccountRegister({
                     <td className="money-column outflow">{amount < 0n ? `(${huf((-amount).toString())})` : ""}</td>
                     <td className="money-column inflow">{amount >= 0n ? huf(amount.toString()) : ""}</td>
                     <td className="status-column">
-                      <span className={`cleared-state ${entry.clearedState}`} title={statusLabel(entry)}>
-                        {entry.postingState === "scheduled" ? "S" : entry.clearedState === "reconciled" ? "R" : entry.clearedState === "cleared" ? "C" : "U"}
-                      </span>
+                      <TransactionStatusIcon state={entry.clearedState} pending={isUpcoming} disabled={scheduleAction || refreshPending || hasSavedMutationPending()}
+                        onToggle={entry.clearedState === "reconciled" ? undefined : () => changeStatus(entry, entry.clearedState === "cleared" ? "uncleared" : "cleared")} />
                     </td>
-                    <td className="action-column"><button aria-label={`Edit transaction ${entry.date} ${displayPayee(entry)}`} onClick={() => { if (!hasSavedMutationPending()) setEditor(entry); }}>Edit</button>{entry.postingState === "scheduled" && <><button disabled={scheduleAction} onClick={() => void finishSchedule(entry.id, true)}>Post</button><button disabled={scheduleAction} onClick={() => void finishSchedule(entry.id, false)}>Skip</button></>}</td>
                   </tr>)}
                   </Fragment>
                 );

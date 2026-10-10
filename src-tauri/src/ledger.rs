@@ -214,7 +214,7 @@ pub struct TransferDraft {
 }
 
 impl TransferDraft {
-    /// The entered side is cleared, whichever direction the user entered it from.
+    /// The entered side is uncleared; the generated counterpart is cleared.
     pub fn manual(
         id: &str,
         amount: Huf,
@@ -228,8 +228,8 @@ impl TransferDraft {
             entry.scheduled_origin_id = None;
             entry.import_row_id = None;
         }
-        entered.cleared_state = ClearedState::Cleared;
-        counterpart.cleared_state = ClearedState::Uncleared;
+        entered.cleared_state = ClearedState::Uncleared;
+        counterpart.cleared_state = ClearedState::Cleared;
         let (outflow, inflow) = match direction {
             Direction::Outflow => (entered, counterpart),
             Direction::Inflow => (counterpart, entered),
@@ -2035,6 +2035,36 @@ impl Database {
         self.finish_scheduled_occurrence(transaction_id, "posted")
     }
 
+    /// Posts every due pending occurrence through an inclusive local date.
+    /// Closed-account legacy occurrences are left pending for explicit recovery.
+    pub fn realize_due_scheduled_transactions(
+        &mut self,
+        as_of: &CalendarDate,
+    ) -> LedgerResult<usize> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let mut posted = 0usize;
+        loop {
+            let due: Option<String> = transaction.query_row(
+                "SELECT anchor.id FROM schedule_occurrences o JOIN transactions anchor ON anchor.id=o.transaction_id JOIN accounts a ON a.id=anchor.account_id LEFT JOIN transactions peer ON peer.transfer_id=anchor.transfer_id AND peer.id<>anchor.id LEFT JOIN accounts pa ON pa.id=peer.account_id WHERE o.state='pending' AND o.occurrence_date<=?1 AND a.closed=0 AND COALESCE(pa.closed,0)=0 ORDER BY o.occurrence_date,o.schedule_id LIMIT 1",
+                [as_of.as_str()], |row| row.get(0)).optional()?;
+            let Some(id) = due else { break };
+            finish_scheduled_occurrence_in_transaction(&transaction, &id, "posted")?;
+            posted += 1;
+        }
+        transaction.commit()?;
+        Ok(posted)
+    }
+
+    pub fn due_scheduled_transaction_count(&self, as_of: &CalendarDate) -> LedgerResult<usize> {
+        let count: i64 = self.connection.query_row(
+            "SELECT COUNT(*) FROM schedule_occurrences o JOIN transactions anchor ON anchor.id=o.transaction_id JOIN accounts a ON a.id=anchor.account_id LEFT JOIN transactions peer ON peer.transfer_id=anchor.transfer_id AND peer.id<>anchor.id LEFT JOIN accounts pa ON pa.id=peer.account_id WHERE o.state='pending' AND o.occurrence_date<=?1 AND a.closed=0 AND COALESCE(pa.closed,0)=0",
+            [as_of.as_str()], |row| row.get(0))?;
+        usize::try_from(count)
+            .map_err(|_| LedgerError::InvalidValue("Invalid scheduled transaction count."))
+    }
+
     pub fn skip_scheduled_occurrence(&mut self, transaction_id: &str) -> LedgerResult<()> {
         self.finish_scheduled_occurrence(transaction_id, "skipped")
     }
@@ -2056,37 +2086,93 @@ impl Database {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let (schedule_id, date, anchor_id): (String, String, String) = transaction.query_row("SELECT o.schedule_id,o.occurrence_date,o.transaction_id FROM schedule_occurrences o JOIN transactions anchor ON anchor.id=o.transaction_id JOIN transactions selected ON selected.id=?1 AND (selected.id=anchor.id OR (anchor.transfer_id IS NOT NULL AND selected.transfer_id=anchor.transfer_id)) WHERE o.state='pending'", [transaction_id], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional()?.ok_or(LedgerError::NotFound)?;
-        let transaction_id = anchor_id.as_str();
-        let transfer_id: Option<String> = transaction.query_row(
-            "SELECT transfer_id FROM transactions WHERE id=?1",
-            [transaction_id],
-            |row| row.get(0),
-        )?;
-        if state == "posted" {
-            if let Some(id) = &transfer_id {
-                transaction.execute("UPDATE transactions SET posting_state='posted' WHERE transfer_id=?1 AND posting_state='scheduled'", [id])?;
-            } else {
-                transaction.execute("UPDATE transactions SET posting_state='posted' WHERE id=?1 AND posting_state='scheduled'", [transaction_id])?;
-            }
-        } else {
-            transaction.execute("UPDATE schedule_occurrences SET transaction_id=NULL,state='skipped' WHERE transaction_id=?1", [transaction_id])?;
-            delete_scheduled_transfer(&transaction, transaction_id)?;
-        }
-        if state == "posted" {
-            transaction.execute(
-                "UPDATE schedule_occurrences SET state='posted' WHERE transaction_id=?1",
-                [transaction_id],
-            )?;
-        }
-        let previous = CalendarDate::parse(&date)?;
-        if let Some(next) = next_schedule_date(&transaction, &schedule_id, &previous)? {
-            materialize_occurrence(&transaction, &schedule_id, &next)?;
-        }
+        finish_scheduled_occurrence_in_transaction(&transaction, transaction_id, state)?;
         transaction.commit()?;
         Ok(())
     }
 
+    pub fn set_register_entry_cleared_state(
+        &mut self,
+        id: &str,
+        state: &str,
+        as_of: &CalendarDate,
+    ) -> LedgerResult<()> {
+        let parsed = match state {
+            "cleared" => ClearedState::Cleared,
+            "uncleared" => ClearedState::Uncleared,
+            _ => {
+                return Err(LedgerError::InvalidValue(
+                    "Only cleared or uncleared states are allowed.",
+                ))
+            }
+        };
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (current, date, posting): (ClearedState, String, PostingState) = transaction
+            .query_row(
+                "SELECT cleared_state,transaction_date,posting_state FROM transactions WHERE id=?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?
+            .ok_or(LedgerError::NotFound)?;
+        if current == ClearedState::Reconciled {
+            return Err(LedgerError::InvalidValue(
+                "Reconciled entries cannot change clearing state here.",
+            ));
+        }
+        if posting != PostingState::Posted || date.as_str() > as_of.as_str() {
+            return Err(LedgerError::InvalidValue(
+                "Only posted entries dated on or before today can change clearing state.",
+            ));
+        }
+        if current == parsed {
+            return Ok(());
+        }
+        transaction.execute(
+            "UPDATE transactions SET cleared_state=?2 WHERE id=?1",
+            params![id, parsed],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+}
+
+fn finish_scheduled_occurrence_in_transaction(
+    transaction: &rusqlite::Transaction<'_>,
+    transaction_id: &str,
+    state: &str,
+) -> LedgerResult<()> {
+    let (schedule_id, date, anchor_id): (String, String, String) = transaction.query_row("SELECT o.schedule_id,o.occurrence_date,o.transaction_id FROM schedule_occurrences o JOIN transactions anchor ON anchor.id=o.transaction_id JOIN transactions selected ON selected.id=?1 AND (selected.id=anchor.id OR (anchor.transfer_id IS NOT NULL AND selected.transfer_id=anchor.transfer_id)) WHERE o.state='pending'", [transaction_id], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional()?.ok_or(LedgerError::NotFound)?;
+    let transaction_id = anchor_id.as_str();
+    let transfer_id: Option<String> = transaction.query_row(
+        "SELECT transfer_id FROM transactions WHERE id=?1",
+        [transaction_id],
+        |row| row.get(0),
+    )?;
+    if state == "posted" {
+        if let Some(id) = &transfer_id {
+            transaction.execute("UPDATE transactions SET posting_state='posted',cleared_state='cleared' WHERE transfer_id=?1 AND posting_state='scheduled'", [id])?;
+        } else {
+            transaction.execute("UPDATE transactions SET posting_state='posted',cleared_state='cleared' WHERE id=?1 AND posting_state='scheduled'", [transaction_id])?;
+        }
+        transaction.execute(
+            "UPDATE schedule_occurrences SET state='posted' WHERE transaction_id=?1",
+            [transaction_id],
+        )?;
+    } else {
+        transaction.execute("UPDATE schedule_occurrences SET transaction_id=NULL,state='skipped' WHERE transaction_id=?1", [transaction_id])?;
+        delete_scheduled_transfer(transaction, transaction_id)?;
+    }
+    let previous = CalendarDate::parse(&date)?;
+    if let Some(next) = next_schedule_date(transaction, &schedule_id, &previous)? {
+        materialize_occurrence(transaction, &schedule_id, &next)?;
+    }
+    Ok(())
+}
+
+impl Database {
     pub fn create_manual_transaction(
         &mut self,
         draft: &ManualTransactionDraft,
@@ -2110,6 +2196,7 @@ impl Database {
         let id = random_id(&transaction, "manual-transaction")?;
         let payee_id = resolve_payee(&transaction, draft.payee_name.as_deref())?;
         let mut entry = Entry::manual(&id, &draft.account_id, draft.date.clone());
+        entry.cleared_state = ClearedState::Uncleared;
         entry.payee_id = payee_id.clone();
         entry.category_id = category_id.clone();
         entry.memo = draft.memo.trim().to_owned();
@@ -2302,7 +2389,8 @@ impl Database {
             if current.5 != PostingState::Posted
                 || current.6.as_str() <= as_of.as_str()
                 || edit.date.as_str() <= as_of.as_str()
-                || current.2 != ClearedState::Uncleared
+                || (current.2 != ClearedState::Uncleared
+                    && !(is_transfer && current.2 == ClearedState::Cleared))
                 || edit.cleared_state != ClearedState::Uncleared
             {
                 return Err(LedgerError::InvalidValue(
@@ -2366,7 +2454,7 @@ impl Database {
             }
             if let Some(transfer_id) = current.0.as_deref() {
                 let invalid_peer: bool = transaction.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM transactions WHERE transfer_id=?1 AND (posting_state<>'posted' OR cleared_state<>'uncleared' OR transaction_date<=?2))",
+                    "SELECT EXISTS(SELECT 1 FROM transactions WHERE transfer_id=?1 AND (posting_state<>'posted' OR cleared_state='reconciled' OR transaction_date<=?2))",
                     params![transfer_id, as_of.as_str()],
                     |row| row.get(0),
                 )?;
@@ -2514,6 +2602,12 @@ impl Database {
             };
             if let Some(counterpart) = counterpart.as_deref() {
                 ensure_open_account(&transaction, counterpart)?;
+                if let Some(transfer_id) = current.0.as_deref() {
+                    transaction.execute(
+                        "UPDATE transactions SET cleared_state='uncleared' WHERE transfer_id=?1",
+                        [transfer_id],
+                    )?;
+                }
             }
             let template_category = if let Some(transfer_id) = current.0.as_deref() {
                 let (budget_kind, budget_amount) = transaction.query_row(

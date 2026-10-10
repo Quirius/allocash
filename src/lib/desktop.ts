@@ -287,6 +287,15 @@ export async function deleteRegisterEntry(id: string, confirmed: boolean): Promi
   return savedMutation(() => invoke("delete_register_entry", { id, confirmed }));
 }
 
+export async function setRegisterEntryClearedState(id: string, clearedState: "cleared" | "uncleared", asOf = localCalendarDate()): Promise<void> {
+  return savedMutation(() => invoke("set_register_entry_cleared_state", { id, clearedState, asOf }));
+}
+
+export async function realizeDueScheduledTransactions(asOf = localCalendarDate()): Promise<number> {
+  if (!isTauri()) return 0;
+  return savedMutation(() => invoke<number>("realize_due_scheduled_transactions", { asOf }));
+}
+
 export async function previewAccountReconciliation(input: ReconciliationInput): Promise<ReconciliationReview> {
   return invoke<ReconciliationReview>("preview_account_reconciliation", { input });
 }

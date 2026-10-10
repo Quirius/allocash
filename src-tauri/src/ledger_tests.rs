@@ -3,6 +3,466 @@ use crate::{database::Database, ledger::*};
 fn date(text: &str) -> CalendarDate {
     CalendarDate::parse(text).unwrap()
 }
+
+#[test]
+fn manual_entries_and_transfers_use_new_register_status_defaults_in_both_directions() {
+    let (_directory, mut database) = database();
+    for amount in [-25, 25] {
+        let id = database
+            .create_manual_transaction(&ManualTransactionDraft {
+                account_id: "cash".into(),
+                date: date("2026-09-10"),
+                payee_name: None,
+                category_id: (amount < 0).then(|| "test-expense".into()),
+                memo: String::new(),
+                flag_id: None,
+                amount: Huf(amount),
+            })
+            .unwrap();
+        assert_eq!(
+            database
+                .entries("cash")
+                .unwrap()
+                .into_iter()
+                .find(|row| row.entry.id == id)
+                .unwrap()
+                .entry
+                .cleared_state,
+            ClearedState::Uncleared
+        );
+        database.delete_entry(&id, false).unwrap();
+        database
+            .create_account(&account("peer", AccountKind::Tracking, 1))
+            .unwrap();
+        let entered_id = database
+            .create_manual_transfer(&ManualTransferInput {
+                account_id: "cash".into(),
+                counterpart_account_id: "peer".into(),
+                date: date("2026-09-10"),
+                memo: String::new(),
+                flag_id: None,
+                amount: Huf(25),
+                direction: if amount < 0 {
+                    Direction::Outflow
+                } else {
+                    Direction::Inflow
+                },
+                category_id: (amount < 0).then(|| "test-expense".into()),
+            })
+            .unwrap();
+        let entered = database
+            .entries("cash")
+            .unwrap()
+            .into_iter()
+            .find(|row| row.entry.id == entered_id)
+            .unwrap();
+        let mirror = database.entries("peer").unwrap().remove(0);
+        assert_eq!(entered.entry.cleared_state, ClearedState::Uncleared);
+        assert_eq!(mirror.entry.cleared_state, ClearedState::Cleared);
+        assert_eq!(mirror.entry.category_id, None);
+        database.delete_entry(&entered_id, false).unwrap();
+        database
+            .connection
+            .execute("DELETE FROM accounts WHERE id='peer'", [])
+            .unwrap();
+    }
+}
+
+#[test]
+fn status_change_affects_only_one_posted_leg_and_rejects_reconciled_scheduled_or_future() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("tracking", AccountKind::Tracking, 1))
+        .unwrap();
+    let entered = database
+        .create_manual_transfer(&ManualTransferInput {
+            account_id: "cash".into(),
+            counterpart_account_id: "tracking".into(),
+            date: date("2026-09-10"),
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(100),
+            direction: Direction::Outflow,
+            category_id: Some("test-expense".into()),
+        })
+        .unwrap();
+    let mirror = database.entries("tracking").unwrap()[0].entry.id.clone();
+    database
+        .set_register_entry_cleared_state(&entered, "cleared", &date("2026-09-10"))
+        .unwrap();
+    assert_eq!(
+        database.entries("cash").unwrap()[0].entry.cleared_state,
+        ClearedState::Cleared
+    );
+    assert_eq!(
+        database.entries("tracking").unwrap()[0].entry.cleared_state,
+        ClearedState::Cleared
+    );
+    assert_eq!(
+        database.entries("tracking").unwrap()[0].entry.category_id,
+        None
+    );
+    database
+        .connection
+        .execute(
+            "UPDATE transactions SET cleared_state='reconciled' WHERE id=?1",
+            [&entered],
+        )
+        .unwrap();
+    assert!(database
+        .set_register_entry_cleared_state(&entered, "uncleared", &date("2026-09-10"))
+        .is_err());
+    assert!(database
+        .set_register_entry_cleared_state(&mirror, "reconciled", &date("2026-09-10"))
+        .is_err());
+    let future = database
+        .create_manual_transaction(&ManualTransactionDraft {
+            account_id: "cash".into(),
+            date: date("2026-09-11"),
+            payee_name: None,
+            category_id: Some("test-expense".into()),
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-1),
+        })
+        .unwrap();
+    assert!(database
+        .set_register_entry_cleared_state(&future, "cleared", &date("2026-09-10"))
+        .is_err());
+    database
+        .create_monthly_schedule(&account_schedule("cash", None, Some("test-expense")))
+        .unwrap();
+    let scheduled = database.scheduled_occurrences().unwrap()[0]
+        .transaction_id
+        .clone();
+    assert!(database
+        .set_register_entry_cleared_state(&scheduled, "cleared", &date("2026-09-10"))
+        .is_err());
+}
+
+#[test]
+fn due_realization_catches_up_recurring_transfers_clears_both_legs_and_is_idempotent() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("peer", AccountKind::Tracking, 1))
+        .unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-07-10"),
+            day_of_month: None,
+            end_date: None,
+            payee_name: None,
+            category_id: Some("test-expense".into()),
+            memo: "Monthly transfer".into(),
+            flag_id: None,
+            amount: Huf(-100),
+            interval_months: 1,
+            counterpart_account_id: Some("peer".into()),
+        })
+        .unwrap();
+    assert_eq!(
+        database
+            .realize_due_scheduled_transactions(&date("2026-06-30"))
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        database
+            .realize_due_scheduled_transactions(&date("2026-09-10"))
+            .unwrap(),
+        3
+    );
+    assert_eq!(
+        database
+            .realize_due_scheduled_transactions(&date("2026-09-10"))
+            .unwrap(),
+        0
+    );
+    let cash = database.entries("cash").unwrap();
+    let peer = database.entries("peer").unwrap();
+    assert_eq!(
+        cash.iter()
+            .filter(|row| row.entry.posting_state == PostingState::Posted)
+            .count(),
+        3
+    );
+    assert_eq!(
+        peer.iter()
+            .filter(|row| row.entry.posting_state == PostingState::Posted)
+            .count(),
+        3
+    );
+    assert!(cash
+        .iter()
+        .filter(|row| row.entry.posting_state == PostingState::Posted)
+        .all(|row| row.entry.cleared_state == ClearedState::Cleared));
+    assert!(peer
+        .iter()
+        .filter(|row| row.entry.posting_state == PostingState::Posted)
+        .all(|row| row.entry.cleared_state == ClearedState::Cleared));
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].date,
+        date("2026-10-10")
+    );
+}
+
+#[test]
+fn due_cutoff_uses_moved_one_off_and_transfer_occurrence_dates() {
+    for transfer in [false, true] {
+        let (_directory, mut database) = database();
+        if transfer {
+            database
+                .create_account(&account("peer", AccountKind::Tracking, 1))
+                .unwrap();
+        }
+        database
+            .create_monthly_schedule(&MonthlyScheduleDraft {
+                account_id: "cash".into(),
+                start_date: date("2026-09-10"),
+                day_of_month: None,
+                end_date: Some(date("2026-09-10")),
+                payee_name: None,
+                category_id: Some("test-expense".into()),
+                memo: "Moved pending item".into(),
+                flag_id: None,
+                amount: Huf(-100),
+                interval_months: 1,
+                counterpart_account_id: transfer.then(|| "peer".into()),
+            })
+            .unwrap();
+        let pending = database.scheduled_occurrences().unwrap().remove(0);
+        database
+            .update_register_entry(&RegisterEntryEdit {
+                id: pending.transaction_id.clone(),
+                account_id: None,
+                date: date("2026-09-15"),
+                payee_name: None,
+                category_id: Some("test-expense".into()),
+                memo: "Moved pending item".into(),
+                flag_id: None,
+                amount: Huf(-100),
+                cleared_state: ClearedState::Uncleared,
+                confirmed: false,
+                repeat_interval_months: None,
+            })
+            .unwrap();
+        assert_eq!(
+            database
+                .realize_due_scheduled_transactions(&date("2026-09-14"))
+                .unwrap(),
+            0,
+            "a moved pending row must remain pending before its edited date"
+        );
+        assert_eq!(
+            database
+                .realize_due_scheduled_transactions(&date("2026-09-15"))
+                .unwrap(),
+            1,
+            "the moved one-off or transfer occurrence should realize on its edited date"
+        );
+        let cash = database
+            .entries("cash")
+            .unwrap()
+            .into_iter()
+            .find(|row| row.entry.id == pending.transaction_id)
+            .unwrap();
+        assert_eq!(cash.entry.date, date("2026-09-15"));
+        assert_eq!(cash.entry.posting_state, PostingState::Posted);
+        assert_eq!(cash.entry.cleared_state, ClearedState::Cleared);
+        if transfer {
+            let peer = database.entries("peer").unwrap().remove(0);
+            assert_eq!(peer.entry.date, date("2026-09-15"));
+            assert_eq!(peer.entry.posting_state, PostingState::Posted);
+            assert_eq!(peer.entry.cleared_state, ClearedState::Cleared);
+        }
+    }
+}
+
+#[test]
+fn due_realization_after_pending_row_edit_preserves_monthly_day_anchor() {
+    let (_directory, mut database) = database();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2027-01-31"),
+            day_of_month: None,
+            end_date: None,
+            payee_name: None,
+            category_id: Some("test-expense".into()),
+            memo: "Initial".into(),
+            flag_id: None,
+            amount: Huf(-100),
+            interval_months: 1,
+            counterpart_account_id: None,
+        })
+        .unwrap();
+    assert_eq!(
+        database
+            .realize_due_scheduled_transactions(&date("2027-01-31"))
+            .unwrap(),
+        1
+    );
+    let february = database.scheduled_occurrences().unwrap().remove(0);
+    assert_eq!(february.date, date("2027-02-28"));
+    database
+        .update_register_entry(&RegisterEntryEdit {
+            id: february.transaction_id,
+            account_id: None,
+            date: february.date,
+            payee_name: None,
+            category_id: Some("test-expense".into()),
+            memo: "Edited pending row".into(),
+            flag_id: None,
+            amount: Huf(-100),
+            cleared_state: ClearedState::Uncleared,
+            confirmed: false,
+            repeat_interval_months: None,
+        })
+        .unwrap();
+    assert_eq!(
+        database
+            .realize_due_scheduled_transactions(&date("2027-02-28"))
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].date,
+        date("2027-03-31"),
+        "editing the pending occurrence's memo must retain the original day-31 anchor"
+    );
+}
+
+#[test]
+fn due_realization_rolls_back_on_schedule_error_and_skips_closed_legacy_account() {
+    let (_directory, mut database) = database();
+    database
+        .create_monthly_schedule(&account_schedule("cash", None, Some("test-expense")))
+        .unwrap();
+    let first = database.scheduled_occurrences().unwrap()[0]
+        .transaction_id
+        .clone();
+    database.connection.execute_batch("CREATE TRIGGER fail_due_post BEFORE UPDATE OF state ON schedule_occurrences WHEN NEW.state='posted' BEGIN SELECT RAISE(ABORT, 'injected due-post failure'); END;").unwrap();
+    assert!(database
+        .realize_due_scheduled_transactions(&date("2026-10-10"))
+        .is_err());
+    let unchanged = database
+        .entries("cash")
+        .unwrap()
+        .into_iter()
+        .find(|row| row.entry.id == first)
+        .unwrap();
+    assert_eq!(unchanged.entry.posting_state, PostingState::Scheduled);
+    assert_eq!(unchanged.entry.cleared_state, ClearedState::Uncleared);
+
+    database
+        .connection
+        .execute_batch("DROP TRIGGER fail_due_post;")
+        .unwrap();
+    database
+        .connection
+        .execute("UPDATE accounts SET closed=1 WHERE id='cash'", [])
+        .unwrap();
+    assert_eq!(
+        database
+            .due_scheduled_transaction_count(&date("2026-10-10"))
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        database
+            .realize_due_scheduled_transactions(&date("2026-10-10"))
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        database.entries("cash").unwrap()[0].entry.posting_state,
+        PostingState::Scheduled
+    );
+}
+
+#[test]
+fn status_and_due_realization_mutations_are_undoable_without_noop_undo_steps() {
+    let (_directory, mut database) = database();
+    let id = database
+        .create_manual_transaction(&ManualTransactionDraft {
+            account_id: "cash".into(),
+            date: date("2026-09-10"),
+            payee_name: None,
+            category_id: Some("test-expense".into()),
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-10),
+        })
+        .unwrap();
+    database
+        .undoable("Change status", |database| {
+            database
+                .set_register_entry_cleared_state(&id, "cleared", &date("2026-09-10"))
+                .map_err(|error| error.to_string())
+        })
+        .unwrap();
+    assert_eq!(
+        database.undo_status().label.as_deref(),
+        Some("Change status")
+    );
+    database.undo_last_action().unwrap();
+    assert_eq!(
+        database.entries("cash").unwrap()[0].entry.cleared_state,
+        ClearedState::Uncleared
+    );
+    assert_eq!(
+        database
+            .due_scheduled_transaction_count(&date("2026-09-10"))
+            .unwrap(),
+        0
+    );
+    database
+        .undoable("No due rows", |database| {
+            database
+                .realize_due_scheduled_transactions(&date("2026-09-10"))
+                .map_err(|error| error.to_string())
+        })
+        .unwrap();
+    assert!(!database.undo_status().can_undo);
+
+    database
+        .create_monthly_schedule(&account_schedule("cash", None, Some("test-expense")))
+        .unwrap();
+    let scheduled = database.scheduled_occurrences().unwrap()[0]
+        .transaction_id
+        .clone();
+    database
+        .undoable("Realize due", |database| {
+            database
+                .realize_due_scheduled_transactions(&date("2026-09-10"))
+                .map_err(|error| error.to_string())
+        })
+        .unwrap();
+    assert_eq!(
+        database
+            .entries("cash")
+            .unwrap()
+            .into_iter()
+            .find(|row| row.entry.id == scheduled)
+            .unwrap()
+            .entry
+            .cleared_state,
+        ClearedState::Cleared
+    );
+    database.undo_last_action().unwrap();
+    assert_eq!(
+        database
+            .entries("cash")
+            .unwrap()
+            .into_iter()
+            .find(|row| row.entry.id == scheduled)
+            .unwrap()
+            .entry
+            .posting_state,
+        PostingState::Scheduled
+    );
+}
 fn account(id: &str, kind: AccountKind, order: i64) -> Account {
     Account {
         id: id.into(),
@@ -2080,8 +2540,8 @@ fn cash_credit_loan_and_tracking_pairs_remain_balanced_after_edits_and_deletes()
         let to = database.entries("other").unwrap();
         assert_eq!(from[0].amount, Huf(-10000));
         assert_eq!(to[0].amount, Huf(10000));
-        assert_eq!(from[0].entry.cleared_state, ClearedState::Cleared);
-        assert_eq!(to[0].entry.cleared_state, ClearedState::Uncleared);
+        assert_eq!(from[0].entry.cleared_state, ClearedState::Uncleared);
+        assert_eq!(to[0].entry.cleared_state, ClearedState::Cleared);
         assert_eq!(from[0].transfer_id, to[0].transfer_id);
         database
             .update_transfer_amount("p", Huf(25000), false)
@@ -2107,7 +2567,7 @@ fn cash_credit_loan_and_tracking_pairs_remain_balanced_after_edits_and_deletes()
 }
 
 #[test]
-fn entered_inflow_is_cleared_and_automatic_outflow_is_uncleared() {
+fn entered_inflow_is_uncleared_and_automatic_outflow_is_cleared() {
     let (_directory, mut database) = database();
     database
         .create_account(&account("other", AccountKind::Cash, 0))
@@ -2117,11 +2577,11 @@ fn entered_inflow_is_cleared_and_automatic_outflow_is_uncleared() {
         .unwrap();
     assert_eq!(
         database.entries("cash").unwrap()[0].entry.cleared_state,
-        ClearedState::Uncleared
+        ClearedState::Cleared
     );
     assert_eq!(
         database.entries("other").unwrap()[0].entry.cleared_state,
-        ClearedState::Cleared
+        ClearedState::Uncleared
     );
 }
 
@@ -2239,7 +2699,7 @@ fn manual_entry_creates_payees_and_remembers_their_defaults_atomically() {
     let register = database.register_entries("cash").unwrap();
     assert_eq!(register[0].payee_name.as_deref(), Some("Market"));
     assert_eq!(register[0].memo, "Weekly shop");
-    assert_eq!(register[0].cleared_state, ClearedState::Cleared);
+    assert_eq!(register[0].cleared_state, ClearedState::Uncleared);
     assert_eq!(register[0].amount, Huf(-2500));
     let options = database.transaction_form_options().unwrap();
     let market = options
@@ -2294,9 +2754,9 @@ fn manual_transfer_and_register_edit_preserve_pair_and_confirmation_rules() {
     let other = database.entries("other").unwrap();
     assert_eq!(cash[0].entry.id, entered_id);
     assert_eq!(cash[0].amount, Huf(-1000));
-    assert_eq!(cash[0].entry.cleared_state, ClearedState::Cleared);
+    assert_eq!(cash[0].entry.cleared_state, ClearedState::Uncleared);
     assert_eq!(other[0].amount, Huf(1000));
-    assert_eq!(other[0].entry.cleared_state, ClearedState::Uncleared);
+    assert_eq!(other[0].entry.cleared_state, ClearedState::Cleared);
     database
         .set_cleared_state(&other[0].entry.id, ClearedState::Reconciled, false)
         .unwrap();
@@ -3545,6 +4005,7 @@ fn transfer_legs_preserve_independent_dates_metadata_and_posting_states() {
     draft.outflow.flag_id = Some("flag-orange".into());
     draft.inflow.date = date("2026-09-12");
     draft.inflow.posting_state = PostingState::Scheduled;
+    draft.inflow.cleared_state = ClearedState::Uncleared;
     database.create_transfer(&draft).unwrap();
     database
         .rename_flag("flag-orange", "Review correction")
@@ -3665,7 +4126,7 @@ fn persisted_transactions_and_pairs_reopen_with_the_same_balances() {
         reopened
             .account_balance("other", &date("2026-09-10"))
             .unwrap()
-            .uncleared,
+            .cleared,
         Huf(10000)
     );
 }

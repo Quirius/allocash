@@ -1,0 +1,26 @@
+.transaction-context-menu {
+  max-height: calc(100vh - 16px); overflow-y: auto;
+  min-width: 216px; padding: 5px; border: 1px solid #42405f; border-radius: 9px;
+  background: #19182c; color: #d7c9ff; box-shadow: 0 12px 30px #08071499;
+  font: 13px/1.2 system-ui, sans-serif;
+}
+.transaction-context-menu button[role="menuitem"] {
+  box-sizing: border-box; width: 100%; min-height: 32px; padding: 0 9px; border: 0; border-radius: 5px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer;
+}
+.transaction-menu-label { min-width: 0; display: inline-flex; align-items: center; gap: 9px; }
+.transaction-menu-icon { width: 15px; flex: 0 0 15px; display: inline-grid; place-items: center; color: #b8a5f4; font-size: 14px; line-height: 1; }
+.transaction-context-menu button[role="menuitem"]:disabled .transaction-menu-icon { color: #777487; }
+.transaction-context-menu button[role="menuitem"]:not(:disabled):hover,
+.transaction-context-menu button[role="menuitem"]:not(:disabled):focus-visible { outline: none; background: #393552; color: #f0eaff; }
+.transaction-context-menu button[role="menuitem"]:disabled { color: #777487; cursor: default; }
+.transaction-context-menu kbd { padding: 2px 5px; border: 1px solid #55516c; border-radius: 4px; color: #a29bb7; font: 10px/1.2 system-ui, sans-serif; }
+.transaction-menu-separator { height: 1px; margin: 4px 5px; background: #3a3850; }
+.transaction-status-icon { box-sizing: border-box; width: 22px; height: 22px; padding: 2px; display: inline-grid; place-items: center; border: 0; border-radius: 50%; background: transparent; color: inherit; vertical-align: middle; }
+button.transaction-status-icon { cursor: pointer; }
+button.transaction-status-icon:disabled { cursor: default; }
+.transaction-status-dot { width: 16px; height: 16px; display: grid; place-items: center; border: 1.5px solid #898695; border-radius: 50%; color: #898695; font: 700 10px/1 system-ui, sans-serif; }
+.transaction-status-dot.cleared { border-color: #b6e85f; background: #b6e85f; color: #252b16; }
+.transaction-status-icon.reconciled { color: #b6e85f; }
+.transaction-status-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; }

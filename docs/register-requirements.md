@@ -143,7 +143,7 @@ The schema may leave room to add them later without destructive migration.
 
 Normal manually created transaction:
 
-- defaults to ****Cleared****
+- defaults to ****Uncleared****
 
 Scheduled transaction:
 
@@ -182,10 +182,10 @@ no writes and never changes the original transaction or its reconciled state.
 Only saving creates the new recurring entry, using the normal atomic schedule
 and linked-transfer paths.
 
-Transfer counterpart:
+Transfer defaults:
 
-- manually entered side is Cleared
-- automatically generated paired side is Uncleared
+- manually entered side is Uncleared
+- automatically generated paired side is Cleared
 
 Example:
 
@@ -195,10 +195,20 @@ User enters in OTP:
 
 Expected:
 
-- OTP side: Cleared
-- Cash counterpart: Uncleared
+- OTP side: Uncleared
+- Cash counterpart: Cleared
 
-This behavior is intentional.
+This behavior is intentional. Pending scheduled entries begin Uncleared; posting
+them marks the occurrence Cleared, including both legs of a scheduled transfer.
+
+The register status control changes only posted, through-today entries between
+Uncleared and Cleared. Reconciled, future-dated and pending scheduled entries
+cannot use it. Changing one transfer leg does not change its paired leg. Startup
+and local date changes realize due schedules through the inclusive local date in
+one atomic batch. The batch creates a safety backup before writes and is one
+session undo action; an error leaves the entire batch unchanged. Due legacy
+occurrences belonging to closed accounts (or transfers with a closed peer) are
+left pending and skipped by catch-up for explicit recovery.
 
 ## Transfers
 

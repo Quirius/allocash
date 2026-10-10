@@ -513,6 +513,45 @@ fn post_scheduled_occurrence(
         })
     })
 }
+
+#[tauri::command]
+fn set_register_entry_cleared_state(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    id: String,
+    cleared_state: String,
+    as_of: CalendarDate,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database.undoable("Change transaction status", |database| {
+            database
+                .set_register_entry_cleared_state(&id, &cleared_state, &as_of)
+                .map_err(ledger_error)
+        })
+    })
+}
+
+#[tauri::command]
+fn realize_due_scheduled_transactions(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    as_of: CalendarDate,
+) -> Result<usize, String> {
+    with_database(&app, &state, |database| {
+        if database
+            .due_scheduled_transaction_count(&as_of)
+            .map_err(ledger_error)?
+            > 0
+        {
+            create_safety_backup(database)?;
+        }
+        database.undoable("Post due scheduled transactions", |database| {
+            database
+                .realize_due_scheduled_transactions(&as_of)
+                .map_err(ledger_error)
+        })
+    })
+}
 #[tauri::command]
 fn skip_scheduled_occurrence(
     app: tauri::AppHandle,
@@ -777,6 +816,8 @@ pub fn run() {
             get_net_worth_report,
             create_monthly_schedule,
             post_scheduled_occurrence,
+            set_register_entry_cleared_state,
+            realize_due_scheduled_transactions,
             skip_scheduled_occurrence,
             deactivate_schedule,
             create_manual_transaction,

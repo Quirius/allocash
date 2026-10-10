@@ -55,10 +55,22 @@ keys ensure both legs belong to that transfer at commit, and a transfer must use
 two different accounts. Amount changes affect both legs; deleting either leg
 deletes the pair in one SQL transaction. Any failure rolls back the entire write.
 
-The manually entered side defaults to Cleared and its automatically created
-counterpart to Uncleared. This applies whether the user entered the inflow or
-outflow side. Ordinary manual entries default to Cleared; scheduled entries are
-Uncleared and explicitly marked Scheduled.
+New ordinary manual entries default to Uncleared. For a manually created
+transfer, the side entered by the user defaults to Uncleared and the generated
+counterpart defaults to Cleared, in either transfer direction. Scheduled
+occurrences are Uncleared while pending; posting a due or explicitly posted
+occurrence marks it Cleared, including both legs of a scheduled transfer.
+
+The register may change a posted entry dated through the local as-of date between
+Uncleared and Cleared. Reconciled and scheduled entries cannot use that command,
+and a transfer status change affects only the selected leg. Due schedule catch-up
+posts eligible occurrences through an inclusive local date in one database
+transaction; all occurrences in a transfer are posted together. The next
+occurrence is materialized after each posting. A failure rolls back the entire
+catch-up batch. The desktop action creates a safety backup before mutating due
+occurrences and records the batch as one session undo action. Legacy due rows on
+closed accounts, including transfers with a closed peer, are skipped and remain
+pending for explicit recovery.
 
 Each leg retains its own date, category, memo, flag and cleared/posting state.
 Therefore an as-of balance can include one leg before the other when the source
@@ -214,7 +226,9 @@ represented by an end date equal to their start date. Current/past entries with
 Never retain manual-entry behavior. Choosing recurrence creates a pending
 schedule from the selected date. Existing posted future history is unchanged.
 Pending entries can be posted or skipped from the register, from either transfer
-leg, in the unified upcoming section. There is no automatic posting on the due date.
+leg, in the unified upcoming section. Due occurrences are also realized on app
+startup and when the local calendar date changes; overdue occurrences are caught
+up through the inclusive local date.
 
 Schedules support monthly, quarterly and yearly ordinary income/expenses and
 linked account transfers. They materialize one Uncleared, pending occurrence at
