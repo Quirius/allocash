@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { AccountOverview, RegisterEntry } from "../src/lib/desktop";
-import { draftFromPostedEntry, signedAmount } from "../src/app/TransactionEditor";
+import { canMakeUpcomingEntryRepeating, draftFromPostedEntry, signedAmount } from "../src/app/TransactionEditor";
 import { nextRepeatDate } from "../src/app/DateRepeatPicker";
 
 const baseEntry: RegisterEntry = {
@@ -12,6 +12,16 @@ const baseEntry: RegisterEntry = {
 const accounts = [
   { id: "source-account", name: "Bank" }, { id: "cash-account", name: "Cash" },
 ] as AccountOverview[];
+
+it("allows in-place repeating only for uncleared future ordinary entries, including transfers", () => {
+  const futureUncleared = { ...baseEntry, date: "2026-10-11", clearedState: "uncleared" as const };
+  expect(canMakeUpcomingEntryRepeating(futureUncleared, "2026-10-10")).toBe(true);
+  expect(canMakeUpcomingEntryRepeating({ ...futureUncleared, transferId: "transfer" }, "2026-10-10")).toBe(true);
+  expect(canMakeUpcomingEntryRepeating({ ...futureUncleared, date: "2026-10-10" }, "2026-10-10")).toBe(false);
+  expect(canMakeUpcomingEntryRepeating({ ...futureUncleared, clearedState: "cleared" }, "2026-10-10")).toBe(false);
+  expect(canMakeUpcomingEntryRepeating({ ...futureUncleared, scheduleId: "schedule" }, "2026-10-10")).toBe(false);
+  expect(canMakeUpcomingEntryRepeating({ ...futureUncleared, postingState: "scheduled" }, "2026-10-10")).toBe(false);
+});
 
 it.each([
   ["2023-01-15", "2026-10-08", "2026-10-15"],

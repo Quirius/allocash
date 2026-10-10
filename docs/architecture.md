@@ -181,6 +181,12 @@ loading form options never creates it. Register rows expose the effective
 budget-side category from either transfer leg, while persisted categories remain
 per-leg. Low-level import writes preserve source categories and identities.
 
+`make_upcoming_register_entry_repeating` takes an existing register edit and a
+local calendar cutoff. Future Uncleared ordinary entries can be promoted to a
+schedule inside one SQL transaction, including both transfer legs. The first
+occurrence references the original transaction ID; import provenance is retained.
+The command participates in session undo and uses the existing schedule schema.
+
 The Plan's Available amount opens a move popup with a fixed source category.
 `move_plan_money` accepts a nullable destination: a category ID moves Assigned
 between two categories atomically; null returns the source assignment to the

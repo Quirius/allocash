@@ -237,6 +237,22 @@ fn update_register_entry(
 }
 
 #[tauri::command]
+fn make_upcoming_register_entry_repeating(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    edit: RegisterEntryEdit,
+    as_of_date: CalendarDate,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database.undoable("Make repeating", |database| {
+            database
+                .make_upcoming_register_entry_repeating(&edit, &as_of_date)
+                .map_err(ledger_error)
+        })
+    })
+}
+
+#[tauri::command]
 fn delete_register_entry(
     app: tauri::AppHandle,
     state: tauri::State<'_, BudgetState>,
@@ -674,6 +690,7 @@ pub fn run() {
             create_manual_transaction,
             create_manual_transfer,
             update_register_entry,
+            make_upcoming_register_entry_repeating,
             delete_register_entry,
             preview_account_reconciliation,
             reconcile_account,

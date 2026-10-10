@@ -2,10 +2,12 @@ import { useEffect, useState, type FormEvent } from "react";
 import {
   createManualTransfer,
   deleteRegisterEntry,
+  makeUpcomingRegisterEntryRepeating,
   RECONCILED_CONFIRMATION_REQUIRED,
   updateRegisterEntry,
   type AccountOverview,
   type RegisterEntry,
+  type RegisterEntryEdit,
   type TransactionFormOptions,
 } from "../lib/desktop";
 import { formatDate, localCalendarDate, parseHufInput, parseSignedHufInput } from "../lib/format";
@@ -75,6 +77,10 @@ export function signedAmount(outflow: string, inflow: string) {
   }
   const amount = parseHufInput(inflow);
   return { amount: amount.toString(), positive: amount.toString(), direction: "inflow" as const };
+}
+
+export function canMakeUpcomingEntryRepeating(entry: RegisterEntry, asOfDate: string): boolean {
+  return !entry.scheduleId && entry.postingState === "posted" && entry.date > asOfDate && entry.clearedState === "uncleared";
 }
 
 export function TransactionComposer({
@@ -311,6 +317,7 @@ export function RegisterEntryEditor({
   const [flagId, setFlagId] = useState(entry.flagId || "");
   const [clearedState, setClearedState] = useState(entry.clearedState);
   const scheduled = !!entry.scheduleId && entry.postingState === "scheduled";
+  const upcomingRepeatEligible = canMakeUpcomingEntryRepeating(entry, localCalendarDate());
   const [repeatIntervalMonths, setRepeatIntervalMonths] = useState<0 | 1 | 3 | 12>(
     entry.repeatIntervalMonths === 1 || entry.repeatIntervalMonths === 3 || entry.repeatIntervalMonths === 12 ? entry.repeatIntervalMonths : 0,
   );
@@ -363,7 +370,7 @@ export function RegisterEntryEditor({
       if (editCategoryRule.required && (!categoryId || categoryOrigin === "automatic-ready" || inheritedReadyMustReset) && (categoryTouched || direction !== initialDirection || accountId !== account.id)) {
         throw new Error("Choose a category for this budget outflow.");
       }
-      await updateRegisterEntry({
+      const edit: RegisterEntryEdit = {
         id: entry.id,
         accountId: entry.transferId ? null : accountId,
         date,
@@ -372,10 +379,15 @@ export function RegisterEntryEditor({
         memo,
         flagId: flagId || null,
         amount: (direction === "outflow" ? -positive : positive).toString(),
-        clearedState: scheduled ? "uncleared" : clearedState,
+        clearedState: scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? "uncleared" : clearedState,
         confirmed,
-        ...(scheduled ? { repeatIntervalMonths } : {}),
-      });
+        ...(scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? { repeatIntervalMonths } : {}),
+      };
+      if (upcomingRepeatEligible && repeatIntervalMonths > 0) {
+        await makeUpcomingRegisterEntryRepeating(edit, localCalendarDate());
+      } else {
+        await updateRegisterEntry(edit);
+      }
       await onSaved();
       onCancel();
     } catch (caught) {
@@ -442,8 +454,9 @@ export function RegisterEntryEditor({
           </select>
         </label>}
         <div className="editor-date-field">
-        <DateRepeatPicker date={date} onDateChange={setDate} {...(scheduled ? { repeat: repeatIntervalMonths === 1 ? "monthly" as const : repeatIntervalMonths === 3 ? "quarterly" as const : repeatIntervalMonths === 12 ? "yearly" as const : "never" as const, onRepeatChange: (value: EntryRepeat) => setRepeatIntervalMonths(value === "monthly" ? 1 : value === "quarterly" ? 3 : value === "yearly" ? 12 : 0) } : {})} disabled={saving} />
-          {entry.postingState === "posted" && entry.date <= localCalendarDate() && <button type="button" className="secondary" disabled={saving} onClick={onMakeRepeating}>Make repeating</button>}
+        <DateRepeatPicker date={date} onDateChange={setDate} {...(scheduled || upcomingRepeatEligible ? { repeat: repeatIntervalMonths === 1 ? "monthly" as const : repeatIntervalMonths === 3 ? "quarterly" as const : repeatIntervalMonths === 12 ? "yearly" as const : "never" as const, onRepeatChange: (value: EntryRepeat) => setRepeatIntervalMonths(value === "monthly" ? 1 : value === "quarterly" ? 3 : value === "yearly" ? 12 : 0) } : {})} disabled={saving} />
+          {(scheduled || upcomingRepeatEligible) && repeatIntervalMonths === 0 && <button type="button" className="secondary" disabled={saving} onClick={() => setRepeatIntervalMonths(1)}>Make repeating</button>}
+          {!scheduled && !upcomingRepeatEligible && entry.postingState === "posted" && entry.date <= localCalendarDate() && <button type="button" className="secondary" disabled={saving} onClick={onMakeRepeating}>Make repeating</button>}
         </div>
         {!entry.transferId && <label>Payee
           <input list={`edit-payees-${entry.id}`} value={payee} onChange={(event) => setPayee(event.target.value)} />
@@ -466,7 +479,7 @@ export function RegisterEntryEditor({
         </label>}
         <label>Amount<input required inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
         <label>Cleared state
-          <select disabled={scheduled} value={scheduled ? "uncleared" : clearedState} onChange={(event) => setClearedState(event.target.value as RegisterEntry["clearedState"])}>
+          <select disabled={scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0)} value={scheduled || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? "uncleared" : clearedState} onChange={(event) => setClearedState(event.target.value as RegisterEntry["clearedState"])}>
             <option value="uncleared">Uncleared</option>
             <option value="cleared">Cleared</option>
             <option value="reconciled">Reconciled</option>

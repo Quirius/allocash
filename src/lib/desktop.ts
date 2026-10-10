@@ -273,6 +273,10 @@ export async function updateRegisterEntry(edit: RegisterEntryEdit): Promise<void
   return savedMutation(() => invoke("update_register_entry", { edit }));
 }
 
+export async function makeUpcomingRegisterEntryRepeating(edit: RegisterEntryEdit, asOfDate: string): Promise<void> {
+  return savedMutation(() => invoke("make_upcoming_register_entry_repeating", { edit, asOfDate }));
+}
+
 export async function deleteRegisterEntry(id: string, confirmed: boolean): Promise<void> {
   return savedMutation(() => invoke("delete_register_entry", { id, confirmed }));
 }

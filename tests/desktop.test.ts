@@ -25,6 +25,7 @@ import {
   setCategoryNotes,
   setCategoryTargetSnoozed,
   updateRegisterEntry,
+  makeUpcomingRegisterEntryRepeating,
   loadUndoStatus,
   undoLastAction,
   subscribeSavedMutations,
@@ -35,6 +36,13 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn() }));
 
 beforeEach(() => vi.resetAllMocks());
+
+it("promotes an existing upcoming entry with its identity and local date cutoff", async () => {
+  vi.mocked(invoke).mockResolvedValue(undefined);
+  const edit = { id: "existing-future", accountId: "cash", date: "2026-10-31", payeeName: "Rent", categoryId: "rent", memo: "", flagId: null, amount: "-12000", clearedState: "uncleared" as const, confirmed: false, repeatIntervalMonths: 1 as const };
+  await makeUpcomingRegisterEntryRepeating(edit, "2026-10-10");
+  expect(invoke).toHaveBeenCalledWith("make_upcoming_register_entry_repeating", { edit, asOfDate: "2026-10-10" });
+});
 
 it("saves category notes as exact text without a month", async () => {
   vi.mocked(invoke).mockResolvedValue(undefined);

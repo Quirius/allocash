@@ -46,6 +46,15 @@ skipping or canceling an occurrence handles both entries together.
 
 Native backup/export must preserve recurrence rules exactly.
 
+Future Uncleared ordinary entries, including imported upcoming transactions and
+linked transfers, expose Repeat inside the date picker with Never as default.
+Make repeating selects Monthly without advancing their existing future date.
+Saving converts the existing entry or transfer pair into the first pending
+occurrence in place, preserving its identity and imported provenance rather than
+duplicating that occurrence. Cancel leaves both the entry and recurrence unchanged.
+Already scheduled one-off entries can become repeating through the same controls.
+Past entries retain the separate unsaved-copy Make repeating workflow.
+
 ## Moving assigned money
 
 Click a category's Available amount to open a move popup anchored to that amount.

@@ -2667,6 +2667,497 @@ fn invalid_upcoming_edits_leave_occurrence_and_template_unchanged() {
 }
 
 #[test]
+fn upcoming_ordinary_entry_promotes_in_place_without_duplicate_first_occurrence() {
+    let (_directory, mut database) = database();
+    let id = database
+        .create_manual_transaction(&ManualTransactionDraft {
+            account_id: "cash".into(),
+            date: date("2026-10-31"),
+            payee_name: Some("Future rent".into()),
+            category_id: Some("test-expense".into()),
+            memo: "Imported once".into(),
+            flag_id: None,
+            amount: Huf(-1200),
+        })
+        .unwrap();
+    database
+        .set_cleared_state(&id, ClearedState::Uncleared, false)
+        .unwrap();
+    let edit = RegisterEntryEdit {
+        id: id.clone(),
+        account_id: None,
+        date: date("2026-10-31"),
+        payee_name: Some("Future rent".into()),
+        category_id: Some("test-expense".into()),
+        memo: "Updated rent".into(),
+        flag_id: None,
+        amount: Huf(-1500),
+        cleared_state: ClearedState::Uncleared,
+        confirmed: false,
+        repeat_interval_months: Some(1),
+    };
+    database
+        .make_upcoming_register_entry_repeating(&edit, &date("2026-10-10"))
+        .unwrap();
+    let rows = database.entries("cash").unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].entry.id, id);
+    assert_eq!(rows[0].entry.posting_state, PostingState::Scheduled);
+    assert_eq!(rows[0].amount, Huf(-1500));
+    let pending = database.scheduled_occurrences().unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].transaction_id, id);
+    assert_eq!(pending[0].date, date("2026-10-31"));
+    database.post_scheduled_occurrence(&id).unwrap();
+    let next = database.scheduled_occurrences().unwrap();
+    assert_eq!(next.len(), 1);
+    assert_eq!(next[0].date, date("2026-11-30"));
+}
+
+#[test]
+fn upcoming_inflow_promotion_applies_ready_to_assign_to_existing_first_occurrence() {
+    let (_directory, mut database) = database();
+    let id = database
+        .create_manual_transaction(&ManualTransactionDraft {
+            account_id: "cash".into(),
+            date: date("2026-10-31"),
+            payee_name: Some("Future refund".into()),
+            category_id: None,
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(300),
+        })
+        .unwrap();
+    database
+        .set_cleared_state(&id, ClearedState::Uncleared, false)
+        .unwrap();
+    database
+        .make_upcoming_register_entry_repeating(
+            &RegisterEntryEdit {
+                id: id.clone(),
+                account_id: None,
+                date: date("2026-10-31"),
+                payee_name: Some("Future refund".into()),
+                category_id: None,
+                memo: String::new(),
+                flag_id: None,
+                amount: Huf(300),
+                cleared_state: ClearedState::Uncleared,
+                confirmed: false,
+                repeat_interval_months: Some(1),
+            },
+            &date("2026-10-10"),
+        )
+        .unwrap();
+    let entry = database.entries("cash").unwrap().remove(0);
+    assert_eq!(entry.entry.id, id);
+    assert!(entry.entry.category_id.is_some());
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0]
+            .category_name
+            .as_deref(),
+        Some("Ready to Assign")
+    );
+}
+
+#[test]
+fn upcoming_budget_boundary_transfer_promotes_from_either_leg_with_one_category() {
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("tracking", AccountKind::Tracking, 0))
+        .unwrap();
+    let cash_id = database
+        .create_manual_transfer(&ManualTransferInput {
+            account_id: "cash".into(),
+            counterpart_account_id: "tracking".into(),
+            date: date("2026-10-31"),
+            memo: "Future move".into(),
+            flag_id: None,
+            amount: Huf(500),
+            direction: Direction::Outflow,
+            category_id: Some("test-expense".into()),
+        })
+        .unwrap();
+    let tracking_id = database.entries("tracking").unwrap().remove(0).entry.id;
+    database
+        .set_cleared_state(&cash_id, ClearedState::Uncleared, false)
+        .unwrap();
+    database
+        .make_upcoming_register_entry_repeating(
+            &RegisterEntryEdit {
+                id: tracking_id.clone(),
+                account_id: None,
+                date: date("2026-10-31"),
+                payee_name: None,
+                category_id: Some("test-expense".into()),
+                memo: "Future move updated".into(),
+                flag_id: None,
+                amount: Huf(500),
+                cleared_state: ClearedState::Uncleared,
+                confirmed: false,
+                repeat_interval_months: Some(3),
+            },
+            &date("2026-10-10"),
+        )
+        .unwrap();
+    let cash = database.entries("cash").unwrap().remove(0);
+    let tracking = database.entries("tracking").unwrap().remove(0);
+    assert_eq!(cash.entry.id, cash_id);
+    assert_eq!(tracking.entry.id, tracking_id);
+    assert_eq!(cash.entry.category_id.as_deref(), Some("test-expense"));
+    assert_eq!(tracking.entry.category_id, None);
+    assert_eq!(cash.entry.posting_state, PostingState::Scheduled);
+    assert_eq!(tracking.entry.posting_state, PostingState::Scheduled);
+    let pending = database.scheduled_occurrences().unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].transaction_id, tracking_id);
+    assert_eq!(pending[0].category_name.as_deref(), Some("Expense"));
+    database.post_scheduled_occurrence(&tracking_id).unwrap();
+    assert_eq!(
+        database.scheduled_occurrences().unwrap()[0].date,
+        date("2027-01-31")
+    );
+}
+
+#[test]
+fn upcoming_transfer_promotion_routes_categories_by_budget_boundary_from_either_leg() {
+    for (account_a_kind, account_b_kind, boundary) in [
+        (AccountKind::Cash, AccountKind::Tracking, true),
+        (AccountKind::Cash, AccountKind::Credit, false),
+        (AccountKind::Tracking, AccountKind::Loan, false),
+    ] {
+        for select_a in [true, false] {
+            let (_directory, mut database) = database();
+            database
+                .create_account(&account("other", account_b_kind, 1))
+                .unwrap();
+            if account_a_kind != AccountKind::Cash {
+                database
+                    .create_account(&account("source", account_a_kind, 0))
+                    .unwrap();
+            }
+            let source = if account_a_kind == AccountKind::Cash {
+                "cash"
+            } else {
+                "source"
+            };
+            let entered_id = database
+                .create_manual_transfer(&ManualTransferInput {
+                    account_id: source.into(),
+                    counterpart_account_id: "other".into(),
+                    date: date("2026-10-31"),
+                    memo: "Future transfer".into(),
+                    flag_id: None,
+                    amount: Huf(700),
+                    direction: Direction::Outflow,
+                    category_id: boundary.then(|| "test-expense".into()),
+                })
+                .unwrap();
+            let peer = database
+                .entries("other")
+                .unwrap()
+                .into_iter()
+                .find(|entry| entry.entry.id != entered_id)
+                .unwrap()
+                .entry
+                .id;
+            database
+                .set_cleared_state(&entered_id, ClearedState::Uncleared, false)
+                .unwrap();
+            let selected_id = if select_a {
+                entered_id.clone()
+            } else {
+                peer.clone()
+            };
+            let selected_account = if select_a { source } else { "other" };
+            let selected_amount = if select_a { -700 } else { 700 };
+            database
+                .make_upcoming_register_entry_repeating(
+                    &RegisterEntryEdit {
+                        id: selected_id.clone(),
+                        account_id: None,
+                        date: date("2026-10-31"),
+                        payee_name: None,
+                        category_id: boundary.then(|| "test-expense".into()),
+                        memo: "Future transfer".into(),
+                        flag_id: None,
+                        amount: Huf(selected_amount),
+                        cleared_state: ClearedState::Uncleared,
+                        confirmed: false,
+                        repeat_interval_months: Some(1),
+                    },
+                    &date("2026-10-10"),
+                )
+                .unwrap();
+            assert!(database
+                .entries(selected_account)
+                .unwrap()
+                .iter()
+                .any(|entry| entry.entry.id == selected_id));
+            let expected_category_id = if boundary { Some("test-expense") } else { None };
+            for (account_id, entry_id) in [(source, entered_id.as_str()), ("other", peer.as_str())]
+            {
+                let entry = database
+                    .entries(account_id)
+                    .unwrap()
+                    .into_iter()
+                    .find(|entry| entry.entry.id == entry_id)
+                    .unwrap();
+                let is_budget_leg = boundary
+                    && ((account_id == source && account_a_kind.is_on_budget())
+                        || (account_id == "other" && account_b_kind.is_on_budget()));
+                assert_eq!(
+                    entry.entry.category_id.as_deref(),
+                    if is_budget_leg {
+                        expected_category_id
+                    } else {
+                        None
+                    }
+                );
+            }
+            assert_eq!(database.scheduled_occurrences().unwrap().len(), 1);
+        }
+    }
+}
+
+#[test]
+fn upcoming_repeating_rejections_roll_back_all_rows_and_templates() {
+    for failure in [
+        "past-date",
+        "cleared",
+        "closed",
+        "missing-category",
+        "interval",
+    ] {
+        let (_directory, mut database) = database();
+        let id = database
+            .create_manual_transaction(&ManualTransactionDraft {
+                account_id: "cash".into(),
+                date: date("2026-10-31"),
+                payee_name: Some("Future item".into()),
+                category_id: Some("test-expense".into()),
+                memo: "Original".into(),
+                flag_id: None,
+                amount: Huf(-700),
+            })
+            .unwrap();
+        if failure == "cleared" {
+            database
+                .set_cleared_state(&id, ClearedState::Cleared, false)
+                .unwrap();
+        }
+        if failure == "closed" {
+            database.set_account_closed("cash", true).unwrap();
+        }
+        let edit = RegisterEntryEdit {
+            id: id.clone(),
+            account_id: None,
+            date: date(if failure == "past-date" {
+                "2026-10-10"
+            } else {
+                "2026-10-31"
+            }),
+            payee_name: Some("Changed".into()),
+            category_id: if failure == "missing-category" {
+                None
+            } else {
+                Some("test-expense".into())
+            },
+            memo: "Changed".into(),
+            flag_id: None,
+            amount: Huf(-800),
+            cleared_state: ClearedState::Uncleared,
+            confirmed: false,
+            repeat_interval_months: Some(if failure == "interval" { 2 } else { 1 }),
+        };
+        assert!(
+            database
+                .make_upcoming_register_entry_repeating(&edit, &date("2026-10-10"))
+                .is_err(),
+            "case: {failure}"
+        );
+        let stored = database.entries("cash").unwrap().remove(0);
+        assert_eq!(stored.entry.id, id);
+        assert_eq!(stored.entry.date, date("2026-10-31"));
+        assert_eq!(stored.amount, Huf(-700));
+        assert_eq!(stored.entry.memo, "Original");
+        assert_eq!(stored.entry.posting_state, PostingState::Posted);
+        assert!(database.scheduled_occurrences().unwrap().is_empty());
+        assert_eq!(
+            database
+                .account_balance("cash", &date("2026-10-10"))
+                .unwrap()
+                .working,
+            Huf(0)
+        );
+    }
+
+    let (_directory, mut database) = database();
+    database
+        .create_account(&account("other", AccountKind::Credit, 1))
+        .unwrap();
+    let id = database
+        .create_manual_transfer(&ManualTransferInput {
+            account_id: "cash".into(),
+            counterpart_account_id: "other".into(),
+            date: date("2026-10-31"),
+            memo: "Original pair".into(),
+            flag_id: None,
+            amount: Huf(700),
+            direction: Direction::Outflow,
+            category_id: None,
+        })
+        .unwrap();
+    let peer = database.entries("other").unwrap()[0].entry.id.clone();
+    database
+        .set_cleared_state(&id, ClearedState::Uncleared, false)
+        .unwrap();
+    database
+        .set_cleared_state(&peer, ClearedState::Reconciled, false)
+        .unwrap();
+    assert!(database
+        .make_upcoming_register_entry_repeating(
+            &RegisterEntryEdit {
+                id: id.clone(),
+                account_id: None,
+                date: date("2026-11-30"),
+                payee_name: None,
+                category_id: None,
+                memo: "Changed pair".into(),
+                flag_id: None,
+                amount: Huf(-800),
+                cleared_state: ClearedState::Uncleared,
+                confirmed: false,
+                repeat_interval_months: Some(1),
+            },
+            &date("2026-10-10"),
+        )
+        .is_err());
+    assert_eq!(
+        database.entries("cash").unwrap()[0].entry.date,
+        date("2026-10-31")
+    );
+    assert_eq!(database.entries("cash").unwrap()[0].amount, Huf(-700));
+    assert_eq!(database.entries("other").unwrap()[0].amount, Huf(700));
+    assert!(database.scheduled_occurrences().unwrap().is_empty());
+
+    database
+        .set_cleared_state(&peer, ClearedState::Uncleared, true)
+        .unwrap();
+    assert!(database
+        .make_upcoming_register_entry_repeating(
+            &RegisterEntryEdit {
+                id: id.clone(),
+                account_id: None,
+                date: date("2026-10-31"),
+                payee_name: None,
+                category_id: None,
+                memo: "Overflow".into(),
+                flag_id: None,
+                amount: Huf(i64::MIN),
+                cleared_state: ClearedState::Uncleared,
+                confirmed: false,
+                repeat_interval_months: Some(1),
+            },
+            &date("2026-10-10"),
+        )
+        .is_err());
+    assert_eq!(database.entries("cash").unwrap()[0].amount, Huf(-700));
+    assert_eq!(database.entries("other").unwrap()[0].amount, Huf(700));
+    assert!(database.scheduled_occurrences().unwrap().is_empty());
+}
+
+#[test]
+fn upcoming_promotion_preserves_import_provenance_and_undo_restores_future_row() {
+    let (_directory, mut database) = database();
+    let id = database
+        .create_manual_transaction(&ManualTransactionDraft {
+            account_id: "cash".into(),
+            date: date("2026-10-31"),
+            payee_name: Some("Imported future".into()),
+            category_id: Some("test-expense".into()),
+            memo: "Source memo".into(),
+            flag_id: None,
+            amount: Huf(-700),
+        })
+        .unwrap();
+    database
+        .set_cleared_state(&id, ClearedState::Uncleared, false)
+        .unwrap();
+    database.connection.execute(
+        "INSERT INTO import_batches (id,source_name,source_bytes,sha256) VALUES ('batch-test','fixture.csv',x'01',?1)",
+        ["a".repeat(64)],
+    ).unwrap();
+    database.connection.execute(
+        "INSERT INTO import_rows (id,batch_id,source_file,row_number,raw_data) VALUES ('row-test','batch-test','transactions.csv',1,'{}')",
+        [],
+    ).unwrap();
+    database
+        .connection
+        .execute(
+            "UPDATE transactions SET origin='import',import_row_id='row-test' WHERE id=?1",
+            [&id],
+        )
+        .unwrap();
+    let before = database.entries("cash").unwrap().remove(0).entry;
+    let balance_before = database
+        .account_balance("cash", &date("2026-10-10"))
+        .unwrap();
+    database
+        .undoable("Make repeating", |database| {
+            database
+                .make_upcoming_register_entry_repeating(
+                    &RegisterEntryEdit {
+                        id: id.clone(),
+                        account_id: None,
+                        date: date("2026-10-31"),
+                        payee_name: Some("Imported future".into()),
+                        category_id: Some("test-expense".into()),
+                        memo: "Updated memo".into(),
+                        flag_id: None,
+                        amount: Huf(-800),
+                        cleared_state: ClearedState::Uncleared,
+                        confirmed: false,
+                        repeat_interval_months: Some(12),
+                    },
+                    &date("2026-10-10"),
+                )
+                .map_err(|error| error.to_string())
+        })
+        .unwrap();
+    let promoted = database.entries("cash").unwrap().remove(0);
+    assert_eq!(promoted.entry.id, before.id);
+    assert_eq!(promoted.entry.origin, Origin::Import);
+    assert_eq!(promoted.entry.import_row_id.as_deref(), Some("row-test"));
+    assert_eq!(database.scheduled_occurrences().unwrap().len(), 1);
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-10-10"))
+            .unwrap(),
+        balance_before
+    );
+    assert_eq!(
+        database.undo_status().label.as_deref(),
+        Some("Make repeating")
+    );
+    database.undo_last_action().unwrap();
+    let restored = database.entries("cash").unwrap().remove(0);
+    assert_eq!(restored.entry.id, before.id);
+    assert_eq!(restored.entry.origin, before.origin);
+    assert_eq!(restored.entry.import_row_id, before.import_row_id);
+    assert_eq!(restored.entry.posting_state, PostingState::Posted);
+    assert_eq!(restored.entry.memo, before.memo);
+    assert_eq!(restored.amount, Huf(-700));
+    assert!(database.scheduled_occurrences().unwrap().is_empty());
+    assert_eq!(
+        database
+            .account_balance("cash", &date("2026-10-10"))
+            .unwrap(),
+        balance_before
+    );
+}
+
+#[test]
 fn converting_later_repeating_occurrence_to_never_sets_one_off_anchor() {
     let (_directory, mut database) = database();
     database

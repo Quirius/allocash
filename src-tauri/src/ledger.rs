@@ -2203,6 +2203,26 @@ impl Database {
     /// Applies register edits atomically. Transfer amounts stay on the shared
     /// pair record; date, category, flag, memo and clearing state belong to a leg.
     pub fn update_register_entry(&mut self, edit: &RegisterEntryEdit) -> LedgerResult<()> {
+        self.update_register_entry_internal(edit, None)
+    }
+
+    pub fn make_upcoming_register_entry_repeating(
+        &mut self,
+        edit: &RegisterEntryEdit,
+        as_of: &CalendarDate,
+    ) -> LedgerResult<()> {
+        let interval = edit.repeat_interval_months.unwrap_or(0);
+        if ![1, 3, 12].contains(&interval) {
+            return Err(LedgerError::InvalidValue("Invalid repeat interval."));
+        }
+        self.update_register_entry_internal(edit, Some((as_of, interval)))
+    }
+
+    fn update_register_entry_internal(
+        &mut self,
+        edit: &RegisterEntryEdit,
+        promotion: Option<(&CalendarDate, i64)>,
+    ) -> LedgerResult<()> {
         if edit.amount.0 == 0 {
             return Err(LedgerError::InvalidValue(
                 "A transaction amount cannot be zero.",
@@ -2235,14 +2255,50 @@ impl Database {
             .optional()?
             .ok_or(LedgerError::NotFound)?;
         if current.5 == PostingState::Scheduled {
+            if promotion.is_some() {
+                return Err(LedgerError::InvalidValue(
+                    "This entry is already linked to a schedule.",
+                ));
+            }
             update_scheduled_register_entry(&transaction, edit, &current)?;
             transaction.commit()?;
             return Ok(());
+        }
+        if promotion.is_none()
+            && edit
+                .repeat_interval_months
+                .is_some_and(|interval| interval > 0)
+        {
+            return Err(LedgerError::InvalidValue(
+                "Use the repeat action to make an upcoming entry repeat.",
+            ));
         }
         let amount_changed = current.4 != edit.amount.0;
         let sign_changed = current.4.signum() != edit.amount.0.signum();
         let state_changed = current.2 != edit.cleared_state;
         let is_transfer = current.0.is_some();
+        if let Some((as_of, _)) = promotion {
+            if current.5 != PostingState::Posted
+                || current.6.as_str() <= as_of.as_str()
+                || edit.date.as_str() <= as_of.as_str()
+                || current.2 != ClearedState::Uncleared
+                || edit.cleared_state != ClearedState::Uncleared
+            {
+                return Err(LedgerError::InvalidValue(
+                    "Only future uncleared entries can be made repeating.",
+                ));
+            }
+            let linked_schedule: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM schedule_occurrences WHERE transaction_id=?1)",
+                [&edit.id],
+                |row| row.get(0),
+            )?;
+            if linked_schedule {
+                return Err(LedgerError::InvalidValue(
+                    "This entry is already linked to a schedule.",
+                ));
+            }
+        }
         let account_changed = edit
             .account_id
             .as_deref()
@@ -2281,6 +2337,30 @@ impl Database {
         } else {
             false
         };
+        if let Some((as_of, _)) = promotion {
+            if reconciled_pair {
+                return Err(LedgerError::InvalidValue(
+                    "Only unreconciled transfers can be made repeating.",
+                ));
+            }
+            if let Some(transfer_id) = current.0.as_deref() {
+                let invalid_peer: bool = transaction.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM transactions WHERE transfer_id=?1 AND (posting_state<>'posted' OR cleared_state<>'uncleared' OR transaction_date<=?2))",
+                    params![transfer_id, as_of.as_str()],
+                    |row| row.get(0),
+                )?;
+                let linked_schedule: bool = transaction.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM schedule_occurrences o JOIN transactions t ON t.id=o.transaction_id WHERE t.transfer_id=?1)",
+                    [transfer_id],
+                    |row| row.get(0),
+                )?;
+                if invalid_peer || linked_schedule {
+                    return Err(LedgerError::InvalidValue(
+                        "Only future uncleared unscheduled transfers can be made repeating.",
+                    ));
+                }
+            }
+        }
         let confirmation_required = ((state_changed || detail_changed)
             && current.2 == ClearedState::Reconciled)
             || ((amount_changed || (is_transfer && category_changed))
@@ -2386,7 +2466,7 @@ impl Database {
                 params![edit.id, edit.account_id.as_deref().unwrap_or(&current.11), edit.date.as_str(), payee_id, edit.memo.trim(), edit.flag_id, edit.cleared_state],
             )?;
         }
-        if let Some(payee_id) = payee_id.filter(|_| {
+        if let Some(payee_id) = payee_id.as_ref().filter(|_| {
             !is_transfer && (payee_changed || current.9 != edit.category_id || amount_changed)
         }) {
             let direction = if edit.amount.0 < 0 {
@@ -2397,6 +2477,78 @@ impl Database {
             transaction.execute(
                 "UPDATE payees SET last_category_id=?2,last_direction=?3 WHERE id=?1",
                 params![payee_id, edit.category_id, direction],
+            )?;
+        }
+        if let Some((_as_of, interval)) = promotion {
+            let account_id = edit.account_id.as_deref().unwrap_or(&current.11);
+            ensure_open_account(&transaction, account_id)?;
+            let counterpart: Option<String> = if let Some(transfer_id) = current.0.as_deref() {
+                Some(transaction.query_row(
+                    "SELECT account_id FROM transactions WHERE transfer_id=?1 AND id<>?2",
+                    params![transfer_id, edit.id],
+                    |row| row.get(0),
+                )?)
+            } else {
+                None
+            };
+            if let Some(counterpart) = counterpart.as_deref() {
+                ensure_open_account(&transaction, counterpart)?;
+            }
+            let template_category = if let Some(transfer_id) = current.0.as_deref() {
+                let (budget_kind, budget_amount) = transaction.query_row(
+                    "SELECT CASE WHEN a.kind IN ('cash','credit') AND peer_a.kind IN ('tracking','loan') THEN a.kind WHEN a.kind IN ('tracking','loan') AND peer_a.kind IN ('cash','credit') THEN peer_a.kind ELSE NULL END,CASE WHEN a.kind IN ('cash','credit') AND peer_a.kind IN ('tracking','loan') THEN ?2 WHEN a.kind IN ('tracking','loan') AND peer_a.kind IN ('cash','credit') THEN -?2 ELSE NULL END FROM transactions le JOIN accounts a ON a.id=le.account_id JOIN transactions peer ON peer.transfer_id=le.transfer_id AND peer.id<>le.id JOIN accounts peer_a ON peer_a.id=peer.account_id WHERE le.id=?1 AND le.transfer_id=?3",
+                    params![edit.id, edit.amount.0, transfer_id],
+                    |row| Ok((row.get::<_, Option<AccountKind>>(0)?, row.get::<_, Option<i64>>(1)?)),
+                )?;
+                if let (Some(kind), Some(amount)) = (budget_kind, budget_amount) {
+                    manual_category(&transaction, kind, amount, edit.category_id.as_deref())?
+                } else {
+                    None
+                }
+            } else {
+                manual_category(
+                    &transaction,
+                    account_kind(&transaction, account_id)?,
+                    edit.amount.0,
+                    edit.category_id.as_deref(),
+                )?
+            };
+            let schedule_id = random_id(&transaction, "monthly-schedule")?;
+            transaction.execute(
+                "INSERT INTO schedules (id,account_id,payee_id,category_id,memo,flag_id,amount_huf,start_date,day_of_month,end_date,interval_months,counterpart_account_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,NULL,?10,?11)",
+                params![schedule_id, account_id, payee_id, template_category, edit.memo.trim(), edit.flag_id, edit.amount.0, edit.date.as_str(), calendar_day(&edit.date)?, interval, counterpart],
+            )?;
+            if let Some(transfer_id) = current.0.as_deref() {
+                let budget_leg_id: Option<String> = transaction.query_row(
+                    "SELECT CASE WHEN a.kind IN ('cash','credit') AND peer_a.kind IN ('tracking','loan') THEN le.id WHEN a.kind IN ('tracking','loan') AND peer_a.kind IN ('cash','credit') THEN peer.id ELSE NULL END FROM transactions le JOIN accounts a ON a.id=le.account_id JOIN transactions peer ON peer.transfer_id=le.transfer_id AND peer.id<>le.id JOIN accounts peer_a ON peer_a.id=peer.account_id WHERE le.id=?1 AND le.transfer_id=?2",
+                    params![edit.id, transfer_id],
+                    |row| row.get(0),
+                )?;
+                transaction.execute(
+                    "UPDATE transactions SET category_id=CASE WHEN id=?2 THEN ?3 ELSE NULL END WHERE transfer_id=?1",
+                    params![transfer_id, budget_leg_id, template_category],
+                )?;
+                transaction.execute(
+                    "UPDATE transactions SET posting_state='scheduled',scheduled_origin_id=?2 WHERE transfer_id=?1",
+                    params![transfer_id, schedule_id],
+                )?;
+                transaction.execute(
+                    "UPDATE transactions SET transaction_date=?2 WHERE transfer_id=?1",
+                    params![transfer_id, edit.date.as_str()],
+                )?;
+            } else {
+                transaction.execute(
+                    "UPDATE transactions SET category_id=?2 WHERE id=?1",
+                    params![edit.id, template_category],
+                )?;
+                transaction.execute(
+                    "UPDATE transactions SET posting_state='scheduled',scheduled_origin_id=?2 WHERE id=?1",
+                    params![edit.id, schedule_id],
+                )?;
+            }
+            transaction.execute(
+                "INSERT INTO schedule_occurrences (schedule_id,occurrence_date,transaction_id,state) VALUES (?1,?2,?3,'pending')",
+                params![schedule_id, edit.date.as_str(), edit.id],
             )?;
         }
         transaction.commit()?;

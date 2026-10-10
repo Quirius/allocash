@@ -1,5 +1,29 @@
 # Implementation and validation status
 
+On 2026-10-10, the owner confirmed a category target test worked, then reported
+that upcoming transactions lacked a way to make them repeating. Imported future
+ordinary entries had no schedule link, so their editor hid Repeat. Future
+Uncleared ordinary transactions and transfers now expose Repeat in the date
+picker, defaulting to Never, and Make repeating selects Monthly without advancing
+the first date. One-off scheduled entries expose the same shortcut. Saving an
+ordinary upcoming entry promotes its existing transaction or transfer pair into
+the first pending occurrence in one SQL transaction rather than creating a
+duplicate. Transaction IDs, transfer linkage and import provenance are retained;
+first-occurrence and template categories follow budget-boundary rules. Cancel
+does not write. Existing scheduled edits and the past-entry repeating-copy
+workflow retain their behavior. The new desktop command is one undoable action,
+uses a local calendar cutoff and rejects non-future, cleared/reconciled, closed,
+already scheduled and invalid recurrence requests without partial changes.
+All 168 Rust library tests and 147 frontend tests passed. Coverage includes
+ordinary inflow/outflow, month-end recurrence, both transfer sides and budget
+scopes, imported identity/provenance, rollback, unchanged as-of balance and undo.
+Formatting, Cargo check, independent review, frontend and per-user NSIS builds
+passed. Installation exited successfully and preserved budget bytes; the installed
+executable matches the release build after its expected bundle marker. A responsive
+native window reopened. Owner upcoming Repeat, first-occurrence, Save/Cancel and
+undo interaction checks remain open; full target/recurrence recreation and the
+remaining migration rehearsal are not inferred complete from the target test.
+
 On 2026-10-10, the owner confirmed that installed account balances and the current
 month's Ready to Assign match their latest YNAB data. This closes the owner-facing
 balance comparison requested after the Plan refresh checks. It does not imply
