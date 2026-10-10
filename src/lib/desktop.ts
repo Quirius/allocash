@@ -83,6 +83,10 @@ export interface AccountDetails {
   transactionCount: number; transferCount: number; scheduleCount: number; reconciledCount: number;
 }
 export interface EditAccountInput { accountId: string; name: string; notes: string; asOf: string; expectedWorkingBalance: string; workingBalance: string | null; }
+export interface CreateBudgetAccountInput { name: string; kind: AccountKind; balance: string; asOf: string; }
+export async function createBudgetAccount(input: CreateBudgetAccountInput): Promise<string> {
+  return savedMutation(() => invoke<string>("create_budget_account", { input }));
+}
 
 export interface RegisterEntry {
   id: string;

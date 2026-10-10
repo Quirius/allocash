@@ -1,5 +1,20 @@
 # Implementation and validation status
 
+On 2026-10-10, the sidebar gained an Add Account popup. Its type labels map to
+the existing cash, credit, loan and tracking kinds; subtypes add no schema.
+Creating an account, its nonzero cleared starting-balance entry, Ready to Assign
+category and credit payment-category mapping is atomic and one undoable action.
+Starting balances retain their entered sign and date today; credit debt is
+entered as a negative amount. A failed account-list refresh can be retried
+without replaying creation. Sidebar footer controls stay visible after collapse
+and at narrow widths; expanded account groups remain accessible. All 239
+frontend tests, the full 194-test Rust suite plus the hidden-payment-category
+regression, formatting, Cargo check and independent review passed. Synthetic
+browser checks verified centered popup/type selection and sidebar reopening at
+700 and 500 pixels. Production and final native builds passed. Installation
+preserved budget bytes, the installed executable matches the release build, and
+a responsive native window reopened. Owner interaction confirmation remains open.
+
 On 2026-10-10, owner feedback refined clearing icons to crisp SVG circle/C
 shapes with grey outlined Uncleared and green filled Cleared states. A saved
 status change patches its row in place, then reads workspace balances silently;
@@ -298,8 +313,10 @@ snapshot before a successful saved action, with a bounded 30-step session histor
 Undo reverses complete transfers, related payees and recurrence state alongside
 ordinary transactions, Plan assignments/moves, targets/snoozes, credit-payment
 mapping and reconciliation. The generic boundary also supports account metadata
-and closed-state changes without adding an account-management screen. Existing
-reconciled-history confirmation and required deletion backups remain in place.
+and closed-state changes; this earlier change covered editing and close/reopen,
+before the Add Account popup described in the current status entry above.
+Existing reconciled-history confirmation and required deletion backups remain
+in place.
 Failed partial writes restore the prior state; failed undo retains history, and
 failed recovery preserves the relevant safety copies. Successful native restore
 clears history; reopening starts a new history. No schema change is required.

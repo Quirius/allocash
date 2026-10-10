@@ -52,7 +52,64 @@ pub struct DeleteClosedAccountInput {
     pub confirmed: bool,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateBudgetAccountInput {
+    pub name: String,
+    pub kind: AccountKind,
+    pub balance: Huf,
+    pub as_of: CalendarDate,
+}
+
 impl Database {
+    pub fn create_budget_account(
+        &mut self,
+        input: &CreateBudgetAccountInput,
+    ) -> LedgerResult<String> {
+        let name = input.name.trim();
+        if !(1..=200).contains(&name.chars().count()) {
+            return Err(LedgerError::InvalidValue(
+                "Account names must contain 1–200 characters.",
+            ));
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let account_id = random_id(&transaction, "account")?;
+        let sort_order: i64 = transaction.query_row(
+            "SELECT COALESCE(MAX(sort_order)+1,0) FROM accounts WHERE kind=?1 AND closed=0",
+            [input.kind],
+            |row| row.get(0),
+        )?;
+        transaction.execute(
+            "INSERT INTO accounts (id,name,kind,sort_order,closed,notes) VALUES (?1,?2,?3,?4,0,'')",
+            params![account_id, name, input.kind, sort_order],
+        )?;
+
+        if input.kind == AccountKind::Credit {
+            let category_id = credit_payment_category(&transaction, name)?;
+            transaction.execute(
+                "INSERT INTO credit_payment_categories (account_id,category_id) VALUES (?1,?2)",
+                params![account_id, category_id],
+            )?;
+        }
+        if input.balance.0 != 0 {
+            let payee_id = resolve_payee(&transaction, "Starting Balance")?;
+            let category_id = if input.kind.is_on_budget() {
+                Some(ready_to_assign(&transaction)?)
+            } else {
+                None
+            };
+            let transaction_id = random_id(&transaction, "starting-balance")?;
+            transaction.execute(
+                "INSERT INTO transactions (id,account_id,transaction_date,payee_id,category_id,memo,amount_huf,cleared_state,posting_state,origin) VALUES (?1,?2,?3,?4,?5,'Starting balance',?6,'cleared','posted','manual')",
+                params![transaction_id, account_id, input.as_of.as_str(), payee_id, category_id, input.balance.0],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(account_id)
+    }
+
     pub fn get_account_details(
         &self,
         input: &GetAccountDetailsInput,
@@ -362,6 +419,55 @@ fn ready_to_assign(connection: &rusqlite::Connection) -> LedgerResult<String> {
     connection.execute(
         "INSERT INTO categories (id,group_id,name,sort_order) VALUES (?1,?2,'Ready to Assign',0)",
         params![id, group_id],
+    )?;
+    Ok(id)
+}
+
+fn credit_payment_category(
+    connection: &rusqlite::Connection,
+    account_name: &str,
+) -> LedgerResult<String> {
+    let group_id: Option<String> = connection
+        .query_row(
+            "SELECT id FROM category_groups WHERE lower(trim(name))='credit card payments' AND hidden=0 ORDER BY id LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let group_id = if let Some(id) = group_id {
+        id
+    } else {
+        let id = random_id(connection, "category-group")?;
+        let sort_order: i64 = connection.query_row(
+            "SELECT COALESCE(MAX(sort_order)+1,0) FROM category_groups",
+            [],
+            |row| row.get(0),
+        )?;
+        connection.execute(
+            "INSERT INTO category_groups (id,name,sort_order) VALUES (?1,'Credit Card Payments',?2)",
+            params![id, sort_order],
+        )?;
+        id
+    };
+    let existing: Option<String> = connection
+        .query_row(
+            "SELECT c.id FROM categories c LEFT JOIN credit_payment_categories p ON p.category_id=c.id WHERE c.group_id=?1 AND c.name=?2 COLLATE NOCASE AND c.hidden=0 AND p.category_id IS NULL ORDER BY c.id LIMIT 1",
+            params![group_id, account_name],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(id) = existing {
+        return Ok(id);
+    }
+    let id = random_id(connection, "category")?;
+    let sort_order: i64 = connection.query_row(
+        "SELECT COALESCE(MAX(sort_order)+1,0) FROM categories WHERE group_id=?1",
+        [&group_id],
+        |row| row.get(0),
+    )?;
+    connection.execute(
+        "INSERT INTO categories (id,group_id,name,sort_order) VALUES (?1,?2,?3,?4)",
+        params![id, group_id, account_name, sort_order],
     )?;
     Ok(id)
 }

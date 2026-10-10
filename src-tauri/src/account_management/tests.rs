@@ -42,6 +42,281 @@ fn transaction(db: &mut Database, _id: &str, account_id: &str, date_text: &str, 
     .unwrap();
 }
 
+fn create_input(name: &str, kind: AccountKind, balance: i64) -> CreateBudgetAccountInput {
+    CreateBudgetAccountInput {
+        name: name.into(),
+        kind,
+        balance: Huf(balance),
+        as_of: date("2026-05-10"),
+    }
+}
+
+#[test]
+fn create_account_adds_checked_starting_entry_by_budget_scope_and_credit_mapping() {
+    let (_dir, mut db) = database();
+    let cash = db
+        .create_budget_account(&create_input("  Cash  ", AccountKind::Cash, -300))
+        .unwrap();
+    let credit = db
+        .create_budget_account(&create_input("Everyday Card", AccountKind::Credit, -800))
+        .unwrap();
+    let loan = db
+        .create_budget_account(&create_input("Loan", AccountKind::Loan, 500))
+        .unwrap();
+    assert_eq!(
+        db.account_balance(&cash, &date("2026-05-10"))
+            .unwrap()
+            .working,
+        Huf(-300)
+    );
+    assert_eq!(
+        db.account_balance(&credit, &date("2026-05-10"))
+            .unwrap()
+            .working,
+        Huf(-800)
+    );
+    assert_eq!(
+        db.account_balance(&loan, &date("2026-05-10"))
+            .unwrap()
+            .working,
+        Huf(500)
+    );
+    let cash_category: Option<String> = db
+        .connection
+        .query_row(
+            "SELECT category_id FROM transactions WHERE account_id=?1",
+            [&cash],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let credit_category: Option<String> = db
+        .connection
+        .query_row(
+            "SELECT category_id FROM transactions WHERE account_id=?1",
+            [&credit],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let loan_category: Option<String> = db
+        .connection
+        .query_row(
+            "SELECT category_id FROM transactions WHERE account_id=?1",
+            [&loan],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(cash_category, credit_category);
+    assert_eq!(loan_category, None);
+    let payment_category: String = db
+        .connection
+        .query_row(
+            "SELECT category_id FROM credit_payment_categories WHERE account_id=?1",
+            [&credit],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let group_name: String = db.connection.query_row("SELECT g.name FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE c.id=?1", [&payment_category], |r| r.get(0)).unwrap();
+    assert_eq!(group_name, "Credit Card Payments");
+    assert_eq!(
+        db.connection
+            .query_row("SELECT notes FROM accounts WHERE id=?1", [&credit], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap(),
+        ""
+    );
+    assert_eq!(
+        db.connection
+            .query_row(
+                "SELECT cleared_state FROM transactions WHERE account_id=?1",
+                [&cash],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+        "cleared"
+    );
+}
+
+#[test]
+fn zero_balance_creation_keeps_opening_ledger_empty_and_allows_duplicate_names() {
+    let (_dir, mut db) = database();
+    let first = db
+        .create_budget_account(&create_input("Same", AccountKind::Tracking, 0))
+        .unwrap();
+    let second = db
+        .create_budget_account(&create_input("Same", AccountKind::Tracking, 0))
+        .unwrap();
+    assert_ne!(first, second);
+    assert_eq!(
+        db.connection
+            .query_row("SELECT COUNT(*) FROM accounts WHERE name='Same'", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        db.connection
+            .query_row(
+                "SELECT COUNT(*) FROM transactions WHERE account_id IN (?1,?2)",
+                rusqlite::params![first, second],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn account_creation_rolls_back_account_categories_and_payee_when_starting_entry_fails() {
+    let (_dir, mut db) = database();
+    db.connection.execute_batch("CREATE TRIGGER fail_starting_balance BEFORE INSERT ON transactions BEGIN SELECT RAISE(ABORT,'test failure'); END;").unwrap();
+    assert!(db
+        .create_budget_account(&create_input("Failed", AccountKind::Cash, 100))
+        .is_err());
+    assert_eq!(
+        db.connection
+            .query_row(
+                "SELECT COUNT(*) FROM accounts WHERE name='Failed'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        db.connection
+            .query_row(
+                "SELECT COUNT(*) FROM category_groups WHERE lower(trim(name))='inflow'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        db.connection
+            .query_row(
+                "SELECT COUNT(*) FROM payees WHERE name='Starting Balance'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn created_account_is_one_undoable_action_including_credit_setup() {
+    let (_dir, mut db) = database();
+    let id = db
+        .undoable("Create account", |db| {
+            db.create_budget_account(&create_input("Undo card", AccountKind::Credit, 250))
+                .map_err(|error| error.to_string())
+        })
+        .unwrap();
+    assert_eq!(
+        db.accounts().unwrap().iter().filter(|a| a.id == id).count(),
+        1
+    );
+    assert_eq!(
+        db.connection
+            .query_row(
+                "SELECT COUNT(*) FROM credit_payment_categories WHERE account_id=?1",
+                [&id],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        1
+    );
+    db.undo_last_action().unwrap();
+    assert!(!db.accounts().unwrap().iter().any(|a| a.id == id));
+    assert_eq!(
+        db.connection
+            .query_row(
+                "SELECT COUNT(*) FROM credit_payment_categories WHERE account_id=?1",
+                [&id],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+}
+
+#[test]
+fn new_credit_mapping_uses_visible_payment_group_and_category() {
+    let (_dir, mut db) = database();
+    db.create_category_group("hidden-payments", "Credit Card Payments", 0)
+        .unwrap();
+    db.connection
+        .execute(
+            "UPDATE category_groups SET hidden=1 WHERE id='hidden-payments'",
+            [],
+        )
+        .unwrap();
+    db.create_category("hidden-card", "hidden-payments", "Hidden Group Card", 0)
+        .unwrap();
+    db.connection
+        .execute("UPDATE categories SET hidden=1 WHERE id='hidden-card'", [])
+        .unwrap();
+
+    let first = db
+        .create_budget_account(&create_input("Hidden Group Card", AccountKind::Credit, 0))
+        .unwrap();
+    let first_visibility: (i64, i64) = db
+        .connection
+        .query_row(
+            "SELECT g.hidden,c.hidden FROM credit_payment_categories p JOIN categories c ON c.id=p.category_id JOIN category_groups g ON g.id=c.group_id WHERE p.account_id=?1",
+            [&first],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(first_visibility, (0, 0));
+
+    let visible_group: String = db
+        .connection
+        .query_row(
+            "SELECT g.id FROM category_groups g WHERE lower(trim(g.name))='credit card payments' AND g.hidden=0 ORDER BY g.id LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    db.create_category("hidden-category", &visible_group, "Hidden Category Card", 2)
+        .unwrap();
+    db.connection
+        .execute(
+            "UPDATE categories SET hidden=1 WHERE id='hidden-category'",
+            [],
+        )
+        .unwrap();
+    let second = db
+        .create_budget_account(&create_input(
+            "Hidden Category Card",
+            AccountKind::Credit,
+            0,
+        ))
+        .unwrap();
+    let (category_name, group_hidden, category_hidden): (String, i64, i64) = db
+        .connection
+        .query_row(
+            "SELECT c.name,g.hidden,c.hidden FROM credit_payment_categories p JOIN categories c ON c.id=p.category_id JOIN category_groups g ON g.id=c.group_id WHERE p.account_id=?1",
+            [&second],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(category_name, "Hidden Category Card");
+    assert_eq!((group_hidden, category_hidden), (0, 0));
+    assert_eq!(
+        db.connection
+            .query_row(
+                "SELECT hidden FROM categories WHERE id='hidden-category'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        1
+    );
+}
+
 #[test]
 fn details_balance_is_cutoff_inclusive_but_history_counts_include_everything() {
     let (_dir, mut db) = database();

@@ -1,4 +1,5 @@
 import { AccountEditor } from "./AccountEditor";
+import { AddAccountDialog } from "./AddAccountDialog";
 import { TransactionContextMenu } from "./TransactionContextMenu";
 import { TransactionStatusIcon } from "./TransactionStatusIcon";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
@@ -101,6 +102,7 @@ export function App() {
   const [startupAttempt, setStartupAttempt] = useState(0);
   const [registerAttempt, setRegisterAttempt] = useState(0);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [addingAccount, setAddingAccount] = useState(false);
   const [view, setView] = useState<"register" | "plan" | "reports" | "settings">("plan");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -239,7 +241,7 @@ export function App() {
     async function checkDay() {
       const day = localCalendarDate();
       if (day === realizedDay.current || realizing.current || undoLock.current || hasSavedMutationPending()
-        || document.querySelector(".transaction-editor, .account-editor[open]")) return;
+        || document.querySelector(".transaction-editor, .account-editor[open], .add-account-dialog[open]")) return;
       realizing.current = true;
       try {
         await realizeDueScheduledTransactions(day);
@@ -328,6 +330,8 @@ export function App() {
   return (
     <div className={`app-shell view-${view}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       {editingAccountId && <AccountEditor key={editingAccountId} accountId={editingAccountId} pending={mutation.pending || undoBusy} onChanged={refreshLedger} onClose={() => setEditingAccountId(null)} />}
+      {addingAccount && <AddAccountDialog pending={mutation.pending || undoBusy} onClose={() => setAddingAccount(false)}
+        onCreated={async (id) => { await refreshLedger(); setSelectedAccountId(id); setView("register"); }} />}
       <a className="skip-link" href="#workspace">Skip to workspace</a>
       <aside className="sidebar" aria-label="Budget sidebar">
         <div className="budget-identity"><span className="brand-mark" aria-hidden="true">A</span><div><strong>{startup.status === "ready" ? startup.workspace.budget.name : "Allocash"}</strong><span>Allocash · Local budget</span></div></div>
@@ -367,7 +371,9 @@ export function App() {
             );
           })}
         </nav>
-        <div className="sidebar-footer"><span className="offline-label">Offline · HUF</span>{view === "plan" && <button type="button" aria-label="Undo last action" title={undoStatus.label ? `Undo ${undoStatus.label} (Ctrl+Z)` : "Undo (Ctrl+Z)"} disabled={!undoStatus.canUndo || mutation.pending || undoBusy} onClick={() => void undo()}>↶</button>}<button type="button" aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!sidebarCollapsed} onClick={() => setSidebarCollapsed((value) => !value)}>{sidebarCollapsed ? "▸" : "◂"}</button></div>
+        <button type="button" className="add-account-button" title="Add Account" aria-label="Add Account" disabled={startup.status !== "ready" || mutation.pending || undoBusy}
+          onClick={() => { if (!hasSavedMutationPending() && !undoBusy) setAddingAccount(true); }}><span aria-hidden="true">⊕</span><span>Add Account</span></button>
+        <div className="sidebar-footer"><span className="offline-label">Offline · HUF</span>{view === "plan" && <button type="button" aria-label="Undo last action" title={undoStatus.label ? `Undo ${undoStatus.label} (Ctrl+Z)` : "Undo (Ctrl+Z)"} disabled={!undoStatus.canUndo || mutation.pending || undoBusy} onClick={() => void undo()}>↶</button>}<button className="sidebar-toggle" type="button" title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!sidebarCollapsed} onClick={() => setSidebarCollapsed((value) => !value)}><svg viewBox="0 0 24 20" aria-hidden="true"><rect x="1" y="1" width="22" height="18" rx="1"/><path d="M7 3v14"/>{sidebarCollapsed ? <path d="m12 6 5 4-5 4z"/> : <path d="m18 6-5 4 5 4z"/>}</svg></button></div>
       </aside>
 
       <main id="workspace" tabIndex={-1}>

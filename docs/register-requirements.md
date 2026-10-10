@@ -85,6 +85,27 @@ its payment mapping and orphan repeat definitions. Categories, assignments,
 targets and raw import records remain. Editing, close/reopen and deletion can be
 undone within the session.
 
+### Account creation
+
+The sidebar's Add Account action opens a two-step dialog for a nickname,
+starting balance and account type. Checking, Savings and Cash use the existing
+`cash` kind; Credit Card and Line of Credit use `credit`; Mortgage, Auto Loan,
+Student Loan, Personal Loan, Medical Debt and Other Debt use `loan`; Asset and
+Liability use `tracking`. These labels do not add account subtypes or schema
+fields. Names are trimmed and must contain 1–200 Unicode characters. Starting
+balances accept signed whole-HUF values and calculations; enter debt as a
+negative amount.
+
+Creation is one atomic and undoable action. A nonzero starting balance becomes
+one ordinary posted, Cleared ledger entry dated today, preserving the entered
+sign. Cash and credit entries use Ready to Assign; loan and tracking entries
+have no category. Zero creates no ledger entry. A credit account also receives
+a payment-category mapping, reusing an unassigned, visible same-name category
+in a visible Credit Card Payments group or creating a visible category there.
+After creation the app refreshes the account list, selects the new account and
+opens its register; a failed refresh can be retried without creating the account
+again.
+
 ### Register presentation
 
 The owner supplied YNAB dark-theme references on 2026-10-10. The register uses
@@ -426,7 +447,9 @@ which action is available. Creation, edits and deletion include complete linked
 transfers and associated recurring state. Plan assignments, money moves, targets,
 snoozes, card-payment mapping and account reconciliation are undoable actions.
 The same backend action boundary supports account metadata and closed-state
-changes. It does not add an account-management screen.
+changes. Account creation uses the sidebar popup described above; account
+management remains within the sidebar and register rather than a separate
+management screen.
 
 One action creates one undo step. Repeated undo walks backward through up to 30
 saved actions in the current app session. Reopening the app or successfully

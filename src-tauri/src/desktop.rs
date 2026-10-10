@@ -1,6 +1,6 @@
 use crate::account_management::{
-    AccountDetails, DeleteClosedAccountInput, EditAccountInput, GetAccountDetailsInput,
-    SetAccountClosedInput,
+    AccountDetails, CreateBudgetAccountInput, DeleteClosedAccountInput, EditAccountInput,
+    GetAccountDetailsInput, SetAccountClosedInput,
 };
 use crate::database::{
     BudgetInfo, Database, NativeBackupReceipt, NativeRecoveryReceipt, NativeRestoreReceipt,
@@ -119,6 +119,19 @@ fn get_account_details(
 ) -> Result<AccountDetails, String> {
     with_database(&app, &state, |database| {
         database.get_account_details(&input).map_err(ledger_error)
+    })
+}
+
+#[tauri::command]
+fn create_budget_account(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: CreateBudgetAccountInput,
+) -> Result<String, String> {
+    with_database(&app, &state, |database| {
+        database.undoable("Create account", |database| {
+            database.create_budget_account(&input).map_err(ledger_error)
+        })
     })
 }
 
@@ -795,6 +808,7 @@ pub fn run() {
             get_undo_status,
             undo_last_action,
             get_account_details,
+            create_budget_account,
             edit_account,
             set_account_closed,
             delete_closed_account,

@@ -1,0 +1,35 @@
+.add-account-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(620px, calc(100vh - 32px));
+  overflow: auto;
+  margin: auto;
+  padding: 22px;
+  border: 1px solid #726ac7;
+  border-radius: 10px;
+  background: #202037;
+  color: #f3f2ff;
+  box-shadow: 0 20px 70px #080812bb;
+}
+.add-account-dialog::backdrop { background: rgb(5 5 16 / 72%); }
+.add-account-dialog header,.add-account-dialog footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.add-account-dialog header { margin-bottom: 22px; }
+.add-account-dialog h2 { margin: 0; font-size: 21px; }
+.add-account-dialog h3 { margin: 0 0 14px; font-size: 14px; }
+.add-account-dialog label { display: grid; gap: 8px; margin: 0 0 20px; color: #d7d5ec; font-size: 13px; }
+.add-account-dialog form > button:not([type=submit]) { width: 100%; margin-bottom: 18px; text-align: left; }
+.add-account-dialog label small { color: #bcb7d0; font-size: 11px; line-height: 1.5; }
+.add-account-dialog input { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid #77768e; border-radius: 5px; background: #414157; color: #fff; font: inherit; }
+.add-account-dialog footer { justify-content: flex-end; margin-top: 24px; }
+.add-account-dialog button { padding: 8px 12px; border: 1px solid #77768e; border-radius: 5px; background: #343449; color: #f3f2ff; font: inherit; cursor: pointer; }
+.add-account-dialog button[type=submit] { border-color: #8076ff; background: #6257ff; color: white; font-weight: 600; }
+.add-account-dialog button:disabled { opacity: .5; cursor: not-allowed; }
+.add-account-type-group { padding: 10px 0; border-top: 1px solid #414157; }
+.add-account-type-group h4 { margin: 0 0 3px; font-size: 12px; }
+.add-account-type-group p { margin: 0 0 8px; color: #bcb7d0; font-size: 10px; }
+.add-account-type-group > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.add-account-type-picker button { min-height: 42px; text-align: left; }
+.add-account-type-picker button[aria-pressed=true] { border-color: #9c94ff; background: #393653; }
+.add-account-selected-type { margin: 9px 0 0; color: #bcb7e4; font-size: 12px; }
+.add-account-error { margin: 14px 0 0; color: #ffb9bd; font-size: 12px; }
