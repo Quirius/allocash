@@ -10,6 +10,12 @@ The owner requested a close YNAB dark-theme match on 2026-10-10, with later
 customization. The shared shell offers Plan, Reports, Accounts and Budget &
 backups, with a collapsible account sidebar. Plan uses dense category rows,
 group totals, funding bars, Available pills and the existing right-side details.
+Category and group selection squares are omitted. Group collapse uses SVG
+chevrons, and credit payment groups use a sharp card icon. Category names and
+funding descriptions share a row above the progress bar. Assigned values show
+formatted HUF while idle and retain the shared amount editor on focus. Available
+badges use sharp goal-state icons where applicable; card payment badges retain
+their separate payment-funding status and have no target checkmark.
 Search and All/Snoozed/Underfunded/Overfunded/Money Available filters operate on
 loaded data; credit payment shortfalls are included in Underfunded. Group identity
 uses group IDs, even when names match. A cleared selection displays actual monthly

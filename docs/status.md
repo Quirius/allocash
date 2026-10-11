@@ -1,5 +1,23 @@
 # Implementation and validation status
 
+On 2026-10-12, Plan category rows were refined against the supplied close-up
+references without adding selection squares. Group headers use sharp SVG
+chevrons and mapped credit payment groups have a cyan card icon. Category names
+and funding descriptions share a baseline above continuous progress bars;
+Available badges use goal checks for funded ordinary categories and a grey
+fully-spent state. Credit payment badges retain their separate funding-state
+classification. Target descriptions handle carried-over funding, current
+underfunding, snoozing and future targets without changing accounting.
+Assigned fields show spaced HUF with Ft while idle, retain the mounted shared
+editor, and keep invalid or rejected drafts visible after blur. The 271-test
+frontend suite and 10 focused follow-up tests passed, alongside TypeScript,
+diff checks, independent review and synthetic browser checks of group collapse,
+retained totals, no selection squares, full amount selection, operator seeding,
+Escape reset and narrow-window bounds. Production/native builds passed.
+Installation preserved budget bytes, the executable matches the verified release
+build and Allocash reopened a responsive window. Rust accounting and schema are
+unchanged; owner visual and category interaction confirmation remain open.
+
 On 2026-10-11, the account sidebar was refined against the supplied close-up
 references. All Accounts uses a filled SVG bank icon; group headings use sharp
 rotating SVG chevrons, uppercase text and consistent account indentation.

@@ -184,6 +184,42 @@
   .plan-view .plan-rta { justify-content: center; }
   .plan-view .plan-toolbar .plan-rta { grid-column: auto; grid-row: auto; }
 }
+
+/* Dense category rows: keep target context on the label baseline and retain
+   the full width of its funding meter. */
+.plan-view .plan-group-heading { color: #fff; font-weight: 700; }
+.plan-view .plan-group-title { display: flex; align-items: center; min-width: 0; gap: 8px; color: #fff; }
+.plan-view .plan-group-title > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-view .plan-group-chevron { width: 13px; height: 13px; flex: 0 0 auto; fill: none; stroke: #c5c4d5; stroke-width: 1.7; stroke-linecap: square; stroke-linejoin: miter; transition: transform 120ms ease; }
+.plan-view .plan-group-chevron.collapsed { transform: rotate(-90deg); }
+.plan-view .plan-bank-card { width: 17px; height: 14px; flex: 0 0 auto; fill: none; stroke: #e2e1ee; stroke-width: 1.4; stroke-linecap: square; stroke-linejoin: miter; }
+.plan-view .plan-group-heading > span:not(:first-child) { color: #fff; font-weight: 700; }
+.plan-view .plan-row { min-height: 26px; }
+.plan-view .plan-category-name { box-sizing: border-box; padding: 2px 0 2px 24px; gap: 3px; }
+.plan-view .plan-category-topline { display: flex; align-items: baseline; justify-content: space-between; width: 100%; min-width: 0; gap: 8px; }
+.plan-view .plan-category-label { flex: 1 1 auto; min-width: 0; overflow: hidden; padding: 0 !important; color: #f3f2fa; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.plan-view .plan-category-progress { display: flex; flex: 0 0 auto; align-items: baseline; justify-content: flex-end; gap: 7px; min-width: 0; color: #c3c1d1; font-size: 11px; font-weight: 400; white-space: nowrap; }
+.plan-view .plan-category-progress strong { color: #eeeef6; font-size: 11px; font-weight: 600; }
+.plan-view .plan-category-progress.fully-spent strong { color: #a9a8ba; }
+.plan-view .plan-target-meter { flex: 0 0 4px; width: 100%; height: 4px; overflow: hidden; }
+.plan-view .plan-target-meter i { background: #78b900; }
+.plan-view .plan-assignment-field { position: relative; display: block; width: 100%; min-width: 0; }
+.plan-view .plan-assignment-field input { color: transparent; caret-color: transparent; }
+.plan-view .plan-assigned-display { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end; overflow: hidden; padding: 3px 6px; color: #f4f3fb; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
+.plan-view .plan-assignment-field:focus-within input { color: #f4f3fb; caret-color: #f4f3fb; }
+.plan-view .plan-assignment-field:focus-within .plan-assigned-display { visibility: hidden; }
+.plan-view .plan-assignment-field.has-draft input { color: #f4f3fb; caret-color: #f4f3fb; }
+.plan-view .plan-assignment-field.has-draft .plan-assigned-display { visibility: hidden; }
+.plan-view .plan-row .plan-available { display: inline-flex; align-items: center; gap: 5px; }
+.plan-view .plan-row .plan-available.positive, .plan-view .plan-row .plan-available.funded, .plan-view .plan-row .plan-available.target-funded { color: #10130a; background: #78b900; }
+.plan-view .plan-row .plan-available.zero { color: #d0cfdd; background: #414157; }
+.plan-view .plan-row .plan-available.fully-spent { color: #d0cfdd; background: #414157; }
+.plan-view .plan-funded-check { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 760px) {
+  .plan-view .plan-category-progress { gap: 4px; font-size: 10px; }
+  .plan-view .plan-category-progress strong { font-size: 10px; }
+  .plan-view .plan-row { min-height: 27px; }
+}
 @media (max-width: 1050px) { .plan-view .plan-content { grid-template-columns: minmax(0, 1fr) 320px; } }
 @media (max-width: 1450px) {
   .plan-view .plan-content { grid-template-columns: minmax(0, 1fr) 320px; }

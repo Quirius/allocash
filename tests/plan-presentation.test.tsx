@@ -88,3 +88,15 @@ it("collapses a category group without writing Plan data", async () => {
   expect(groups[1]!.querySelector(".plan-row .plan-category-label")?.textContent).toBe("Card Payment");
   expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual(["get_plan_month"]);
 });
+
+it("keeps an invalid assignment draft visible after blur", async () => {
+  await mount();
+  const input = host.querySelector<HTMLInputElement>('input[aria-label="Alpha assigned"]')!;
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "12+oops");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => { input.dispatchEvent(new FocusEvent("blur", { bubbles: false })); await Promise.resolve(); });
+  expect(input.closest(".plan-assignment-field")?.classList.contains("has-draft")).toBe(true);
+  expect(input.value).toBe("12+oops");
+});
