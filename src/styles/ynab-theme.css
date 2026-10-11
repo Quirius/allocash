@@ -15,18 +15,23 @@ button:hover:not(:disabled) { filter: brightness(1.16); }
 .primary-navigation { display: grid; margin: 0 -8px 12px; }
 .primary-navigation button { display: flex; align-items: center; gap: 12px; width: 100%; height: 33px; padding: 0 16px; border: 0; border-radius: 0; background: transparent; text-align: left; font-size: 15px; font-weight: 600; }
 .primary-navigation button > span:first-child { width: 22px; text-align: center; font-size: 21px; }
+.primary-navigation .accounts-nav-icon { width: 22px; height: 22px; flex: 0 0 22px; fill: currentColor; color: #fff; }
 .primary-navigation .active { background: #202053; }
 .account-groups { min-height: 0; flex: 1; overflow: auto; margin: 0; padding-right: 8px; scrollbar-color: #43435c transparent; scrollbar-width: thin; }
 .account-group { margin-bottom: 14px; }
-.account-group-heading { width: 100%; padding: 2px 8px; border: 0; border-radius: 0; background: transparent; font-size: 12px; }
-.account-group-heading h2 { font-size: 12px; color: #fff; }
-.account-group-heading > span { color: #fff; font-size: 12px; font-weight: 600; }
-.account-link { margin-top: 0; padding: 4px 8px 4px 30px; min-height: 24px; border-radius: 5px; }
-.account-link span { color: #fff; font-size: 13px; font-weight: 600; }
-.account-link strong { color: #fff; font-size: 12px; }
+.account-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 24px; padding: 2px 8px; border: 0; border-radius: 0; background: transparent; font-size: 12px; }
+.account-group-heading h2 { display: flex; align-items: center; gap: 8px; margin: 0; color: #fff; font-size: 12px; font-weight: 400; letter-spacing: .08em; text-transform: uppercase; }
+.account-group-heading h2 > span { color: #fff; }
+.account-group-heading > span { color: #fff; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.account-group-chevron { width: 12px; height: 12px; flex: 0 0 12px; fill: none; stroke: #aeadbe; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: transform 120ms ease; }
+.account-group-chevron.collapsed { transform: rotate(-90deg); }
+.account-link { box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; margin-top: 0; padding: 0 8px 0 30px; min-height: 24px; border-radius: 5px; }
+.account-link span { min-width: 0; color: #fff; font-size: 13px; font-weight: 400; }
+.sidebar .account-link strong { color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; }
 .account-link.selected { background: #232355; }
 .account-link:hover { background: #252543; }
 .sidebar .negative { color: #ff405b; }
+.sidebar .account-group-heading > .credit-negative, .sidebar .account-link strong.credit-negative { color: #ff4b62 !important; }
 .sidebar-footer { display: flex; flex: 0 0 auto; justify-content: space-between; align-items: center; gap: 6px; margin-top: 6px; border: 0; padding: 2px 6px; }
 .sidebar-toggle { flex: 0 0 30px; min-width: 30px; height: 28px; display: grid; place-items: center; }
 .sidebar-toggle svg { width: 24px; height: 20px; fill: #bdbdce; }

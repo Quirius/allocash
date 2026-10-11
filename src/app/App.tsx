@@ -345,7 +345,7 @@ export function App() {
         <nav className="primary-navigation" aria-label="Budget views">
           <button title="Plan" className={view === "plan" ? "active" : ""} onClick={() => setView("plan")}><span aria-hidden="true">▣</span><span>Plan</span></button>
           <button title="Reports" className={view === "reports" ? "active" : ""} onClick={() => setView("reports")}><span aria-hidden="true">▥</span><span>Reports</span></button>
-          <button title="Accounts" className={view === "register" ? "active" : ""} onClick={() => setView("register")}><span aria-hidden="true">▤</span><span>Accounts</span></button>
+          <button title="Accounts" className={view === "register" ? "active" : ""} onClick={() => setView("register")}><svg className="accounts-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8 12 3l10 5v1H2V8Zm1 3h2v7H3v-7Zm8 0h2v7h-2v-7Zm8 0h2v7h-2v-7ZM2 19h20v2H2v-2Z"/></svg><span>All Accounts</span></button>
           <button title="Budget & backups" className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><span aria-hidden="true">⚙</span><span>Budget & backups</span></button>
         </nav>
         <nav className="account-groups" aria-label="Accounts">
@@ -354,8 +354,8 @@ export function App() {
             return (
               <section className="account-group" key={group.title}>
                 <button type="button" className="account-group-heading" aria-expanded={!collapsedGroups.has(group.title)} onClick={() => setCollapsedGroups((old) => { const next = new Set(old); if (next.has(group.title)) next.delete(group.title); else next.add(group.title); return next; })}>
-                  <h2><span aria-hidden="true">{collapsedGroups.has(group.title) ? "›" : "⌄"}</span> {group.title}</h2>
-                  {groupedAccounts.length > 0 && <span className={BigInt(groupedAccounts.reduce((total, item) => total + BigInt(item.balance.working), 0n)) < 0n ? "negative" : ""}>{groupTotal(groupedAccounts)}</span>}
+                  <h2><svg className={"account-group-chevron" + (collapsedGroups.has(group.title) ? " collapsed" : "")} viewBox="0 0 12 12" aria-hidden="true"><path d="m3 4.5 3 3 3-3"/></svg><span>{group.title}</span></h2>
+                  {groupedAccounts.length > 0 && <span className={group.kind === "credit" && BigInt(groupedAccounts.reduce((total, item) => total + BigInt(item.balance.working), 0n)) < 0n ? "negative credit-negative" : ""}>{groupTotal(groupedAccounts)}</span>}
                 </button>
                 {!collapsedGroups.has(group.title) && (groupedAccounts.length === 0 ? (
                   <p>No accounts</p>
@@ -369,7 +369,7 @@ export function App() {
                     aria-current={selectedAccountId === account.id ? "page" : undefined}
                   >
                     <span>{account.name}</span>
-                    <strong className={BigInt(account.balance.working) < 0n ? "negative" : ""}>
+                    <strong className={account.kind === "credit" && BigInt(account.balance.working) < 0n ? "negative credit-negative" : ""}>
                       {huf(account.balance.working)}
                     </strong>
                   </button>

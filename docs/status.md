@@ -1,5 +1,19 @@
 # Implementation and validation status
 
+On 2026-10-11, the account sidebar was refined against the supplied close-up
+references. All Accounts uses a filled SVG bank icon; group headings use sharp
+rotating SVG chevrons, uppercase text and consistent account indentation.
+Compact rows retain right-aligned integer-HUF balances and collapsed groups
+retain their totals. Negative credit rows and group totals use coral, while
+loan balances remain white. Account selection, collapse, right-click editing
+and register navigation keep their existing behavior. All 265 frontend tests,
+TypeScript, diff checks and synthetic browser checks passed, including collapsed
+totals, credit/loan colors and sidebar reopen controls at narrow widths.
+Production/native builds passed. Installation preserved budget bytes, the
+installed executable matches the release build and Allocash reopened a responsive
+window. No Rust, accounting or schema changes were made; owner visual
+confirmation remains open.
+
 On 2026-10-11, Ready to Assign gained a green available-money card with a
 separate Assign button, a grey All Money Assigned card with a sharp SVG check,
 and a red overassigned state. The balance opens an anchored breakdown of

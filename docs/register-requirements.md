@@ -87,6 +87,12 @@ undone within the session.
 
 ### Account creation
 
+The account sidebar uses a sharp SVG bank icon for All Accounts and SVG group
+chevrons. Account names share a consistent indent, balances align at the right,
+and collapsed groups retain their totals. Negative credit balances and credit
+totals use coral; cash, loan and tracking balances remain white. These colors
+are presentation only and do not change the signed values or group arithmetic.
+
 The sidebar's Add Account action opens a two-step dialog for a nickname,
 starting balance and account type. Checking, Savings and Cash use the existing
 `cash` kind; Credit Card and Line of Credit use `credit`; Mortgage, Auto Loan,
