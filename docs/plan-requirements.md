@@ -24,6 +24,20 @@ month changes the Plan. Escape, outside clicks and selection dismiss the popup.
 The current implementation is a first visual pass, not full pixel-identical UI
 coverage. Detailed menus and remaining screens need further owner references.
 
+## Ready to Assign
+
+The header uses green for money ready to assign, grey for zero (All Money
+Assigned), and red for an overassigned balance. Clicking its amount opens a
+breakdown of prior-month money, current-month Ready to Assign activity, current
+assignments and any prior-month cash overspending, reconciling to the exact total.
+Hidden-category assignments remain part of that calculation.
+
+The green box offers a manual Assign popup with the positive balance prefilled,
+an editable amount and a category destination. Saving adds the amount to that
+category's existing monthly assignment as one atomic, undoable action. Stale
+assignments and arithmetic overflow reject without changing the budget. Cancel,
+Escape and outside clicks make no financial changes. Auto Assign is omitted.
+
 ## Scheduled transactions
 
 Scheduled transactions are essential.

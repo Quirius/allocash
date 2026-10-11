@@ -68,8 +68,17 @@ pub struct PlanCategory {
 pub struct PlanSnapshot {
     pub month: String,
     pub ready_to_assign: Huf,
+    pub ready_to_assign_breakdown: ReadyToAssignBreakdown,
     pub categories: Vec<PlanCategory>,
     pub credit_payment_categories: Vec<CreditPaymentCategory>,
+}
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadyToAssignBreakdown {
+    pub leftover_from_last_month: String,
+    pub income_this_month: String,
+    pub assigned_this_month: String,
+    pub cash_overspending_from_last_month: String,
 }
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -157,6 +166,7 @@ struct PlanDerivation {
     payment_funded: BTreeMap<String, i128>,
     payment_made: BTreeMap<String, i128>,
     ready_to_assign: i128,
+    ready_to_assign_breakdown: ReadyToAssignBreakdown,
 }
 
 impl Database {
@@ -448,6 +458,62 @@ impl Database {
         Ok(())
     }
 
+    /// Adds a positive assignment to a visible Plan category when its displayed
+    /// assignment still matches the caller's expected value.
+    pub fn assign_ready_to_assign(
+        &mut self,
+        category_id: &str,
+        month: &PlanMonth,
+        amount: Huf,
+        expected_assigned: Huf,
+    ) -> LedgerResult<()> {
+        if amount.0 <= 0 {
+            return Err(LedgerError::InvalidValue(
+                "An assignment needs a positive amount.",
+            ));
+        }
+        let transaction = self
+            .connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let category: Option<(bool, bool)> = transaction
+            .query_row(
+                "SELECT g.hidden=0 AND c.hidden=0, lower(trim(g.name))='inflow' AND lower(trim(c.name))='ready to assign' FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE c.id=?1",
+                [category_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((visible, is_ready_to_assign)) = category else {
+            return Err(LedgerError::NotFound);
+        };
+        if !visible || is_ready_to_assign {
+            return Err(LedgerError::InvalidValue(
+                "Choose a visible budget category to receive the assignment.",
+            ));
+        }
+        let current: Option<i64> = transaction
+            .query_row(
+                "SELECT amount_huf FROM category_month_assignments WHERE category_id=?1 AND month=?2",
+                params![category_id, month.as_str()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let current = current.unwrap_or(0);
+        if current != expected_assigned.0 {
+            return Err(LedgerError::InvalidValue(
+                "The category assignment changed. Refresh the Plan and try again.",
+            ));
+        }
+        let updated = current
+            .checked_add(amount.0)
+            .ok_or(LedgerError::AmountOverflow)?;
+        transaction.execute(
+            "INSERT INTO category_month_assignments (category_id,month,amount_huf) VALUES (?1,?2,?3) ON CONFLICT(category_id,month) DO UPDATE SET amount_huf=excluded.amount_huf,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')",
+            params![category_id, month.as_str(), updated],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn plan_month(&self, month: &PlanMonth) -> LedgerResult<PlanSnapshot> {
         self.plan_month_with_cutoff(month, None)
     }
@@ -622,6 +688,7 @@ impl Database {
         Ok(PlanSnapshot {
             month: month.0.clone(),
             ready_to_assign: narrow(derivation.ready_to_assign)?,
+            ready_to_assign_breakdown: derivation.ready_to_assign_breakdown,
             categories,
             credit_payment_categories,
         })
@@ -850,6 +917,9 @@ fn derive_plan(
     let mut target_activity = BTreeMap::<String, i128>::new();
     let mut ready_income = 0i128;
     let mut closed_cash_overspending = 0i128;
+    let mut last_closed_cash_overspending = 0i128;
+    let mut target_ready_income = 0i128;
+    let mut target_assignment_total = 0i128;
 
     let (target_payment_funded, target_payment_made) = loop {
         let is_target = current == *target;
@@ -864,6 +934,15 @@ fn derive_plan(
             ready_income: month_ready_income,
         } = months.remove(current.as_str()).unwrap_or_default();
         ready_income = checked_add(ready_income, month_ready_income)?;
+        if is_target {
+            target_ready_income = month_ready_income;
+        }
+        let month_assignment_total = month_categories
+            .values()
+            .try_fold(0i128, |total, value| checked_add(total, value.assignment))?;
+        if is_target {
+            target_assignment_total = month_assignment_total;
+        }
         let mut category_ids: BTreeSet<String> = month_categories.keys().cloned().collect();
         category_ids.extend(payment_deltas.keys().cloned());
         let mut month_credit_overspending = BTreeMap::<String, i128>::new();
@@ -974,17 +1053,31 @@ fn derive_plan(
             let current_available = available.entry(category_id).or_default();
             *current_available = checked_add(*current_available, delta)?;
         }
+        let mut month_cash_overspending = 0i128;
         for (category_id, value) in &available {
             let negative_available = (-*value).max(0);
             let credit_overspending = *month_credit_overspending.get(category_id).unwrap_or(&0);
             let cash_overspending = checked_sub(negative_available, credit_overspending)?.max(0);
-            closed_cash_overspending = checked_add(closed_cash_overspending, cash_overspending)?;
+            month_cash_overspending = checked_add(month_cash_overspending, cash_overspending)?;
         }
+        closed_cash_overspending = checked_add(closed_cash_overspending, month_cash_overspending)?;
+        last_closed_cash_overspending = month_cash_overspending;
         for value in available.values_mut() {
             *value = (*value).max(0);
         }
         current = current.next();
     };
+    let ready_to_assign = checked_sub(
+        checked_sub(ready_income, assignment_total)?,
+        closed_cash_overspending,
+    )?;
+    let leftover_from_last_month = checked_add(
+        checked_add(
+            checked_sub(ready_to_assign, target_ready_income)?,
+            target_assignment_total,
+        )?,
+        last_closed_cash_overspending,
+    )?;
     Ok(PlanDerivation {
         assigned: target_assigned,
         activity: target_activity,
@@ -992,10 +1085,13 @@ fn derive_plan(
         starting_available,
         payment_funded: target_payment_funded,
         payment_made: target_payment_made,
-        ready_to_assign: checked_sub(
-            checked_sub(ready_income, assignment_total)?,
-            closed_cash_overspending,
-        )?,
+        ready_to_assign,
+        ready_to_assign_breakdown: ReadyToAssignBreakdown {
+            leftover_from_last_month: leftover_from_last_month.to_string(),
+            income_this_month: target_ready_income.to_string(),
+            assigned_this_month: target_assignment_total.to_string(),
+            cash_overspending_from_last_month: last_closed_cash_overspending.to_string(),
+        },
     })
 }
 
@@ -1239,6 +1335,314 @@ fn narrow(value: i128) -> LedgerResult<Huf> {
 mod tests {
     use super::*;
     use crate::ledger::{Account, AccountKind, CalendarDate, Direction, Entry, TransferDraft};
+
+    fn plan_fixture() -> (tempfile::TempDir, Database) {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&Account {
+                id: "cash".into(),
+                name: "Cash".into(),
+                kind: AccountKind::Cash,
+                sort_order: 0,
+                closed: false,
+            })
+            .unwrap();
+        database
+            .create_account(&Account {
+                id: "card".into(),
+                name: "Card".into(),
+                kind: AccountKind::Credit,
+                sort_order: 1,
+                closed: false,
+            })
+            .unwrap();
+        database.create_category_group("g", "Living", 0).unwrap();
+        database.create_category("food", "g", "Food", 0).unwrap();
+        database
+            .create_category_group("hidden-group", "Hidden", 1)
+            .unwrap();
+        database
+            .create_category("hidden", "hidden-group", "Hidden", 0)
+            .unwrap();
+        database
+            .create_category_group("inflow", "Inflow", 2)
+            .unwrap();
+        database
+            .create_category("rta", "inflow", "Ready to Assign", 0)
+            .unwrap();
+        (directory, database)
+    }
+
+    fn income(database: &mut Database, id: &str, date: &str, amount: i64) {
+        let mut entry = Entry::manual(id, "cash", CalendarDate::parse(date).unwrap());
+        entry.category_id = None;
+        database.create_transaction(&entry, Huf(amount)).unwrap();
+    }
+
+    fn cash_spending(database: &mut Database, id: &str, date: &str, category: &str, amount: i64) {
+        let mut entry = Entry::manual(id, "cash", CalendarDate::parse(date).unwrap());
+        entry.category_id = Some(category.into());
+        database.create_transaction(&entry, Huf(-amount)).unwrap();
+    }
+
+    #[test]
+    fn ready_to_assign_breakdown_reconciles_prior_close_income_and_assignments() {
+        let (_directory, mut database) = plan_fixture();
+        let august = PlanMonth::parse("2026-08").unwrap();
+        let october = PlanMonth::parse("2026-10").unwrap();
+        income(&mut database, "aug-income", "2026-08-01", 1_000);
+        database
+            .set_monthly_assignment("hidden", &august, Huf(200))
+            .unwrap();
+        cash_spending(&mut database, "sep-spend", "2026-09-02", "food", 300);
+        database
+            .set_monthly_assignment("food", &october, Huf(100))
+            .unwrap();
+        income(&mut database, "oct-income", "2026-10-03", 500);
+
+        let snapshot = database.plan_month(&october).unwrap();
+        assert_eq!(snapshot.ready_to_assign, Huf(900));
+        assert_eq!(
+            snapshot.ready_to_assign_breakdown.leftover_from_last_month,
+            "800"
+        );
+        assert_eq!(snapshot.ready_to_assign_breakdown.income_this_month, "500");
+        assert_eq!(
+            snapshot.ready_to_assign_breakdown.assigned_this_month,
+            "100"
+        );
+        assert_eq!(
+            snapshot
+                .ready_to_assign_breakdown
+                .cash_overspending_from_last_month,
+            "300"
+        );
+        assert_eq!(
+            snapshot
+                .ready_to_assign_breakdown
+                .leftover_from_last_month
+                .parse::<i128>()
+                .unwrap()
+                + snapshot
+                    .ready_to_assign_breakdown
+                    .income_this_month
+                    .parse::<i128>()
+                    .unwrap()
+                - snapshot
+                    .ready_to_assign_breakdown
+                    .assigned_this_month
+                    .parse::<i128>()
+                    .unwrap()
+                - snapshot
+                    .ready_to_assign_breakdown
+                    .cash_overspending_from_last_month
+                    .parse::<i128>()
+                    .unwrap(),
+            i128::from(snapshot.ready_to_assign.0)
+        );
+        let json = serde_json::to_value(&snapshot).unwrap();
+        assert_eq!(json["readyToAssignBreakdown"]["incomeThisMonth"], "500");
+
+        // The gap month closes with no overspending; the prior close is now the
+        // October Ready to Assign balance after its own activity.
+        let november = database
+            .plan_month(&PlanMonth::parse("2026-11").unwrap())
+            .unwrap();
+        assert_eq!(
+            november
+                .ready_to_assign_breakdown
+                .cash_overspending_from_last_month,
+            "0"
+        );
+        assert_eq!(
+            november.ready_to_assign_breakdown.leftover_from_last_month,
+            "900"
+        );
+    }
+
+    #[test]
+    fn ready_to_assign_breakdown_uses_as_of_income_and_keeps_credit_debt_out() {
+        let (_directory, mut database) = plan_fixture();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        income(&mut database, "before", "2026-09-01", 100);
+        income(&mut database, "after", "2026-09-10", 700);
+        database
+            .set_monthly_assignment("food", &month, Huf(250))
+            .unwrap();
+        let mut credit_debt = Entry::manual(
+            "credit-debt",
+            "card",
+            CalendarDate::parse("2026-09-02").unwrap(),
+        );
+        credit_debt.category_id = Some("food".into());
+        database
+            .create_transaction(&credit_debt, Huf(-500))
+            .unwrap();
+        let mut unposted = Entry::manual(
+            "pending-income",
+            "cash",
+            CalendarDate::parse("2026-09-03").unwrap(),
+        );
+        unposted.category_id = None;
+        database.create_transaction(&unposted, Huf(900)).unwrap();
+        database
+            .connection
+            .execute(
+                "UPDATE transactions SET posting_state='scheduled',cleared_state='uncleared' WHERE id='pending-income'",
+                [],
+            )
+            .unwrap();
+
+        let cutoff = CalendarDate::parse("2026-09-05").unwrap();
+        let snapshot = database.plan_month_as_of(&month, &cutoff).unwrap();
+        assert_eq!(snapshot.ready_to_assign, Huf(-150));
+        assert_eq!(
+            snapshot.ready_to_assign_breakdown.leftover_from_last_month,
+            "0"
+        );
+        assert_eq!(snapshot.ready_to_assign_breakdown.income_this_month, "100");
+        assert_eq!(
+            snapshot.ready_to_assign_breakdown.assigned_this_month,
+            "250"
+        );
+        assert_eq!(
+            snapshot
+                .ready_to_assign_breakdown
+                .cash_overspending_from_last_month,
+            "0"
+        );
+        assert_eq!(
+            database
+                .plan_month(&month)
+                .unwrap()
+                .ready_to_assign_breakdown
+                .income_this_month,
+            "800"
+        );
+    }
+
+    #[test]
+    fn ready_to_assign_breakdown_credits_only_new_positive_card_balance() {
+        let (_directory, database) = plan_fixture();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        let mut debt_repayment = Entry::manual(
+            "debt-repayment",
+            "card",
+            CalendarDate::parse("2026-09-01").unwrap(),
+        );
+        debt_repayment.category_id = Some("rta".into());
+        database
+            .create_transaction(&debt_repayment, Huf(100))
+            .unwrap();
+        let mut positive_balance = Entry::manual(
+            "positive-balance",
+            "card",
+            CalendarDate::parse("2026-09-02").unwrap(),
+        );
+        positive_balance.category_id = Some("rta".into());
+        database
+            .create_transaction(&positive_balance, Huf(500))
+            .unwrap();
+        let snapshot = database.plan_month(&month).unwrap();
+        assert_eq!(snapshot.ready_to_assign_breakdown.income_this_month, "600");
+        assert_eq!(snapshot.ready_to_assign, Huf(600));
+    }
+
+    #[test]
+    fn ready_to_assign_breakdown_keeps_wide_component_totals_when_the_net_fits_huf() {
+        let (_directory, mut database) = plan_fixture();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        income(&mut database, "income-a", "2026-09-01", i64::MAX);
+        income(&mut database, "income-b", "2026-09-02", i64::MAX);
+        database
+            .set_monthly_assignment("food", &month, Huf(i64::MAX))
+            .unwrap();
+        database
+            .set_monthly_assignment("hidden", &month, Huf(i64::MAX))
+            .unwrap();
+
+        let snapshot = database.plan_month(&month).unwrap();
+        assert_eq!(snapshot.ready_to_assign, Huf(0));
+        assert_eq!(
+            snapshot.ready_to_assign_breakdown.income_this_month,
+            "18446744073709551614"
+        );
+        assert_eq!(
+            snapshot.ready_to_assign_breakdown.assigned_this_month,
+            "18446744073709551614"
+        );
+    }
+
+    #[test]
+    fn assigning_from_ready_to_assign_is_incremental_undoable_and_guarded() {
+        let (_directory, mut database) = plan_fixture();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_credit_payment_category("card", Some("food"))
+            .unwrap();
+        database
+            .set_monthly_assignment("food", &month, Huf(100))
+            .unwrap();
+        database
+            .undoable("Assign money", |database| {
+                database
+                    .assign_ready_to_assign("food", &month, Huf(50), Huf(100))
+                    .map_err(|error| error.to_string())
+            })
+            .unwrap();
+        assert_eq!(
+            database.plan_month(&month).unwrap().categories[0].assigned,
+            Huf(150)
+        );
+        database.undo_last_action().unwrap();
+        assert_eq!(
+            database.plan_month(&month).unwrap().categories[0].assigned,
+            Huf(100)
+        );
+
+        assert!(matches!(
+            database.assign_ready_to_assign("food", &month, Huf(10), Huf(99)),
+            Err(LedgerError::InvalidValue(_))
+        ));
+        database
+            .connection
+            .execute(
+                "UPDATE category_groups SET hidden=1 WHERE id='hidden-group'",
+                [],
+            )
+            .unwrap();
+        for id in ["hidden", "rta", "missing"] {
+            assert!(database
+                .assign_ready_to_assign(id, &month, Huf(1), Huf(0))
+                .is_err());
+        }
+        assert!(matches!(
+            database.assign_ready_to_assign("food", &month, Huf(0), Huf(100)),
+            Err(LedgerError::InvalidValue(_))
+        ));
+
+        database
+            .connection
+            .execute(
+                "UPDATE category_month_assignments SET amount_huf=?1 WHERE category_id='food' AND month=?2",
+                params![i64::MAX, month.as_str()],
+            )
+            .unwrap();
+        assert!(matches!(
+            database.assign_ready_to_assign("food", &month, Huf(1), Huf(i64::MAX)),
+            Err(LedgerError::AmountOverflow)
+        ));
+        let unchanged: i64 = database
+            .connection
+            .query_row(
+                "SELECT amount_huf FROM category_month_assignments WHERE category_id='food' AND month=?1",
+                [month.as_str()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(unchanged, i64::MAX);
+    }
 
     #[test]
     fn category_rename_preserves_references_and_is_undoable_without_changing_plan() {

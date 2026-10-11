@@ -1,5 +1,24 @@
 # Implementation and validation status
 
+On 2026-10-11, Ready to Assign gained a green available-money card with a
+separate Assign button, a grey All Money Assigned card with a sharp SVG check,
+and a red overassigned state. The balance opens an anchored breakdown of
+prior-month money, current-month eligible inflows, all current-month assignments
+(including hidden categories) and prior-month cash overspending. Its decimal-string
+components use the existing Plan cutoff and sum exactly to Ready to Assign;
+wide aggregate components remain exact without changing the balance calculation.
+The manual-only Assign popup preselects the available amount, requires a category,
+and adds to its existing Assigned value through a checked atomic Rust command with
+an expected-value guard and session undo. Auto Assign is omitted. Stale reads and
+duplicate writes are blocked; failed refreshes retry only the read, while Cancel
+and Escape make no changes. All 265 frontend tests, 208 Rust tests, focused
+follow-up checks, formatting, Cargo check, independent review and synthetic
+browser checks passed. Browser checks covered the balance states, both popups,
+manual assignment, cancellation, retained Plan table and narrow-window bounds.
+Production and native builds passed. Installation preserved budget bytes, the
+installed executable matches the release build and a responsive native window
+reopened. Owner visual and manual-assignment confirmation remain open.
+
 On 2026-10-10, the Plan month header gained sharp SVG circle/chevron navigation,
 a bold month/year trigger and a purple dropdown triangle. Its anchored popup
 shows a year navigator and twelve months, with the selected month highlighted.

@@ -222,7 +222,9 @@ export interface CategoryTargetDefinition { behavior: "set_aside" | "refill"; am
 export interface CategoryTargetProgress extends CategoryTargetDefinition { neededThisMonth: string; funded: string; toGo: string; snoozed: boolean; dueMonth: string | null; }
 export interface PlanCategory { groupId: string; groupName: string; categoryId: string; categoryName: string; notes: string; assigned: string; activity: string; available: string; target: CategoryTargetProgress | null; }
 export interface CreditPaymentCategory { accountId: string; accountName: string; categoryId: string | null; currentBalance: string; priorBalance: string; spendingAndOutflows: string; paymentsAndInflows: string; cashLeftOverFromLastMonth: string; fundedSpending: string; paymentsMade: string; otherActivity: string; }
-export interface PlanSnapshot { month: string; readyToAssign: string; categories: PlanCategory[]; creditPaymentCategories: CreditPaymentCategory[]; }
+export interface ReadyToAssignBreakdown { leftoverFromLastMonth: string; incomeThisMonth: string; assignedThisMonth: string; cashOverspendingFromLastMonth: string; }
+export interface PlanSnapshot { month: string; readyToAssign: string; readyToAssignBreakdown?: ReadyToAssignBreakdown; categories: PlanCategory[]; creditPaymentCategories: CreditPaymentCategory[]; }
+export interface AssignReadyToAssignInput { categoryId: string; month: string; amount: string; expectedAssigned: string; }
 
 export const RECONCILED_CONFIRMATION_REQUIRED = "reconciled_confirmation_required";
 export const RECONCILIATION_OUT_OF_DATE = "reconciliation_out_of_date";
@@ -310,6 +312,7 @@ export async function reconcileAccount(input: ReconciliationInput): Promise<Reco
 }
 export async function loadPlanMonth(month: string, asOf = localCalendarDate()): Promise<PlanSnapshot | null> { if (!isTauri()) return null; return invoke<PlanSnapshot>("get_plan_month", { month, asOf }); }
 export async function setPlanAssignment(categoryId: string, month: string, amount: string): Promise<void> { return savedMutation(() => invoke("set_plan_assignment", { input: { categoryId, month, amount } })); }
+export async function assignReadyToAssign(input: AssignReadyToAssignInput): Promise<void> { return savedMutation(() => invoke("assign_ready_to_assign", { input })); }
 export async function movePlanMoney(fromCategoryId: string, toCategoryId: string | null, month: string, amount: string, asOf = localCalendarDate()): Promise<void> { return savedMutation(() => invoke("move_plan_money", { input: { fromCategoryId, toCategoryId, month, amount, asOf } })); }
 export async function renameCategory(categoryId: string, name: string): Promise<void> { return savedMutation(() => invoke("rename_category", { input: { categoryId, name } })); }
 export async function setCategoryNotes(categoryId: string, notes: string): Promise<void> { return savedMutation(() => invoke("set_category_notes", { input: { categoryId, notes } })); }

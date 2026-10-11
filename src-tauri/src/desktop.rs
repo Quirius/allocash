@@ -613,6 +613,14 @@ struct PlanAssignmentInput {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ReadyToAssignInput {
+    category_id: String,
+    month: String,
+    amount: String,
+    expected_assigned: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CategoryNotesInput {
     category_id: String,
     notes: String,
@@ -690,6 +698,39 @@ fn set_plan_assignment(
                 .map_err(ledger_error)
         })
     })
+}
+
+#[tauri::command]
+fn assign_ready_to_assign(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: ReadyToAssignInput,
+) -> Result<(), String> {
+    let month = PlanMonth::parse(&input.month).map_err(ledger_error)?;
+    let amount = parse_canonical_huf(&input.amount)?;
+    let expected_assigned = parse_canonical_huf(&input.expected_assigned)?;
+    with_database(&app, &state, |database| {
+        database.undoable("Assign money", |database| {
+            database
+                .assign_ready_to_assign(
+                    &input.category_id,
+                    &month,
+                    crate::ledger::Huf(amount),
+                    crate::ledger::Huf(expected_assigned),
+                )
+                .map_err(ledger_error)
+        })
+    })
+}
+
+fn parse_canonical_huf(value: &str) -> Result<i64, String> {
+    let amount = value
+        .parse::<i64>()
+        .map_err(|_| "Expected canonical integer HUF text.".to_owned())?;
+    if amount.to_string() != value {
+        return Err("Expected canonical integer HUF text.".into());
+    }
+    Ok(amount)
 }
 
 #[tauri::command]
@@ -849,6 +890,7 @@ pub fn run() {
             reconcile_account,
             get_plan_month,
             set_plan_assignment,
+            assign_ready_to_assign,
             set_category_notes,
             rename_category,
             move_plan_money,

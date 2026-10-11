@@ -104,6 +104,22 @@ Negative assignments and availability are allowed; checked arithmetic still
 rejects overflow without applying either side. Ready to Assign is unchanged in
 the moved month, while existing overspending/rollover rules still apply later.
 
+Manual assignment from Ready to Assign atomically increments the chosen visible
+category's existing Assigned amount. A positive integer HUF amount and the
+expected saved assignment are required; stale values, invalid or hidden
+destinations, the special Inflow category and overflow reject without a write.
+Credit payment categories remain valid destinations. One session undo action
+restores the previous assignment. Amounts may exceed Ready to Assign, preserving
+the existing ability to overassign.
+
+The Ready to Assign breakdown uses the same cutoff-filtered derivation as its
+balance: previous-month closing money plus current-month Ready to Assign
+activity, minus current assignments and the latest closed month's cash
+overspending. Earlier cash overspending is already included in closing money;
+credit overspending remains debt. Assignments include hidden categories. Each
+component is checked integer arithmetic serialized as decimal text; components
+may exceed the transaction HUF range when they cancel to a valid balance.
+
 The Available amount opens an outgoing move popup with the source fixed to that
 category. Ready to Assign is also a destination: this atomically subtracts the
 amount from the source month's Assigned without creating an assignment to the

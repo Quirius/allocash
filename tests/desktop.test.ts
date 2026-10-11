@@ -23,6 +23,7 @@ import {
   previewAccountReconciliation,
   reconcileAccount,
   setPlanAssignment,
+  assignReadyToAssign,
   setAccountClosed,
   setCreditPaymentCategory,
   setCategoryTarget,
@@ -43,6 +44,12 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn() }));
 
 beforeEach(() => vi.resetAllMocks());
+
+it("preserves exact HUF amounts and the saved-assignment guard when manually assigning Ready to Assign", async () => {
+  const input = { categoryId: "groceries", month: "2026-10", amount: "9007199254740993", expectedAssigned: "12500" };
+  await assignReadyToAssign(input);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("assign_ready_to_assign", { input });
+});
 
 it("loads account details with the requested local calendar date", async () => {
   vi.mocked(isTauri).mockReturnValue(true);

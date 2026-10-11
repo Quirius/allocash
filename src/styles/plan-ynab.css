@@ -128,6 +128,62 @@
 .plan-month-grid button { min-height: 38px; border: 0; border-radius: 7px; color: #e5e4ef; background: transparent; cursor: pointer; font-size: 14px; font-weight: 600; }
 .plan-month-grid button:hover { background: #ffffff12; }
 .plan-month-grid button.active { color: #fff; background: #737cff; font-weight: 700; }
+.plan-view .plan-rta-wrap { justify-self: center; position: relative; min-width: 0; }
+.plan-view .plan-rta { gap: 4px; padding: 5px 7px; overflow: hidden; }
+.plan-view .plan-rta.positive { border-color: #52761e; background: #335c00; }
+.plan-view .plan-rta.zero { border-color: #44444b; background: #34343b; }
+.plan-view .plan-rta.negative { border-color: #8b3944; background: #431f29; }
+.plan-view .plan-toolbar .plan-rta-breakdown { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; align-items: center; column-gap: 22px; row-gap: 2px; margin: 0; padding: 6px 12px; border: 0; border-radius: 5px; color: #f5f4fb; background: transparent; cursor: pointer; text-align: left; }
+.plan-view .plan-rta-breakdown strong { grid-column: 1; grid-row: 1; }
+.plan-view .plan-rta-breakdown .rta-status { grid-column: 1; grid-row: 2; }
+.plan-view .plan-rta-breakdown .rta-check { grid-column: 2; grid-row: 1 / 3; width: 34px; height: 34px; }
+.plan-view .plan-rta-breakdown strong { color: #fff; font-size: 24px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.plan-view .plan-rta.positive .plan-rta-breakdown strong { color: #fff; }
+.plan-view .plan-rta.zero .plan-rta-breakdown strong { color: #a5a5b8; }
+.plan-view .plan-rta.negative .plan-rta-breakdown strong { color: #ff6976; }
+.plan-view .plan-rta-breakdown:hover { background: #ffffff0b; }
+.plan-view .rta-status { font-size: 14px; color: #c3c1d1; white-space: nowrap; }
+.plan-view .plan-rta.positive .rta-status { color: #fff; }
+.plan-view .rta-zero-status { display: inline-flex; align-items: center; }
+.plan-view .rta-check { width: 23px; height: 23px; fill: #bcbcc4; stroke: #34343b; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.plan-view .plan-toolbar .plan-rta-assign { margin: 0 10px 0 4px; padding: 8px 15px; border: 0; border-radius: 8px; color: #fff; background: #507f13; cursor: pointer; font-size: 16px; font-weight: 700; white-space: nowrap; }
+.plan-view .plan-toolbar .plan-rta-assign:hover { background: #638f25; }
+.plan-view .plan-rta-assign:disabled { opacity: .55; cursor: default; }
+.plan-view .rta-chevron { width: 11px; height: 8px; margin-left: 5px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.rta-popup { box-sizing: border-box; position: fixed; z-index: 1200; width: min(330px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); overflow: visible; padding: 14px; border: 1px solid #45445d; border-radius: 10px; color: #f5f4fb; background: #202037; box-shadow: 0 14px 36px #000a; }
+.rta-popup h3 { margin: 0 0 12px; font-size: 16px; }
+.rta-notch { position: absolute; top: -6px; left: 24px; width: 10px; height: 10px; transform: rotate(45deg); border-left: 1px solid #45445d; border-top: 1px solid #45445d; background: #202037; }
+.rta-popup.above .rta-notch { top: auto; bottom: -6px; transform: rotate(225deg); }
+.rta-breakdown-popup { width: min(480px, calc(100vw - 16px)); overflow: visible; }
+.rta-breakdown-card { max-height: max(40px, min(48vh, 310px, calc(100dvh - 140px))); overflow-y: auto; padding: 10px 12px; border-radius: 8px; background: #121222; scrollbar-color: #4b4a63 transparent; }
+.rta-breakdown-row, .rta-breakdown-total { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 0; border-bottom: 1px solid #2b2a40; }
+.rta-breakdown-row > span, .rta-breakdown-total > span { color: #c4c2d1; }
+.rta-breakdown-row strong { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rta-breakdown-row strong.negative { color: #f18d8d; }
+.rta-breakdown-row svg { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.rta-breakdown-summary { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid #3a3951; color: #e6e4f3; }
+.rta-breakdown-summary > svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.rta-breakdown-summary > strong:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rta-breakdown-summary > strong.negative { color: #f18d8d; }
+.rta-breakdown-total { border-bottom: 0; font-weight: 700; }
+.rta-breakdown-total strong { color: #fff; font-size: 16px; font-variant-numeric: tabular-nums; }
+.rta-help { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; padding: 10px; border: 1px solid #494682; border-radius: 7px; color: #d0cef0; background: #29274b; font-size: 11px; line-height: 1.4; }
+.rta-info { width: 18px; height: 18px; flex: 0 0 auto; fill: none; stroke: #aaa5ff; stroke-width: 1.5; stroke-linecap: round; }
+.rta-assign-popup { width: min(350px, calc(100vw - 16px)); overflow: visible; }
+.rta-assign-scroll { display: grid; gap: 10px; max-height: calc(100dvh - 76px); overflow-y: auto; padding-right: 2px; scrollbar-color: #4b4a63 transparent; }
+.rta-assign-scroll label { display: grid; gap: 5px; color: #c8c6d8; }
+.rta-assign-scroll input, .rta-assign-scroll select { box-sizing: border-box; width: 100%; min-width: 0; padding: 9px; border: 1px solid #77768e; border-radius: 5px; color: #fff; background: #414157; }
+.rta-assign-scroll input:focus, .rta-assign-scroll select:focus { outline: 2px solid #817aff; outline-offset: 1px; }
+.rta-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 2px; }
+.rta-actions button { padding: 7px 12px; border: 1px solid #55546c; border-radius: 5px; color: #eee; background: #2a2942; cursor: pointer; }
+.rta-actions button[type="submit"] { border-color: #6964ff; color: #fff; background: #5954ff; font-weight: 700; }
+.rta-actions button:disabled { opacity: .55; cursor: default; }
+.rta-error { margin: 0; color: #ff9da4; font-size: 12px; }
+@media (max-width: 760px) {
+  .plan-view .plan-rta-wrap { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; }
+  .plan-view .plan-rta { justify-content: center; }
+  .plan-view .plan-toolbar .plan-rta { grid-column: auto; grid-row: auto; }
+}
 @media (max-width: 1050px) { .plan-view .plan-content { grid-template-columns: minmax(0, 1fr) 320px; } }
 @media (max-width: 1450px) {
   .plan-view .plan-content { grid-template-columns: minmax(0, 1fr) 320px; }
