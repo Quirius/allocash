@@ -11,13 +11,14 @@ progress:
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
 next_action: "Confirm category name actions, hide/unhide, deletion with a history destination and undo, and All Accounts search and editing; check Ready to Assign breakdown, manual assignment and undo, Plan month navigation and month-popup selection, transfer payee retargeting, normal/transfer conversion, paired Save/Cancel and undo, alongside account creation, status toggles and scheduled realization, and collect remaining dropdown and secondary-screen references; confirm account editing and amount keyboard behavior; check credit payment breakdowns and warnings; check upcoming repeating Save/Cancel/undo and continue target/recurrence recreation and native backup/reopen checks."
-updated_at: "2026-10-12T20:17:46Z"
+updated_at: "2026-10-12T20:26:00Z"
 source:
   branch: "main"
-  commit: "a5921c7ed3159c2f30825ebe50f66d870ac1f9bf"
-  verified_at: "2026-10-12T20:17:46Z"
+  commit: "00a80286cebcca7b86d75316ffaf6d4d3f765423"
+  verified_at: "2026-10-12T20:26:00Z"
 summary:
   completed:
+    - "Category actions now open on a left-click only on the name text. Funding descriptions, progress bars and surrounding cell space retain Assigned focus without opening the popup. Right-clicking non-editor category-row content opens the same popup; inputs retain their native context menu. All 27 focused Plan presentation, cover and Ready to Assign tests, TypeScript, synthetic browser click-area checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Financial behavior and schema are unchanged; owner click-target and right-click confirmation remain open."
     - "Plan category names now open the selected-name popup with Rename, Hide and Delete actions. Hidden Categories offers Unhide. Deletion chooses a history destination and atomically combines assignments while preserving transaction IDs, transfer links, states, import provenance, schedules and notes. Destination target history takes precedence; source targets migrate only when it has none. Special categories stay protected and all actions are undoable. Cash overspending and card funding fixtures verify expected recalculation without changing account balances. The 303-test frontend suite plus focused follow-up checks, the 217-test Rust suite plus provenance follow-up checks, TypeScript, formatting, Cargo check, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. No schema changes were made; owner category actions, merge and undo confirmation remain open."
     - "All Accounts now combines all account registers with an Account column, exact aggregate balances and full-ledger search before pagination, including closed history and both signed transfer legs. Reconciliation remains in individual accounts. Editors and additions use actual source accounts; stale reads and changed rows guard writes while preserving drafts. All 298 frontend tests, the 209-test Rust suite plus focused follow-up register checks, TypeScript, formatting, Cargo check, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. No schema or accounting-rule changes were made; owner search, editing, undo and status confirmation remain open."
     - "The Plan category list is now constrained to available window height and has a visible overflow scrollbar on its right. Column headings stay pinned and selection preserves list scroll. Narrow windows stack categories and details without overlap and keep both reachable; funding labels stay inside their column. Synthetic browser checks with 164 categories passed at desktop and 500-pixel widths, including mouse-wheel scrolling, last-row reachability, scrollbar gutter and sticky headings, alongside existing interaction checks and production/native builds. Installation preserved budget bytes, matches the release executable and reopened a responsive window. This is a stylesheet-only change; accounting, schema and UI financial logic are unchanged. Owner category-scroll confirmation remains open."
@@ -78,6 +79,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
+    - "Category-name click target and category-row right-click are implemented and installed; owner interaction confirmation remains open."
     - "Category name actions are implemented and installed; owner popup, hide/unhide and undo confirmation remains open."
     - "All Accounts register and full-ledger search are implemented and installed; owner interaction confirmation remains open."
     - "Category overflow scrolling is corrected and installed; owner interaction confirmation remains open."
@@ -112,6 +114,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "00a80286cebcca7b86d75316ffaf6d4d3f765423"
+    note: "Records category-name click target, category-row right-click, validation and installation."
   - path: "docs/status.md"
     ref: "a5921c7ed3159c2f30825ebe50f66d870ac1f9bf"
     note: "Records category name popup, safe hide/unhide/delete, history preservation, validation and installation."
