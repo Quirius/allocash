@@ -1,5 +1,17 @@
 # Implementation and validation status
 
+On 2026-10-12, the category actions popup is now limited to clicking the
+name text. Funding descriptions, progress bars and surrounding cell space are
+separate from that button and retain row selection/Assigned focus. Right-clicking
+non-editor category-row content opens the same popup; inputs keep their native
+context menu. The 27 focused Plan presentation, cover and Ready to Assign tests,
+TypeScript and synthetic browser checks passed, including actual click-area
+bounds and separate left/right clicks on funding bars. Production/native builds
+passed. Installation preserved budget bytes, the installed executable matches
+the release build and Allocash reopened a responsive window. Financial behavior
+and schema are unchanged;
+owner click-target and right-click confirmation remain open.
+
 On 2026-10-12, clicking a Plan category name now opens an anchored popup
 with its name selected and Hide, Delete, Cancel and OK actions. Other row content
 still focuses Assigned for immediate entry. Hidden Categories offers Unhide;

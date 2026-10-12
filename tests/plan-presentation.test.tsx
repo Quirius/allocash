@@ -186,3 +186,30 @@ it("keeps an invalid assignment draft visible after blur", async () => {
   expect(input.closest(".plan-assignment-field")?.classList.contains("has-draft")).toBe(true);
   expect(input.value).toBe("12+oops");
 });
+
+it("limits category actions to name clicks or right-click, leaving funding bars and inputs alone", async () => {
+  const plan = syntheticPlan();
+  plan.categories[0]!.target = { behavior: "refill", amount: "100", dueKind: "last_day", dueDay: null, intervalMonths: 1, firstDueMonth: null, dueMonth: month, neededThisMonth: "100", funded: "100", toGo: "0", snoozed: false };
+  await mount(plan);
+  const row = host.querySelector<HTMLElement>(".plan-row")!;
+  const name = row.querySelector<HTMLButtonElement>(".plan-category-name")!;
+  const assigned = row.querySelector<HTMLInputElement>("input[data-plan-month]")!;
+  const meter = row.querySelector<HTMLElement>(".plan-target-meter")!;
+  const funding = row.querySelector<HTMLElement>(".plan-category-progress")!;
+  expect(name.contains(meter)).toBe(false);
+  expect(name.contains(funding)).toBe(false);
+  for (const target of [meter, funding, row.querySelector(".plan-category-cell")!]) {
+    act(() => target.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(host.querySelector(".plan-category-actions")).toBeNull();
+    expect(document.activeElement).toBe(assigned);
+  }
+  const context = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+  act(() => funding.dispatchEvent(context));
+  expect(context.defaultPrevented).toBe(true);
+  expect(host.querySelector('[role="dialog"][aria-label="Alpha actions"]')).not.toBeNull();
+  act(() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+  const inputContext = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+  act(() => assigned.dispatchEvent(inputContext));
+  expect(inputContext.defaultPrevented).toBe(false);
+  expect(host.querySelector(".plan-category-actions")).toBeNull();
+});

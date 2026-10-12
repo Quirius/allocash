@@ -15,8 +15,11 @@ independently with a visible scrollbar on its right when rows overflow. Column
 headings stay pinned, and selecting a category preserves the list's scroll.
 Narrow windows keep the category list scrollable and let the details below it be
 reached through the content area's scroll without overlapping category rows.
-Category and group selection squares are omitted. Clicking a category name opens
-an anchored popup with its name selected, Hide, Delete, Cancel and OK. Clicking
+Category and group selection squares are omitted. Only clicking the category
+name text opens an anchored popup with its name selected, Hide, Delete, Cancel and OK.
+Right-clicking non-editor content in the category row opens the same popup.
+Funding descriptions, progress bars and surrounding space do not open it on a
+left click; amount editors retain their native right-click menus. Clicking
 other non-control row content focuses the existing Assigned editor and selects
 the full amount for immediate entry. Hiding preserves transactions, assignments
 and balances; Hidden Categories offers Unhide. Delete asks where to move existing history. Transactions and recurring entries

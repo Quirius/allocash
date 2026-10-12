@@ -179,6 +179,13 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     categoryNameInput.current?.focus({ preventScroll: true }); categoryNameInput.current?.select();
     return () => { observer?.disconnect(); document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", key); window.removeEventListener("resize", reposition); window.removeEventListener("scroll", reposition, true); };
   }, [categoryPopup, categoryActionError]);
+  function openCategoryActions(category: PlanCategory, anchor: HTMLButtonElement) {
+    if (categoryActionBusyRef.current || !canWritePlan()) return;
+    selectCategory(category.categoryId);
+    categoryPopupGeneration.current++;
+    setCategoryActionError(null);
+    setCategoryPopup({ category, anchor, readEpoch, refreshRevision });
+  }
   async function categoryAction(action: "rename" | "hide" | "delete", category: PlanCategory, name?: string, destinationId?: string) {
     if (categoryActionBusyRef.current || !canWritePlan()) return;
     categoryActionBusyRef.current = true; setCategoryActionBusy(true); setCategoryActionError(null);
@@ -396,11 +403,19 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
             if (!canWritePlan() || (event.target instanceof Element && event.target.closest("input, select, textarea, button"))) return;
             const assigned = event.currentTarget.querySelector<HTMLInputElement>("input[data-plan-month]");
             if (assigned && !assigned.readOnly && !assigned.disabled) { assigned.focus({ preventScroll: true }); assigned.select(); }
+          }} onContextMenu={(event) => {
+            if (event.target instanceof Element && event.target.closest("input, select, textarea")) return;
+            event.preventDefault();
+            const anchor = event.currentTarget.querySelector<HTMLButtonElement>(".plan-category-name");
+            if (anchor) openCategoryActions(category, anchor);
           }} onFocusCapture={() => selectCategory(category.categoryId)}>
-            <button className="plan-category-name" type="button" disabled={categoryActionBusy} aria-pressed={selectedCategoryId === category.categoryId} aria-haspopup="dialog" aria-expanded={categoryPopup?.category.categoryId === category.categoryId} aria-controls="plan-category-details" onClick={(event) => { event.stopPropagation(); selectCategory(category.categoryId); if (canWritePlan()) { categoryPopupGeneration.current++; setCategoryActionError(null); setCategoryPopup({ category, anchor: event.currentTarget, readEpoch, refreshRevision }); } }}>
-              <span className="plan-category-topline"><span className="plan-category-label">{category.categoryName}</span>{targetPresentation && <span className={"plan-category-progress" + (targetPresentation.fullySpent ? " fully-spent" : "")}><strong>{targetPresentation.status}</strong>{targetPresentation.detail && <span>{targetPresentation.detail}</span>}</span>}</span>
+            <div className="plan-category-cell">
+              <span className="plan-category-topline">
+                <button className="plan-category-name" type="button" disabled={categoryActionBusy} aria-pressed={selectedCategoryId === category.categoryId} aria-haspopup="dialog" aria-expanded={categoryPopup?.category.categoryId === category.categoryId} aria-controls="plan-category-details" onClick={(event) => { event.stopPropagation(); openCategoryActions(category, event.currentTarget); }}><span className="plan-category-label">{category.categoryName}</span></button>
+                {targetPresentation && <span className={"plan-category-progress" + (targetPresentation.fullySpent ? " fully-spent" : "")}><strong>{targetPresentation.status}</strong>{targetPresentation.detail && <span>{targetPresentation.detail}</span>}</span>}
+              </span>
               {target && <span className={"plan-target-meter" + (target.snoozed ? " snoozed" : "")} aria-label={targetPresentation?.status + "; " + targetPresentation?.detail}><i style={{ width: (percent ?? 100) + "%" }} /></span>}
-            </button>
+            </div>
             <PlanAssignmentInput month={month} category={category} readOnly={!planCurrent} onSave={save} />
             <span>{formatHuf(BigInt(category.activity))}</span>
             <button type="button" data-category-id={category.categoryId} className={"plan-available " + availableState + (targetCheck ? " target-funded" + (BigInt(category.available) === 0n ? " fully-spent" : "") : "")} title={coverGap > 0n ? "Cover " + formatHuf(coverGap) + " for " + category.categoryName : planPaymentDescription(category, plan.creditPaymentCategories)} aria-label={category.categoryName + " available " + formatHuf(BigInt(category.available)) + (coverGap > 0n ? "; cover " + formatHuf(coverGap) : planPaymentDescription(category, plan.creditPaymentCategories) ? "; " + planPaymentDescription(category, plan.creditPaymentCategories) : "") + (coverGap > 0n ? "; cover money into this category" : "; move money from this category")} disabled={!planCurrent || moveBusy} onClick={(event) => openCategoryMoney(category, event.currentTarget)}>

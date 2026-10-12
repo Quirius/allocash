@@ -50,7 +50,7 @@
 .plan-view .plan-row:hover { background: #17172e; }
 .plan-view .plan-row.selected { box-shadow: inset 2px 0 var(--plan-purple); background: #1b1a37; }
 .plan-view .plan-row > span { color: #cbc9dc; white-space: nowrap; }
-.plan-view .plan-category-name { width: 100%; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 2px 0; border: 0; color: #f1f0f7; background: transparent; text-align: left; cursor: pointer; }
+.plan-view .plan-category-cell { width: 100%; min-width: 0; display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 2px 0; border: 0; color: #f1f0f7; background: transparent; text-align: left; cursor: pointer; }
 .plan-view .plan-category-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plan-view .plan-target-meter { position: relative; display: flex; width: 100%; height: 4px; overflow: visible; border-radius: 3px; background: #35344a; }
 .plan-view .plan-target-meter i { display: block; height: 100%; border-radius: inherit; background: var(--plan-lime); }
@@ -84,7 +84,7 @@
 .plan-view .plan-table { border-radius: 0; border: 0; }
 .plan-view .plan-group-heading { min-height: 24px; font-size: 14px; background: #15152b; }
 .plan-view .plan-row { min-height: 24px; padding: 0 12px; }
-.plan-view .plan-category-name { font-size: 14px; font-weight: 600; }
+.plan-view .plan-category-cell { font-size: 14px; font-weight: 600; }
 .plan-view .plan-row input { background: transparent; font-size: 14px; font-weight: 600; }
 .plan-view .plan-row input:hover { background: #232341; }
 .plan-view .plan-row > span { font-size: 14px; font-weight: 600; }
@@ -111,7 +111,7 @@
 .plan-cover-popup button:disabled { opacity: .55; cursor: default; }
 .plan-view .plan-row .plan-available.negative,.plan-view .plan-row .plan-available.overspent { background: #ce1835; color: white; }
 .plan-view .plan-target-meter small { top: -18px; font-size: 12px; line-height: 14px; background: transparent; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plan-view .plan-category-name:has(.plan-target-meter) .plan-category-label { padding-right: 60%; }
+.plan-view .plan-category-cell:has(.plan-target-meter) .plan-category-label { padding-right: 60%; }
 .plan-view .plan-summary { gap: 0; margin-top: 12px; }
 .plan-view .plan-summary > div { padding: 10px 0; }
 .plan-view .category-details.empty h3 { text-align: left; font-size: 15px; }
@@ -232,7 +232,7 @@
 .plan-view .plan-bank-card { width: 17px; height: 14px; flex: 0 0 auto; fill: none; stroke: #e2e1ee; stroke-width: 1.4; stroke-linecap: square; stroke-linejoin: miter; }
 .plan-view .plan-group-heading > span:not(:first-child) { color: #fff; font-weight: 700; }
 .plan-view .plan-row { min-height: 26px; }
-.plan-view .plan-category-name { box-sizing: border-box; padding: 2px 0 2px 24px; gap: 3px; }
+.plan-view .plan-category-cell { box-sizing: border-box; padding: 2px 0 2px 24px; gap: 3px; }
 .plan-view .plan-category-topline { display: flex; align-items: baseline; justify-content: space-between; width: 100%; min-width: 0; gap: 8px; overflow: hidden; }
 .plan-view .plan-category-label { flex: 1 1 auto; min-width: 0; overflow: hidden; padding: 0 !important; color: #f3f2fa; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .plan-view .plan-category-progress { display: flex; flex: 0 1 auto; align-items: baseline; justify-content: flex-end; gap: 7px; min-width: 0; max-width: 60%; overflow: hidden; color: #c3c1d1; font-size: 11px; font-weight: 400; white-space: nowrap; }
@@ -262,7 +262,7 @@
 @media (max-width: 1450px) {
   .plan-view .plan-content { grid-template-columns: minmax(0, 1fr) 320px; }
   .plan-view .plan-target-meter small { display: none; }
-  .plan-view .plan-category-name:has(.plan-target-meter) .plan-category-label { padding-right: 0; }
+  .plan-view .plan-category-cell:has(.plan-target-meter) .plan-category-label { padding-right: 0; }
 }
 @media (max-width: 760px) {
   .plan-view { height: 100%; min-height: 0; overflow: hidden; }
@@ -277,3 +277,6 @@
   .plan-view .plan-head, .plan-view .plan-row, .plan-view .plan-group-heading { grid-template-columns: minmax(110px, 1fr) minmax(74px, 90px) minmax(70px, 85px) minmax(75px, 95px); gap: 5px; }
   .plan-view .plan-row, .plan-view .plan-head, .plan-view .plan-group-heading { padding-right: 7px; padding-left: 7px; }
 }
+
+.plan-view .plan-category-cell { cursor: default; }
+.plan-view .plan-category-topline > .plan-category-name { width: auto; max-width: 100%; min-width: 0; flex: 0 1 auto; display: inline-flex; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
