@@ -17,6 +17,12 @@
   gap: 7px;
 }
 
+.transaction-inline.all-accounts-inline .inline-fields {
+  grid-template-columns: 40px minmax(110px, 135px) 112px minmax(130px, 20fr) minmax(160px, 26fr) minmax(110px, 24fr) 125px 125px 36px;
+}
+.transaction-inline .inline-account-field { min-width: 0; }
+.transaction-inline .inline-account-field select { width: 100%; }
+
 .transaction-inline .editor-fields label {
   gap: 2px;
   color: #aaa9d1;

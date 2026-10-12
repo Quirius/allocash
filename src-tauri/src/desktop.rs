@@ -6,13 +6,13 @@ use crate::database::{
     BudgetInfo, Database, NativeBackupReceipt, NativeRecoveryReceipt, NativeRestoreReceipt,
 };
 use crate::ledger::{
-    AccountOverview, BalanceOverTimeInput, BalanceOverTimeReport, CalendarDate, ForecastInput,
-    ForecastReport, IncomeBreakdownInput, IncomeBreakdownReport, IncomeExpenseReport,
-    InflowOutflowReport, LedgerError, ManualTransactionDraft, ManualTransferInput,
-    MonthlyScheduleDraft, NetWorthReport, OutflowOverTimeInput, OutflowOverTimeReport,
-    ReconciliationInput, ReconciliationResult, ReconciliationReview, RegisterEntry,
-    RegisterEntryEdit, ScheduledOccurrence, SpendingCategoryTotal, SpendingPayeeTotal,
-    SpendingReportInput, TransactionFormOptions,
+    AccountOverview, AllAccountsRegisterEntry, BalanceOverTimeInput, BalanceOverTimeReport,
+    CalendarDate, ForecastInput, ForecastReport, IncomeBreakdownInput, IncomeBreakdownReport,
+    IncomeExpenseReport, InflowOutflowReport, LedgerError, ManualTransactionDraft,
+    ManualTransferInput, MonthlyScheduleDraft, NetWorthReport, OutflowOverTimeInput,
+    OutflowOverTimeReport, ReconciliationInput, ReconciliationResult, ReconciliationReview,
+    RegisterEntry, RegisterEntryEdit, ScheduledOccurrence, SpendingCategoryTotal,
+    SpendingPayeeTotal, SpendingReportInput, TransactionFormOptions,
 };
 use crate::plan::{CategoryTargetDefinition, PlanMonth, PlanSnapshot};
 use serde::{Deserialize, Serialize};
@@ -392,6 +392,18 @@ fn get_account_register(
         database
             .register_entries(&account_id)
             .map_err(|_| "Could not read this account register.".to_owned())
+    })
+}
+
+#[tauri::command]
+fn get_all_accounts_register(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+) -> Result<Vec<AllAccountsRegisterEntry>, String> {
+    with_database(&app, &state, |database| {
+        database
+            .all_register_entries()
+            .map_err(|_| "Could not read the all-accounts register.".to_owned())
     })
 }
 
@@ -865,6 +877,7 @@ pub fn run() {
             recover_unreadable_budget,
             get_workspace,
             get_account_register,
+            get_all_accounts_register,
             get_scheduled_occurrences,
             get_spending_by_category,
             get_spending_by_payee,

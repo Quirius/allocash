@@ -11,6 +11,7 @@ import {
   realizeDueScheduledTransactions,
   listNativeBackups,
   loadAccountRegister,
+  loadAllAccountsRegister,
   loadWorkspace,
   postScheduledOccurrence,
   skipScheduledOccurrence,
@@ -25,6 +26,7 @@ import {
   type AccountKind,
   type AccountOverview,
   type RegisterEntry,
+  type AllAccountsRegisterEntry,
   type WorkspaceSnapshot,
   type UndoStatus,
 } from "../lib/desktop";
@@ -48,7 +50,7 @@ type Startup =
 type RegisterState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "ready"; entries: RegisterEntry[] }
+  | { status: "ready"; entries: (RegisterEntry | AllAccountsRegisterEntry)[] }
   | { status: "error" };
 
 interface AccountGroup {
@@ -81,6 +83,46 @@ function groupTotal(accounts: AccountOverview[]): string {
   return huf(total.toString());
 }
 
+const allAccountsDisplayId = "__all_accounts_display_only__";
+function aggregateAccounts(accounts: AccountOverview[]): AccountOverview {
+  return {
+    id: allAccountsDisplayId, name: "All Accounts", kind: accounts[0]?.kind ?? "cash", sortOrder: -1, closed: false,
+    balance: {
+      working: accounts.reduce((sum, account) => sum + BigInt(account.balance.working), 0n).toString(),
+      cleared: accounts.reduce((sum, account) => sum + BigInt(account.balance.cleared), 0n).toString(),
+      uncleared: accounts.reduce((sum, account) => sum + BigInt(account.balance.uncleared), 0n).toString(),
+      reconciled: accounts.reduce((sum, account) => sum + BigInt(account.balance.reconciled), 0n).toString(),
+    },
+  };
+}
+
+function entryOwner(entry: RegisterEntry | AllAccountsRegisterEntry, accounts: AccountOverview[], fallback: AccountOverview, allAccounts = false): AccountOverview | null {
+  if ("accountId" in entry) return accounts.find((account) => account.id === entry.accountId) ?? null;
+  return allAccounts ? null : fallback;
+}
+
+function matchesRegisterSearch(entry: RegisterEntry | AllAccountsRegisterEntry, account: AccountOverview | null, query: string): boolean {
+  const amount = BigInt(entry.amount);
+  const searchable = [
+    "accountName" in entry ? entry.accountName : account?.name ?? "",
+    entry.date, formatDate(entry.date), entry.payeeName ?? "", entry.transferAccountName ?? "",
+    entry.categoryGroupName ?? "", entry.categoryName ?? "", entry.memo, entry.flagName ?? "", entry.flagColor ?? "",
+    amount.toString(), formatHuf(amount), amount < 0n ? (-amount).toString() : "", amount < 0n ? formatHuf(-amount) : "",
+  ].join(" ").toLowerCase();
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return terms.every((term) => searchable.includes(term));
+}
+
+function registerEntryFingerprint(entry: RegisterEntry | AllAccountsRegisterEntry): string {
+  return [
+    "accountId" in entry ? entry.accountId : "", "accountName" in entry ? entry.accountName : "",
+    entry.date, entry.payeeName ?? "", entry.categoryId ?? "", entry.categoryGroupName ?? "", entry.categoryName ?? "",
+    entry.memo, entry.flagId ?? "", entry.flagName ?? "", entry.flagColor ?? "", entry.clearedState, entry.postingState,
+    entry.origin, entry.amount, entry.transferId ?? "", entry.transferAccountId ?? "", entry.transferAccountName ?? "",
+    entry.scheduleId ?? "", entry.repeatIntervalMonths ?? "",
+  ].join("\u001f");
+}
+
 function displayPayee(entry: RegisterEntry): string {
   if (entry.transferAccountName) return `Transfer: ${entry.transferAccountName}`;
   return entry.payeeName || "No payee";
@@ -101,6 +143,9 @@ export function App() {
   const [startup, setStartup] = useState<Startup>({ status: "loading" });
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [register, setRegister] = useState<RegisterState>({ status: "idle" });
+  const [allRegister, setAllRegister] = useState<RegisterState>({ status: "idle" });
+  const [allRegisterRead, setAllRegisterRead] = useState({ current: false, pending: false, error: false });
+  const [allAccountsView, setAllAccountsView] = useState(false);
   const [startupAttempt, setStartupAttempt] = useState(0);
   const [registerAttempt, setRegisterAttempt] = useState(0);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
@@ -115,6 +160,7 @@ export function App() {
   const realizedDay = useRef("");
   const realizing = useRef(false);
   const ledgerRefreshSequence = useRef(createRequestSequence());
+  const allRegisterRequest = useRef(createRequestSequence());
   const [mutation, setMutation] = useState({ pending: false, version: 0 });
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [backup, setBackup] = useState<
@@ -179,7 +225,7 @@ export function App() {
   }, [startup.status, startup.status === "ready" ? startupAttempt : 0, mutation.version, mutation.pending]);
 
   useEffect(() => {
-    if (startup.status !== "ready" || !selectedAccountId) {
+    if (startup.status !== "ready" || !selectedAccountId || allAccountsView) {
       setRegister({ status: "idle" });
       return;
     }
@@ -196,7 +242,42 @@ export function App() {
     return () => {
       active = false;
     };
-  }, [selectedAccountId, registerAttempt, startup.status]);
+  }, [selectedAccountId, registerAttempt, startup.status, allAccountsView]);
+
+  useEffect(() => {
+    if (startup.status !== "ready" || view !== "register" || !allAccountsView) {
+      allRegisterRequest.current.invalidate();
+      setAllRegister({ status: "idle" });
+      setAllRegisterRead({ current: false, pending: false, error: false });
+      return;
+    }
+    if (mutation.pending) {
+      allRegisterRequest.current.invalidate();
+      setAllRegisterRead({ current: false, pending: true, error: false });
+      setAllRegister((current) => current.status === "ready" ? current : { status: "loading" });
+      return;
+    }
+    let active = true;
+    const request = allRegisterRequest.current.begin();
+    const requestedVersion = mutation.version;
+    setAllRegisterRead({ current: false, pending: true, error: false });
+    setAllRegister((current) => current.status === "ready" ? current : { status: "loading" });
+    loadAllAccountsRegister().then(
+      (entries) => {
+        if (active && allRegisterRequest.current.isCurrent(request) && allAccountsView && !hasSavedMutationPending() && getSavedMutationVersion() === requestedVersion) {
+          setAllRegister({ status: "ready", entries: entries ?? [] });
+          setAllRegisterRead({ current: true, pending: false, error: false });
+        }
+      },
+      () => {
+        if (active && allRegisterRequest.current.isCurrent(request) && allAccountsView && !hasSavedMutationPending() && getSavedMutationVersion() === requestedVersion) {
+          setAllRegister((current) => current.status === "ready" ? current : { status: "error" });
+          setAllRegisterRead({ current: false, pending: false, error: true });
+        }
+      },
+    );
+    return () => { active = false; allRegisterRequest.current.invalidate(); };
+  }, [allAccountsView, registerAttempt, startup.status, mutation.pending, mutation.version, view]);
 
   useEffect(() => {
     if (startup.status === "ready" || startup.status === "error") {
@@ -213,6 +294,7 @@ export function App() {
     () => accounts.find((account) => account.id === selectedAccountId) ?? null,
     [accounts, selectedAccountId],
   );
+  const allAccountsAggregate = useMemo(() => aggregateAccounts(accounts), [accounts]);
 
   async function refreshLedger() {
     const request = ledgerRefreshSequence.current.begin();
@@ -234,6 +316,9 @@ export function App() {
     // The status write already succeeded. Keep every row mounted, even if the
     // balance read fails; a retry must never replay the write.
     setRegister((current) => current.status === "ready" ? {
+      ...current, entries: current.entries.map((entry) => entry.id === id ? { ...entry, clearedState } : entry),
+    } : current);
+    setAllRegister((current) => current.status === "ready" ? {
       ...current, entries: current.entries.map((entry) => entry.id === id ? { ...entry, clearedState } : entry),
     } : current);
     const request = ledgerRefreshSequence.current.begin();
@@ -327,6 +412,7 @@ export function App() {
         setRestore({ status: "ready", message: "Budget restored. The previous budget was saved at", path: receipt.safetyBackupPath });
       }
       setView("register");
+      setAllAccountsView(false);
       setSelectedAccountId(null);
       setStartupAttempt((value) => value + 1);
     } catch (error) {
@@ -338,14 +424,14 @@ export function App() {
     <div className={`app-shell view-${view}${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       {editingAccountId && <AccountEditor key={editingAccountId} accountId={editingAccountId} pending={mutation.pending || undoBusy} onChanged={refreshLedger} onClose={() => setEditingAccountId(null)} />}
       {addingAccount && <AddAccountDialog pending={mutation.pending || undoBusy} onClose={() => setAddingAccount(false)}
-        onCreated={async (id) => { await refreshLedger(); setSelectedAccountId(id); setView("register"); }} />}
+        onCreated={async (id) => { await refreshLedger(); setAllAccountsView(false); setSelectedAccountId(id); setView("register"); }} />}
       <a className="skip-link" href="#workspace">Skip to workspace</a>
       <aside className="sidebar" aria-label="Budget sidebar">
         <div className="budget-identity"><span className="brand-mark" aria-hidden="true">A</span><div><strong>{startup.status === "ready" ? startup.workspace.budget.name : "Allocash"}</strong><span>Allocash · Local budget</span></div></div>
         <nav className="primary-navigation" aria-label="Budget views">
           <button title="Plan" className={view === "plan" ? "active" : ""} onClick={() => setView("plan")}><span aria-hidden="true">▣</span><span>Plan</span></button>
           <button title="Reports" className={view === "reports" ? "active" : ""} onClick={() => setView("reports")}><span aria-hidden="true">▥</span><span>Reports</span></button>
-          <button title="Accounts" className={view === "register" ? "active" : ""} onClick={() => setView("register")}><svg className="accounts-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8 12 3l10 5v1H2V8Zm1 3h2v7H3v-7Zm8 0h2v7h-2v-7Zm8 0h2v7h-2v-7ZM2 19h20v2H2v-2Z"/></svg><span>All Accounts</span></button>
+          <button title="Accounts" className={view === "register" && allAccountsView ? "active" : ""} onClick={() => { setAllAccountsView(true); setView("register"); }}><svg className="accounts-nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8 12 3l10 5v1H2V8Zm1 3h2v7H3v-7Zm8 0h2v7h-2v-7Zm8 0h2v7h-2v-7ZM2 19h20v2H2v-2Z"/></svg><span>All Accounts</span></button>
           <button title="Budget & backups" className={view === "settings" ? "active" : ""} onClick={() => setView("settings")}><span aria-hidden="true">⚙</span><span>Budget & backups</span></button>
         </nav>
         <nav className="account-groups" aria-label="Accounts">
@@ -360,13 +446,13 @@ export function App() {
                 {!collapsedGroups.has(group.title) && (groupedAccounts.length === 0 ? (
                   <p>No accounts</p>
                 ) : groupedAccounts.map((account) => (
-                  <button
-                    className={`account-link ${selectedAccountId === account.id ? "selected" : ""}`}
+                    <button
+                    className={`account-link ${!allAccountsView && selectedAccountId === account.id ? "selected" : ""}`}
                     key={account.id}
-                    onClick={() => { setSelectedAccountId(account.id); setView("register"); }}
+                    onClick={() => { setAllAccountsView(false); setSelectedAccountId(account.id); setView("register"); }}
                     onContextMenu={(event) => { event.preventDefault(); if (!hasSavedMutationPending() && !undoBusy) { event.currentTarget.focus(); setEditingAccountId(account.id); } }}
                     onKeyDown={(event) => { if ((event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) && !hasSavedMutationPending() && !undoBusy) { event.preventDefault(); setEditingAccountId(account.id); } }}
-                    aria-current={selectedAccountId === account.id ? "page" : undefined}
+                    aria-current={!allAccountsView && selectedAccountId === account.id ? "page" : undefined}
                   >
                     <span>{account.name}</span>
                     <strong className={account.kind === "credit" && BigInt(account.balance.working) < 0n ? "negative credit-negative" : ""}>
@@ -386,14 +472,14 @@ export function App() {
       <main id="workspace" tabIndex={-1}>
         <header className="workspace-header">
           <div>
-            <p className="eyebrow">{view === "register" ? accountKindLabel(selectedAccount?.kind) : "YOUR BUDGET"}</p>
-            <h1>{view === "register" ? selectedAccount?.name ?? "Accounts" : view === "reports" ? "Reports" : "Budget & backups"}</h1>
+            <p className="eyebrow">{view === "register" ? allAccountsView ? "ALL ACCOUNTS" : accountKindLabel(selectedAccount?.kind) : "YOUR BUDGET"}</p>
+            <h1>{view === "register" ? allAccountsView ? "All Accounts" : selectedAccount?.name ?? "Accounts" : view === "reports" ? "Reports" : "Budget & backups"}</h1>
           </div>
           <div className="workspace-actions">
             <button className="undo-button" onClick={() => void undo()} disabled={!undoStatus.canUndo || mutation.pending || undoBusy || startup.status !== "ready"} title={undoStatus.label ? `Undo ${undoStatus.label} (Ctrl+Z)` : "Undo (Ctrl+Z)"}>
               {undoBusy ? "Undoing…" : undoStatus.label ? `Undo ${undoStatus.label}` : "Undo"} <kbd>Ctrl+Z</kbd>
             </button>
-            {view === "register" && selectedAccount && <button disabled={mutation.pending || undoBusy} onClick={() => setEditingAccountId(selectedAccount.id)}>Edit account</button>}
+            {view === "register" && !allAccountsView && selectedAccount && <button disabled={mutation.pending || undoBusy} onClick={() => setEditingAccountId(selectedAccount.id)}>Edit account</button>}
 
           </div>
         </header>
@@ -414,7 +500,7 @@ export function App() {
           {undoFeedback && <p className={undoFeedback.kind === "error" ? "backup-error" : "backup-success"} role={undoFeedback.kind === "error" ? "alert" : "status"}>{undoFeedback.message}</p>}
           {startup.status === "ready" && view === "plan" && <PlanView onCategoryRenamed={refreshLedger} refreshRevision={refreshRevision} readEpoch={mutation.version} mutationPending={mutation.pending} />}
           {startup.status === "ready" && view === "reports" && <ReportsView accounts={accounts} categories={startup.workspace.transactionOptions.categories} refreshRevision={refreshRevision} readEpoch={mutation.version} readPending={mutation.pending} />}
-          {startup.status === "ready" && view === "register" && selectedAccount && (
+          {startup.status === "ready" && view === "register" && !allAccountsView && selectedAccount && (
             <AccountRegister
               key={selectedAccount.id}
               account={selectedAccount}
@@ -427,7 +513,24 @@ export function App() {
             />
           )}
 
-          {startup.status === "ready" && view === "register" && !selectedAccount && <EmptyLedger />}
+          {startup.status === "ready" && view === "register" && allAccountsView && (
+            <AccountRegister
+              key="all-accounts-register"
+              account={allAccountsAggregate}
+              accounts={accounts}
+              options={startup.workspace.transactionOptions}
+              register={allRegister}
+              allAccounts
+              readCurrent={allRegisterRead.current}
+              readPending={allRegisterRead.pending}
+              readError={allRegisterRead.error}
+              onRetry={() => setRegisterAttempt((value) => value + 1)}
+              onChanged={refreshLedger}
+              onStatusChanged={refreshTransactionStatus}
+            />
+          )}
+
+          {startup.status === "ready" && view === "register" && !allAccountsView && !selectedAccount && <EmptyLedger />}
           {startup.status === "preview" && <EmptyLedger preview />}
 
           {(view === "settings" || startup.status === "error") && <section className="details-card" aria-labelledby="budget-details">
@@ -499,6 +602,10 @@ export function AccountRegister({
   onRetry,
   onChanged,
   onStatusChanged,
+  allAccounts = false,
+  readCurrent = true,
+  readPending = false,
+  readError = false,
 }: {
   account: AccountOverview;
   accounts: AccountOverview[];
@@ -507,23 +614,45 @@ export function AccountRegister({
   onRetry: () => void;
   onChanged: () => Promise<void>;
   onStatusChanged?: (id: string, state: "cleared" | "uncleared") => Promise<void>;
+  allAccounts?: boolean;
+  readCurrent?: boolean;
+  readPending?: boolean;
+  readError?: boolean;
 }) {
-  const [editor, setEditor] = useState<"new" | "reconcile" | { kind: "edit-entry"; key: number; entry: RegisterEntry; focusField: RegisterEntryFocusField } | { kind: "duplicate"; key: number; draft: TransactionDraft } | null>(null);
+  const [editor, setEditor] = useState<"new" | "choose-account" | "reconcile" | { kind: "edit-entry"; key: number; entry: RegisterEntry | AllAccountsRegisterEntry; focusField: RegisterEntryFocusField; baselineFingerprint: string } | { kind: "duplicate"; key: number; draft: TransactionDraft; sourceAccountId: string } | null>(null);
   const [scheduleAction, setScheduleAction] = useState(false);
   const actionLock = useRef(false);
   const retryRead = useRef<() => Promise<void>>(onChanged);
   const [refreshPending, setRefreshPending] = useState(false);
-  const [menu, setMenu] = useState<{ entry: RegisterEntry; x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<{ entry: RegisterEntry | AllAccountsRegisterEntry; x: number; y: number } | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const editKey = useRef(0);
+  const [newEntryAccountId, setNewEntryAccountId] = useState(allAccounts ? "" : account.id);
+  const [registerSearch, setRegisterSearch] = useState("");
   const [registerPage, setRegisterPage] = useState(0);
   const [upcomingPage, setUpcomingPage] = useState(0);
   const registerPageSize = 100;
   const today = localCalendarDate();
   const entryCount = register.status === "ready" ? register.entries.length : 0;
+  const newEntryAccount = accounts.find((item) => item.id === newEntryAccountId && !item.closed) ?? null;
+  const duplicateSourceAccount = editor && typeof editor === "object" && editor.kind === "duplicate"
+    ? accounts.find((item) => item.id === editor.sourceAccountId) ?? null
+    : null;
+  const editingAllEntry = allAccounts && editor && typeof editor === "object" && editor.kind === "edit-entry" ? editor.entry : null;
+  const editingBaselineFingerprint = editor && typeof editor === "object" && editor.kind === "edit-entry" ? editor.baselineFingerprint : null;
+  const freshEditingEntry = editingAllEntry && register.status === "ready"
+    ? register.entries.find((entry) => entry.id === editingAllEntry.id) ?? null
+    : null;
+  const editorRowMissing = !!editingAllEntry && readCurrent && register.status === "ready" && !freshEditingEntry;
+  const editorRowChanged = !!editingAllEntry && readCurrent && !!freshEditingEntry
+    && editingBaselineFingerprint !== registerEntryFingerprint(freshEditingEntry);
+  const filteredEntries = useMemo(() => register.status !== "ready" ? [] : register.entries.filter((entry) => {
+    if (!allAccounts || !registerSearch.trim()) return true;
+    return matchesRegisterSearch(entry, entryOwner(entry, accounts, account, allAccounts), registerSearch);
+  }), [register, allAccounts, registerSearch, accounts, account]);
   const partitionedEntries = useMemo(
-    () => register.status === "ready" ? partitionRegisterEntries(register.entries, today) : { upcoming: [], history: [] },
-    [register, today],
+    () => register.status === "ready" ? partitionRegisterEntries(filteredEntries, today) : { upcoming: [], history: [] },
+    [register.status, filteredEntries, today],
   );
   const historyCount = partitionedEntries.history.length;
   const historyPageCount = Math.ceil(historyCount / registerPageSize);
@@ -545,7 +674,14 @@ export function AccountRegister({
     setRegisterPage(0);
     setUpcomingPage(0);
     setEditor(null);
-  }, [account.id]);
+  }, [account.id, allAccounts]);
+
+  useEffect(() => {
+    if (editorRowMissing) {
+      setEditor(null);
+      setScheduleError("This transaction no longer exists. The register has been refreshed.");
+    }
+  }, [editorRowMissing]);
 
   useEffect(() => {
     if (register.status === "ready" && registerPage !== safeRegisterPage) setRegisterPage(safeRegisterPage);
@@ -556,7 +692,7 @@ export function AccountRegister({
   }, [upcomingPage, safeUpcomingPage]);
 
   async function mutate(operation: () => Promise<void>, refresh = onChanged) {
-    if (actionLock.current || refreshPending || hasSavedMutationPending()) return;
+    if (actionLock.current || refreshPending || !readCurrent || hasSavedMutationPending()) return;
     actionLock.current = true;
     setScheduleAction(true); setScheduleError(null);
     let saved = false;
@@ -578,23 +714,27 @@ export function AccountRegister({
     finally { actionLock.current = false; setScheduleAction(false); }
   }
 
-  function edit(entry: RegisterEntry, focusField: RegisterEntryFocusField = "payee") {
-    if (!actionLock.current && !refreshPending && !hasSavedMutationPending()) setEditor({ kind: "edit-entry", key: ++editKey.current, entry, focusField });
+  function edit(entry: RegisterEntry | AllAccountsRegisterEntry, focusField: RegisterEntryFocusField = "payee", baselineEntry: RegisterEntry | AllAccountsRegisterEntry = entry) {
+    if (!readCurrent) return;
+    if (allAccounts && !entryOwner(entry, accounts, account, true)) return;
+    if (!actionLock.current && !refreshPending && !hasSavedMutationPending()) setEditor({ kind: "edit-entry", key: ++editKey.current, entry, focusField, baselineFingerprint: registerEntryFingerprint(baselineEntry) });
   }
 
-  function duplicate(entry: RegisterEntry, repeating: boolean) {
-    if (actionLock.current || refreshPending || hasSavedMutationPending()) return;
+  function duplicate(entry: RegisterEntry | AllAccountsRegisterEntry, repeating: boolean) {
+    if (actionLock.current || refreshPending || !readCurrent || hasSavedMutationPending()) return;
+    const owner = entryOwner(entry, accounts, account, allAccounts);
+    if (!owner) return;
     if (repeating && (entry.postingState === "scheduled" || entry.date > today)) {
-      edit({ ...entry, repeatIntervalMonths: 1 }); return;
+      edit({ ...entry, repeatIntervalMonths: 1 }, "payee", entry); return;
     }
     try {
-      const draft = draftFromPostedEntry(entry, account.id, accounts);
-      setEditor({ kind: "duplicate", key: Date.now(), draft: repeating ? draft : { ...draft, date: entry.date, repeat: "never", repeatDayOfMonth: undefined } });
+      const draft = draftFromPostedEntry(entry, owner.id, accounts);
+      setEditor({ kind: "duplicate", key: Date.now(), sourceAccountId: owner.id, draft: repeating ? draft : { ...draft, date: entry.date, repeat: "never", repeatDayOfMonth: undefined } });
     } catch (error) { setScheduleError(error instanceof Error ? error.message : "Could not prepare this transaction."); }
   }
 
-  function remove(entry: RegisterEntry) {
-    if (actionLock.current || refreshPending || hasSavedMutationPending()) return;
+  function remove(entry: RegisterEntry | AllAccountsRegisterEntry) {
+    if (actionLock.current || refreshPending || !readCurrent || hasSavedMutationPending()) return;
     const question = entry.transferId ? "Delete this transfer and both linked transactions?" : entry.postingState === "scheduled" ? "Delete this scheduled transaction and stop its repeating rule?" : "Delete this transaction?";
     if (!window.confirm(question)) return;
     void mutate(async () => {
@@ -608,14 +748,15 @@ export function AccountRegister({
     });
   }
 
-  function changeStatus(entry: RegisterEntry, next: "cleared" | "uncleared") {
+  function changeStatus(entry: RegisterEntry | AllAccountsRegisterEntry, next: "cleared" | "uncleared") {
+    if (!readCurrent) return;
     if (entry.postingState === "scheduled" || entry.date > today || entry.clearedState === "reconciled") return;
     void mutate(() => setRegisterEntryClearedState(entry.id, next, today),
       onStatusChanged ? () => onStatusChanged(entry.id, next) : onChanged);
   }
 
   return (
-    <section className="register" aria-labelledby="register-title">
+    <section className={`register${allAccounts ? " all-accounts-register" : ""}`} aria-labelledby="register-title">
       <h2 className="sr-only" id="register-title">{account.name} transaction register</h2>
       <div className="balance-strip">
         <div><strong className={BigInt(account.balance.cleared) < 0n ? "negative" : "positive"}>{huf(account.balance.cleared)}</strong><span>Cleared Balance</span></div><span className="balance-operator">+</span>
@@ -625,23 +766,28 @@ export function AccountRegister({
 
       <div className="register-toolbar">
         <div>
-          <strong>All transactions</strong>
+          <strong>{allAccounts ? "All accounts" : "All transactions"}</strong>
           <span>{register.status === "ready" ? `${entryCount} entries` : "Local history"}</span>
         </div>
-        <button
+        {allAccounts && <label className="all-register-search">Search all accounts<input type="search" disabled={editor !== null} value={registerSearch} onChange={(event) => { setRegisterSearch(event.target.value); setRegisterPage(0); setUpcomingPage(0); }} placeholder="Account, payee, category, memo…" /></label>}
+        {!allAccounts && <button
           disabled={account.closed}
           title={account.closed ? "Reopen this account before reconciling" : undefined}
           onClick={() => { if (!hasSavedMutationPending()) setEditor("reconcile"); }}
-        >Reconcile</button>
+        >Reconcile</button>}
         <button
-          disabled={account.closed}
-          title={account.closed ? "Reopen this account before adding transactions" : undefined}
-          onClick={() => { if (!hasSavedMutationPending()) setEditor("new"); }}
+          disabled={!readCurrent || (!allAccounts && account.closed)}
+          title={!allAccounts && account.closed ? "Reopen this account before adding transactions" : undefined}
+          onClick={() => { if (!hasSavedMutationPending()) { setNewEntryAccountId(allAccounts ? "" : account.id); setEditor(allAccounts ? "choose-account" : "new"); } }}
         >+ Add transaction</button>
       </div>
 
+      {allAccounts && !readCurrent && <div className={`register-message ${readError ? "error" : ""}`} role={readError ? "alert" : "status"}>
+        {readError ? <>The saved data is not refreshed yet. Editing is paused. <button disabled={readPending} onClick={onRetry}>Retry refresh</button></> : "Refreshing all account registers…"}
+      </div>}
+      {editorRowChanged && <div className="editor-error" role="alert">This transaction changed while you were editing. Cancel and reopen it to use the current data. <button type="button" onClick={() => setEditor(null)}>Cancel edit</button></div>}
       {scheduleError && <p className="editor-error" role="alert">{scheduleError} {refreshPending && <button disabled={scheduleAction} onClick={() => void retryRefresh()}>Retry refresh</button>}</p>}
-      {menu && <TransactionContextMenu entry={menu.entry} x={menu.x} y={menu.y} disabled={scheduleAction || refreshPending || hasSavedMutationPending()}
+      {menu && <TransactionContextMenu entry={menu.entry} x={menu.x} y={menu.y} disabled={scheduleAction || refreshPending || !readCurrent || hasSavedMutationPending()}
         onClose={() => setMenu(null)} onEdit={() => edit(menu.entry)} onDuplicate={() => duplicate(menu.entry, false)}
         onMakeRepeating={() => duplicate(menu.entry, true)} onDelete={() => remove(menu.entry)}
         onStatusChange={(next) => changeStatus(menu.entry, next)}
@@ -657,20 +803,20 @@ export function AccountRegister({
       {register.status === "loading" && <div className="register-message" role="status">Loading transactions…</div>}
       {register.status === "error" && (
         <div className="register-message error" role="alert">
-          Could not read this account register. <button onClick={onRetry}>Retry</button>
+          Could not read {allAccounts ? "all account registers" : "this account register"}. <button onClick={onRetry}>Retry</button>
         </div>
       )}
-      {register.status === "ready" && register.entries.length === 0 && (
-        <div className="register-message">No transactions in this account yet.</div>
+      {register.status === "ready" && filteredEntries.length === 0 && (
+        <div className="register-message">{allAccounts && registerSearch.trim() ? "No matching transactions." : allAccounts ? "No transactions in any account yet." : "No transactions in this account yet."}</div>
       )}
       {register.status === "ready" && (
         <>
           {upcomingPageCount > 1 && <nav className="register-pagination upcoming-pagination" aria-label="Upcoming pages">
             <span aria-live="polite">Upcoming {safeUpcomingPage * registerPageSize + 1}–{Math.min((safeUpcomingPage + 1) * registerPageSize, partitionedEntries.upcoming.length)} of {partitionedEntries.upcoming.length}</span>
             <div>
-              <button type="button" onClick={() => setUpcomingPage((page) => Math.max(0, page - 1))} disabled={safeUpcomingPage === 0}>Previous upcoming</button>
+              <button type="button" onClick={() => setUpcomingPage((page) => Math.max(0, page - 1))} disabled={editor !== null || safeUpcomingPage === 0}>Previous upcoming</button>
               <span>Page {safeUpcomingPage + 1} of {upcomingPageCount}</span>
-              <button type="button" onClick={() => setUpcomingPage((page) => Math.min(upcomingPageCount - 1, page + 1))} disabled={safeUpcomingPage >= upcomingPageCount - 1}>Next upcoming</button>
+              <button type="button" onClick={() => setUpcomingPage((page) => Math.min(upcomingPageCount - 1, page + 1))} disabled={editor !== null || safeUpcomingPage >= upcomingPageCount - 1}>Next upcoming</button>
             </div>
           </nav>}
           <div className="register-table-wrap">
@@ -678,6 +824,7 @@ export function AccountRegister({
               <thead>
                 <tr>
                   <th className="flag-column"><span className="sr-only">Flag</span></th>
+                  {allAccounts && <th className="account-column">Account</th>}
                   <th>Date</th>
                   <th>Payee</th>
                   <th>Category</th>
@@ -688,46 +835,57 @@ export function AccountRegister({
                 </tr>
               </thead>
               <tbody>
-                {(editor === "new" || (editor && typeof editor === "object" && editor.kind === "duplicate")) && <tr className="register-edit-row new-entry-row"><td colSpan={8}>
-      {editor === "new" && (
+                {(editor === "new" || editor === "choose-account" || (editor && typeof editor === "object" && editor.kind === "duplicate")) && <tr className="register-edit-row new-entry-row"><td colSpan={allAccounts ? 9 : 8}>
+      {editor === "choose-account" && <div className="all-account-composer-choice">
+        <label>Account<select autoFocus value={newEntryAccountId} onChange={(event) => setNewEntryAccountId(event.target.value)}><option value="">Choose an open account</option>{accounts.filter((item) => !item.closed).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <button type="button" disabled={!newEntryAccount} onClick={() => setEditor("new")}>Continue</button>
+        <button type="button" className="secondary" onClick={() => setEditor(null)}>Cancel</button>
+      </div>}
+      {editor === "new" && (!allAccounts || newEntryAccount) && (
         <TransactionComposer inline
-          account={account}
+          account={allAccounts ? newEntryAccount! : account}
           accounts={accounts}
           options={options}
+          readOnly={(allAccounts && !readCurrent) || editorRowChanged}
           onSaved={onChanged}
           onCancel={() => setEditor(null)}
         />
       )}
-      {typeof editor === "object" && editor !== null && "kind" in editor && editor.kind === "duplicate" && <TransactionComposer inline
-        key={`duplicate-${editor.key}`} account={account} accounts={accounts} options={options} initialDraft={editor.draft}
+      {editor === "new" && allAccounts && !newEntryAccount && <div className="all-account-composer-choice" role="alert"><span>The selected account is no longer available. Choose an open account again.</span><button type="button" onClick={() => setEditor("choose-account")}>Choose account</button><button type="button" className="secondary" onClick={() => setEditor(null)}>Cancel</button></div>}
+      {typeof editor === "object" && editor !== null && "kind" in editor && editor.kind === "duplicate" && (!allAccounts || duplicateSourceAccount) && <TransactionComposer
+        inline key={`duplicate-${editor.key}`} account={allAccounts ? duplicateSourceAccount! : account} accounts={accounts} options={options} initialDraft={editor.draft} readOnly={allAccounts && !readCurrent}
         onSaved={onChanged} onCancel={() => setEditor(null)}
       />}
+      {typeof editor === "object" && editor !== null && "kind" in editor && editor.kind === "duplicate" && allAccounts && !duplicateSourceAccount && <div role="alert" className="register-message error">Source account is no longer available. <button type="button" onClick={() => setEditor(null)}>Close</button></div>}
 
                 </td></tr>}
-              {partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={8} scope="rowgroup">Upcoming</th></tr>}
+              {partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={allAccounts ? 9 : 8} scope="rowgroup">Upcoming</th></tr>}
               {[...upcomingPageEntries, ...pageEntries].map((entry) => {
                 const amount = BigInt(entry.amount);
                 const isUpcoming = entry.postingState === "scheduled" || entry.date > today;
+                const owner = entryOwner(entry, accounts, account, allAccounts);
                 return (
                   <Fragment key={entry.id}>
-                  {!isUpcoming && entry.id === pageEntries[0]?.id && partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={8} scope="rowgroup">Transactions</th></tr>}
-                  {editor && typeof editor === "object" && editor.kind === "edit-entry" && editor.entry.id === entry.id ? <tr className="register-edit-row" data-entry-id={entry.id}><td colSpan={8}>
-      {editor && typeof editor === "object" && editor.kind === "edit-entry" && (
+                  {!isUpcoming && entry.id === pageEntries[0]?.id && partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={allAccounts ? 9 : 8} scope="rowgroup">Transactions</th></tr>}
+                  {editor && typeof editor === "object" && editor.kind === "edit-entry" && editor.entry.id === entry.id && owner ? <tr className="register-edit-row" data-entry-id={entry.id}><td colSpan={allAccounts ? 9 : 8}>
+      {editor && typeof editor === "object" && editor.kind === "edit-entry" && owner && (
         <RegisterEntryEditor inline
           key={`${editor.entry.id}:${editor.key}`}
           entry={editor.entry}
-          account={account}
+          account={owner}
           accounts={accounts}
           options={options}
           initialFocusField={editor.focusField}
-          onMakeRepeating={() => { try { const draft = draftFromPostedEntry(editor.entry, account.id, accounts); setEditor({ kind: "duplicate", key: Date.now(), draft }); } catch (cause) { setScheduleError(cause instanceof Error ? cause.message : "Could not prepare this repeating entry."); } }}
+          showAccountColumn={allAccounts}
+          readOnly={(allAccounts && !readCurrent) || editorRowChanged}
+          onMakeRepeating={() => { try { const draft = draftFromPostedEntry(editor.entry, owner.id, accounts); setEditor({ kind: "duplicate", key: Date.now(), draft, sourceAccountId: owner.id }); } catch (cause) { setScheduleError(cause instanceof Error ? cause.message : "Could not prepare this repeating entry."); } }}
           onSaved={onChanged}
           onCancel={() => setEditor(null)}
         />
       )}                  </td></tr> : (
                   <tr className={isUpcoming ? "upcoming-row" : undefined} data-entry-id={entry.id} tabIndex={0}
                     onDoubleClick={(event) => { if (!(event.target as HTMLElement).closest("button")) { const field = (event.target as HTMLElement).closest<HTMLElement>("[data-register-field]")?.dataset.registerField as RegisterEntryFocusField | undefined; edit(entry, field ?? "payee"); } }}
-                    onContextMenu={(event) => { event.preventDefault(); if (!actionLock.current && !refreshPending) setMenu({ entry, x: event.clientX, y: event.clientY }); }}
+          onContextMenu={(event) => { event.preventDefault(); if (readCurrent && !actionLock.current && !refreshPending) setMenu({ entry, x: event.clientX, y: event.clientY }); }}
                     onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter") edit(entry); if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ entry, x: rect.left + 80, y: rect.top }); } }}>
                     <td className="flag-column" data-register-field="flag">
                       {entry.flagColor && (
@@ -737,14 +895,15 @@ export function AccountRegister({
                         />
                       )}
                     </td>
+                    {allAccounts && <td className="account-column" data-register-field="account">{"accountName" in entry && typeof entry.accountName === "string" ? entry.accountName : owner?.name ?? "Unavailable account"}</td>}
                     <td className="date-column" data-register-field="date">{formatDate(entry.date)}</td>
                     <td className="payee-column" data-register-field="payee">{displayPayee(entry)}</td>
-                    <td className="category-column" data-register-field="category">{displayCategory(entry, account)}</td>
+                    <td className="category-column" data-register-field="category">{displayCategory(entry, owner ?? account)}</td>
                     <td className="memo-column" data-register-field="memo">{entry.memo || <span>—</span>}</td>
                     <td className="money-column outflow" data-register-field="outflow">{amount < 0n ? `(${huf((-amount).toString())})` : ""}</td>
                     <td className="money-column inflow" data-register-field="inflow">{amount >= 0n ? huf(amount.toString()) : ""}</td>
                     <td className="status-column">
-                      <TransactionStatusIcon state={entry.clearedState} pending={isUpcoming} disabled={scheduleAction || refreshPending || hasSavedMutationPending()}
+                      <TransactionStatusIcon state={entry.clearedState} pending={isUpcoming} disabled={scheduleAction || refreshPending || !readCurrent || hasSavedMutationPending()}
                         onToggle={entry.clearedState === "reconciled" ? undefined : () => changeStatus(entry, entry.clearedState === "cleared" ? "uncleared" : "cleared")} />
                     </td>
                   </tr>)}
@@ -759,9 +918,9 @@ export function AccountRegister({
               Showing {historyCount === 0 ? 0 : safeRegisterPage * registerPageSize + 1}–{Math.min((safeRegisterPage + 1) * registerPageSize, historyCount)} of {historyCount} past and current transactions · {partitionedEntries.upcoming.length} upcoming
             </span>
             <div>
-              <button type="button" onClick={() => setRegisterPage((page) => Math.max(0, page - 1))} disabled={safeRegisterPage === 0}>Previous</button>
+              <button type="button" onClick={() => setRegisterPage((page) => Math.max(0, page - 1))} disabled={editor !== null || safeRegisterPage === 0}>Previous</button>
               <span>Page {historyPageCount === 0 ? 0 : safeRegisterPage + 1} of {historyPageCount}</span>
-              <button type="button" onClick={() => setRegisterPage((page) => Math.min(historyPageCount - 1, page + 1))} disabled={historyPageCount === 0 || safeRegisterPage >= historyPageCount - 1}>Next</button>
+              <button type="button" onClick={() => setRegisterPage((page) => Math.min(historyPageCount - 1, page + 1))} disabled={editor !== null || historyPageCount === 0 || safeRegisterPage >= historyPageCount - 1}>Next</button>
             </div>
           </nav>
         </>

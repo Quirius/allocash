@@ -129,6 +129,23 @@ shortcuts; category visibility still follows the budget boundary. Date/Repeat
 opens a viewport-positioned popup outside the table scroll container. Cancel
 writes nothing. Save and add another saves once and starts a fresh draft.
 
+## All Accounts register
+
+All Accounts combines posted, upcoming and scheduled rows from every account,
+including closed-account history. An Account column identifies each row's owner;
+both transfer legs remain separate, with their signed outflow and inflow.
+Cleared, uncleared and working balances sum the account balances using exact HUF,
+and search filters the full combined ledger before the existing bounded pagination.
+Searching does not change those balance totals. Reconciliation remains available
+only inside an individual account.
+
+Inline editing and context actions resolve the row's actual account, preserving
+the existing transfer, category and reconciliation guards. Adding an entry first
+requires an open account. The display aggregate is never a write destination.
+All Accounts remains selected after saves and refreshes; clicking an individual
+sidebar account returns to its own register. Refreshes retain loaded rows and
+scroll, stale rows cannot write, and failed reads retry without repeating saves.
+
 ## Money and date formatting
 
 Base currency: HUF.

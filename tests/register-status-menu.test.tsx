@@ -90,7 +90,7 @@ async function mount(entries: RegisterEntry[] = [item()]) {
     }
   });
   await act(async () => { root.render(<App />); for (let i = 0; i < 30; i += 1) await Promise.resolve(); });
-  await act(async () => { [...host.querySelectorAll("button")].find((button) => button.title === "Accounts")?.click(); for (let i = 0; i < 30; i += 1) await Promise.resolve(); });
+  await act(async () => { host.querySelector<HTMLButtonElement>(".account-link")?.click(); for (let i = 0; i < 30; i += 1) await Promise.resolve(); });
 }
 function contextMenu(id = "past"): HTMLElement {
   const row = host.querySelector(`[data-entry-id="${id}"]`);

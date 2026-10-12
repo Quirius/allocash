@@ -93,6 +93,7 @@ export function TransactionComposer({
   onSaved,
   onCancel,
   inline = false,
+  readOnly = false,
 }: {
   account: AccountOverview;
   accounts: AccountOverview[];
@@ -101,6 +102,7 @@ export function TransactionComposer({
   onSaved: () => Promise<void>;
   onCancel: () => void;
   inline?: boolean;
+  readOnly?: boolean;
 }) {
   const [kind, setKind] = useState<"transaction" | "transfer">(initialDraft?.kind ?? "transaction");
   const [date, setDate] = useState(initialDraft?.date ?? localCalendarDate());
@@ -298,7 +300,7 @@ export function TransactionComposer({
         </div>
       </div>}
 
-      <div className="inline-controls" inert={status === "saving" || refreshPending !== null}>
+      <div className="inline-controls" inert={status === "saving" || refreshPending !== null || readOnly}>
       <div className="editor-fields inline-fields">
         <label>Flag
           <select value={flagId} onChange={(event) => setFlagId(event.target.value)}>
@@ -360,15 +362,15 @@ export function TransactionComposer({
         <div>
           {refreshPending && <button type="button" className="secondary" disabled={status === "saving"} onClick={() => void retryRefresh()}>Retry refresh</button>}
           <button type="button" className="secondary" disabled={status === "saving" || refreshPending !== null} onClick={onCancel}>Cancel</button>
-          {inline && <button type="submit" name="action" value="another" disabled={status === "saving" || refreshPending !== null}>{status === "saving" ? "Saving…" : "Save and add another"}</button>}
-          <button type="submit" disabled={status === "saving" || refreshPending !== null}>{status === "saving" ? "Saving…" : "Save transaction"}</button>
+          {inline && <button type="submit" name="action" value="another" disabled={readOnly || status === "saving" || refreshPending !== null}>{status === "saving" ? "Saving…" : "Save and add another"}</button>}
+          <button type="submit" disabled={readOnly || status === "saving" || refreshPending !== null}>{status === "saving" ? "Saving…" : "Save transaction"}</button>
         </div>
       </div>
     </form>
   );
 }
 
-export type RegisterEntryFocusField = "flag" | "date" | "payee" | "category" | "memo" | "outflow" | "inflow";
+export type RegisterEntryFocusField = "flag" | "date" | "payee" | "category" | "memo" | "outflow" | "inflow" | "account";
 
 export function RegisterEntryEditor({
   entry,
@@ -380,6 +382,8 @@ export function RegisterEntryEditor({
   onCancel,
   inline = false,
   initialFocusField,
+  showAccountColumn = false,
+  readOnly = false,
 }: {
   entry: RegisterEntry;
   account: AccountOverview;
@@ -390,6 +394,8 @@ export function RegisterEntryEditor({
   onCancel: () => void;
   inline?: boolean;
   initialFocusField?: RegisterEntryFocusField;
+  showAccountColumn?: boolean;
+  readOnly?: boolean;
 }) {
   const editorFormRef = useRef<HTMLFormElement>(null);
   const initialFocusApplied = useRef(false);
@@ -450,6 +456,8 @@ export function RegisterEntryEditor({
     if (!initialFocusField || initialFocusApplied.current) return;
     initialFocusApplied.current = true;
     const marked = editorFormRef.current?.querySelector<HTMLElement>(`[data-register-editor-field="${initialFocusField}"]`);
+    const hiddenDetails = marked?.closest("details");
+    if (hiddenDetails) hiddenDetails.open = true;
     const target = initialFocusField === "date" ? marked?.querySelector<HTMLElement>(".date-picker-trigger") ?? null : marked;
     const focused = target instanceof HTMLSelectElement && target.disabled
       ? editorFormRef.current?.querySelector<HTMLElement>('[data-register-editor-field="payee"]') ?? null
@@ -599,16 +607,17 @@ export function RegisterEntryEditor({
   }
 
   return (
-    <form ref={editorFormRef} className={`transaction-editor compact${inline ? " transaction-inline" : ""}`} onSubmit={submit}>
+    <form ref={editorFormRef} className={`transaction-editor compact${inline ? " transaction-inline" : ""}${showAccountColumn ? " all-accounts-inline" : ""}`} onSubmit={submit}>
       {!inline && <div className="editor-heading">
         <div><span>EDIT ENTRY</span><h3>{entry.transferAccountName ? `Transfer: ${entry.transferAccountName}` : entry.payeeName || "No payee"}</h3>
           {scheduled && <p>Changes apply to this upcoming entry and future repeats. Posted history is unchanged.</p>}
         </div>
         {entry.transferId && <span className="paired-badge">Paired transfer</span>}
       </div>}
-      <div className="inline-controls" inert={saving || refreshPending}>
+      <div className="inline-controls" inert={saving || refreshPending || readOnly}>
       <div className="editor-fields inline-fields">
         <label>Flag<select data-register-editor-field="flag" value={flagId} onChange={(event) => setFlagId(event.target.value)}><option value="">No flag</option>{options.flags.map((option) => <option key={option.id} value={option.id}>{option.color} {option.name}</option>)}</select></label>
+        {showAccountColumn && <label className="inline-account-field">Account<select data-register-editor-field="account" disabled={!!entry.transferId || saving} value={accountId} onChange={(event) => setAccountId(event.target.value)}>{accounts.filter((option) => !option.closed || option.id === account.id).map((option) => <option key={option.id} value={option.id}>{option.name}{option.closed ? " (closed)" : ""}</option>)}</select></label>}
         <div className="inline-date editor-date-field" data-register-editor-field="date">
         <DateRepeatPicker date={date} onDateChange={setDate} {...(scheduled || upcomingRepeatEligible ? { repeat: repeatIntervalMonths === 1 ? "monthly" as const : repeatIntervalMonths === 3 ? "quarterly" as const : repeatIntervalMonths === 12 ? "yearly" as const : "never" as const, onRepeatChange: (value: EntryRepeat) => setRepeatIntervalMonths(value === "monthly" ? 1 : value === "quarterly" ? 3 : value === "yearly" ? 12 : 0) } : {})} disabled={saving} />
           {!inline && (scheduled || upcomingRepeatEligible) && repeatIntervalMonths === 0 && <button type="button" className="secondary" disabled={saving} onClick={() => setRepeatIntervalMonths(1)}>Make repeating</button>}
@@ -625,7 +634,7 @@ export function RegisterEntryEditor({
         <div className="inline-status"><TransactionStatusIcon state={clearedState} pending={pendingOrFuture || (upcomingRepeatEligible && repeatIntervalMonths > 0)} />{pendingOrFuture || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? (scheduled ? "Scheduled" : "Upcoming") : clearedState[0]!.toUpperCase() + clearedState.slice(1)}</div>
       </div>
       <details className="inline-secondary"><summary>Account and entry options</summary><div>
-        {!entry.transferId && <label>Account<select value={accountId} onChange={(event) => setAccountId(event.target.value)}>{accounts.filter((option) => !option.closed || option.id === account.id).map((option) => <option key={option.id} value={option.id}>{option.name}{option.closed ? " (closed)" : ""}</option>)}</select></label>}
+        {!showAccountColumn && !entry.transferId && <label>Account<select data-register-editor-field="account" value={accountId} onChange={(event) => setAccountId(event.target.value)}>{accounts.filter((option) => !option.closed || option.id === account.id).map((option) => <option key={option.id} value={option.id}>{option.name}{option.closed ? " (closed)" : ""}</option>)}</select></label>}
         {!pendingOrFuture && !(upcomingRepeatEligible && repeatIntervalMonths > 0) && <label>Cleared state<select value={clearedState} onChange={(event) => setClearedState(event.target.value as RegisterEntry["clearedState"])}><option value="uncleared">Uncleared</option><option value="cleared">Cleared</option><option value="reconciled">Reconciled</option></select></label>}
         {entry.transferId && <span>Paired transfer · amount changes update both sides</span>}
         {inline && (scheduled || upcomingRepeatEligible) && repeatIntervalMonths === 0 && <button type="button" className="secondary" disabled={saving} onClick={() => setRepeatIntervalMonths(1)}>Make repeating</button>}
@@ -633,9 +642,9 @@ export function RegisterEntryEditor({
       </div></details>
       </div>
       <div className={`editor-footer${inline ? " inline-footer" : ""}`}>
-        <div className="edit-actions"><button type="button" className="danger" disabled={saving || refreshPending} onClick={() => void remove()}>Delete</button></div>
+        <div className="edit-actions"><button type="button" className="danger" disabled={readOnly || saving || refreshPending} onClick={() => void remove()}>Delete</button></div>
         <p className={error ? "form-error" : "form-hint"} role={error ? "alert" : undefined}>{error || (entry.transferId ? "Amount changes update both linked sides." : "Memo-only edits never require reconciliation confirmation.")}</p>
-        <div>{refreshPending && <button type="button" className="secondary" disabled={saving} onClick={() => void retryRefresh()}>Retry refresh</button>}<button type="button" className="secondary" disabled={saving || refreshPending} onClick={onCancel}>Cancel</button><button type="submit" disabled={saving || refreshPending}>{saving ? "Saving…" : "Save changes"}</button></div>
+        <div>{refreshPending && <button type="button" className="secondary" disabled={saving} onClick={() => void retryRefresh()}>Retry refresh</button>}<button type="button" className="secondary" disabled={saving || refreshPending} onClick={onCancel}>Cancel</button><button type="submit" disabled={readOnly || saving || refreshPending}>{saving ? "Saving…" : "Save changes"}</button></div>
       </div>
     </form>
   );

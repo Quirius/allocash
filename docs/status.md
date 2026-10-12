@@ -1,5 +1,29 @@
 # Implementation and validation status
 
+On 2026-10-12, All Accounts became a unified register with an Account
+column, combined cleared/uncleared/working balances and full-ledger search before
+bounded pagination. The single read query includes closed-account history and
+posted/upcoming/scheduled rows, retaining both signed transfer legs and their
+account ownership. Individual register reads keep their indexed equality filter.
+All Accounts has no reconciliation or account-edit header action. Row editors,
+duplicates and recurrence drafts resolve actual account IDs; adding an entry
+requires choosing an open account, and the display aggregate can never be used
+as a write source. All Accounts remains selected after saves and refreshes.
+Loaded rows and scroll stay mounted during refresh failures, stale actions pause,
+and retries repeat only reads. Open edits block search/page navigation to protect
+drafts; changed-row snapshots keep edits read-only with Cancel, while unrelated
+row updates preserve them and deleted rows dismiss with a message.
+All 298 frontend tests, the 209-test Rust suite plus focused follow-up register
+checks, formatting, Cargo check, TypeScript, independent review and synthetic
+browser checks passed. The backend fixtures cover closed history, scheduled and
+posted transfer pairs, exact signed amounts, flat ownership serialization, stable
+ordering and indexed account reads. Browser checks cover transfer-pair search,
+search beyond the first page, closed history, account switching, field focus and
+retained status rows and upcoming Make Repeating drafts. Production/native
+builds passed. Installation preserved budget bytes, the installed executable
+matches the release build and Allocash reopened a responsive window. No schema or accounting-rule changes were made; owner All Accounts,
+search, edit/Cancel/undo and status-refresh confirmation remain open.
+
 On 2026-10-12, the Plan category list now fills a bounded grid track
 instead of expanding beyond the window. Its own overflow scrollbar is visible
 on the right, column headings stay pinned, and category selection keeps the

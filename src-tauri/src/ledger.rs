@@ -309,6 +309,15 @@ pub struct RegisterEntry {
     pub repeat_interval_months: Option<i64>,
 }
 
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AllAccountsRegisterEntry {
+    pub account_id: String,
+    pub account_name: String,
+    #[serde(flatten)]
+    pub entry: RegisterEntry,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PayeeOption {
@@ -973,54 +982,16 @@ impl Database {
     /// and foreign-key resolution on the Rust side of the IPC boundary.
     pub fn register_entries(&self, account_id: &str) -> LedgerResult<Vec<RegisterEntry>> {
         ensure_account(&self.connection, account_id)?;
-        let mut query = self.connection.prepare(
-            "SELECT le.id,le.transaction_date,p.name,CASE WHEN le.transfer_id IS NOT NULL AND a.kind IN ('cash','credit') AND transfer_account.kind IN ('tracking','loan') THEN le.category_id WHEN le.transfer_id IS NOT NULL AND a.kind IN ('tracking','loan') AND transfer_account.kind IN ('cash','credit') THEN peer.category_id ELSE le.category_id END,cg.name,c.name,le.memo,le.flag_id,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,le.transfer_id,transfer_account.name,o.schedule_id,CASE WHEN s.end_date=s.start_date THEN 0 ELSE s.interval_months END,peer.account_id
-             FROM ledger_entries le
-             JOIN accounts a ON a.id=le.account_id
-             LEFT JOIN payees p ON p.id=le.payee_id
-             LEFT JOIN transactions peer ON peer.transfer_id=le.transfer_id AND peer.id<>le.id
-             LEFT JOIN accounts transfer_account ON transfer_account.id=peer.account_id
-             LEFT JOIN categories c ON c.id=CASE WHEN le.transfer_id IS NOT NULL AND a.kind IN ('cash','credit') AND transfer_account.kind IN ('tracking','loan') THEN le.category_id WHEN le.transfer_id IS NOT NULL AND a.kind IN ('tracking','loan') AND transfer_account.kind IN ('cash','credit') THEN peer.category_id ELSE le.category_id END
-             LEFT JOIN category_groups cg ON cg.id=c.group_id
-             LEFT JOIN flags f ON f.id=le.flag_id
-             LEFT JOIN schedule_occurrences o ON (o.transaction_id=le.id OR o.transaction_id=peer.id) AND o.state='pending'
-             LEFT JOIN schedules s ON s.id=o.schedule_id
-             WHERE le.account_id=?1
-             ORDER BY le.transaction_date DESC,le.created_at DESC,le.id DESC",
-        )?;
-        let entries = query
-            .query_map([account_id], |row| {
-                let date: String = row.get(1)?;
-                Ok(RegisterEntry {
-                    id: row.get(0)?,
-                    date: CalendarDate::parse(&date).map_err(|error| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            1,
-                            rusqlite::types::Type::Text,
-                            Box::new(error),
-                        )
-                    })?,
-                    payee_name: row.get(2)?,
-                    category_id: row.get(3)?,
-                    category_group_name: row.get(4)?,
-                    category_name: row.get(5)?,
-                    memo: row.get(6)?,
-                    flag_id: row.get(7)?,
-                    flag_name: row.get(8)?,
-                    flag_color: row.get(9)?,
-                    cleared_state: row.get(10)?,
-                    posting_state: row.get(11)?,
-                    origin: row.get(12)?,
-                    amount: Huf(row.get(13)?),
-                    transfer_id: row.get(14)?,
-                    transfer_account_name: row.get(15)?,
-                    transfer_account_id: row.get(18)?,
-                    schedule_id: row.get(16)?,
-                    repeat_interval_months: row.get(17)?,
-                })
-            })?
-            .collect::<Result<_, _>>()?;
-        Ok(entries)
+        Ok(read_register_entries(&self.connection, Some(account_id))?
+            .into_iter()
+            .map(|row| row.entry)
+            .collect())
+    }
+
+    /// Returns register rows for every account, including closed accounts, in
+    /// one globally ordered query. Transfer legs remain separate ledger rows.
+    pub fn all_register_entries(&self) -> LedgerResult<Vec<AllAccountsRegisterEntry>> {
+        read_register_entries(&self.connection, None)
     }
 
     pub fn transaction_form_options(&self) -> LedgerResult<TransactionFormOptions> {
@@ -3037,6 +3008,70 @@ fn require_changed(count: usize) -> LedgerResult<()> {
         Ok(())
     }
 }
+fn read_register_entries(
+    connection: &Connection,
+    account_id: Option<&str>,
+) -> LedgerResult<Vec<AllAccountsRegisterEntry>> {
+    let filter = if account_id.is_some() {
+        "WHERE le.account_id=?1"
+    } else {
+        "WHERE ?1 IS NULL"
+    };
+    let sql = format!(
+        "SELECT le.account_id,a.name,le.id,le.transaction_date,p.name,CASE WHEN le.transfer_id IS NOT NULL AND a.kind IN ('cash','credit') AND transfer_account.kind IN ('tracking','loan') THEN le.category_id WHEN le.transfer_id IS NOT NULL AND a.kind IN ('tracking','loan') AND transfer_account.kind IN ('cash','credit') THEN peer.category_id ELSE le.category_id END,cg.name,c.name,le.memo,le.flag_id,f.name,f.color,le.cleared_state,le.posting_state,le.origin,le.amount_huf,le.transfer_id,transfer_account.name,o.schedule_id,CASE WHEN s.end_date=s.start_date THEN 0 ELSE s.interval_months END,peer.account_id
+         FROM ledger_entries le
+         JOIN accounts a ON a.id=le.account_id
+         LEFT JOIN payees p ON p.id=le.payee_id
+         LEFT JOIN transactions peer ON peer.transfer_id=le.transfer_id AND peer.id<>le.id
+         LEFT JOIN accounts transfer_account ON transfer_account.id=peer.account_id
+         LEFT JOIN categories c ON c.id=CASE WHEN le.transfer_id IS NOT NULL AND a.kind IN ('cash','credit') AND transfer_account.kind IN ('tracking','loan') THEN le.category_id WHEN le.transfer_id IS NOT NULL AND a.kind IN ('tracking','loan') AND transfer_account.kind IN ('cash','credit') THEN peer.category_id ELSE le.category_id END
+         LEFT JOIN category_groups cg ON cg.id=c.group_id
+         LEFT JOIN flags f ON f.id=le.flag_id
+         LEFT JOIN schedule_occurrences o ON (o.transaction_id=le.id OR o.transaction_id=peer.id) AND o.state='pending'
+         LEFT JOIN schedules s ON s.id=o.schedule_id
+         {filter}
+         ORDER BY le.transaction_date DESC,le.created_at DESC,le.id DESC"
+    );
+    let mut query = connection.prepare(&sql)?;
+    let entries = query
+        .query_map([account_id], |row| {
+            let date: String = row.get(3)?;
+            Ok(AllAccountsRegisterEntry {
+                account_id: row.get(0)?,
+                account_name: row.get(1)?,
+                entry: RegisterEntry {
+                    id: row.get(2)?,
+                    date: CalendarDate::parse(&date).map_err(|error| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            3,
+                            rusqlite::types::Type::Text,
+                            Box::new(error),
+                        )
+                    })?,
+                    payee_name: row.get(4)?,
+                    category_id: row.get(5)?,
+                    category_group_name: row.get(6)?,
+                    category_name: row.get(7)?,
+                    memo: row.get(8)?,
+                    flag_id: row.get(9)?,
+                    flag_name: row.get(10)?,
+                    flag_color: row.get(11)?,
+                    cleared_state: row.get(12)?,
+                    posting_state: row.get(13)?,
+                    origin: row.get(14)?,
+                    amount: Huf(row.get(15)?),
+                    transfer_id: row.get(16)?,
+                    transfer_account_name: row.get(17)?,
+                    schedule_id: row.get(18)?,
+                    repeat_interval_months: row.get(19)?,
+                    transfer_account_id: row.get(20)?,
+                },
+            })
+        })?
+        .collect::<Result<_, _>>()?;
+    Ok(entries)
+}
+
 fn ensure_account(connection: &Connection, id: &str) -> LedgerResult<()> {
     if connection
         .query_row("SELECT 1 FROM accounts WHERE id=?1", [id], |row| {
@@ -4156,4 +4191,243 @@ fn narrow(amount: i128) -> LedgerResult<Huf> {
     i64::try_from(amount)
         .map(Huf)
         .map_err(|_| LedgerError::AmountOverflow)
+}
+
+#[cfg(test)]
+mod all_accounts_register_tests {
+    use super::*;
+
+    fn make_account(id: &str, name: &str, sort_order: i64) -> Account {
+        Account {
+            id: id.into(),
+            name: name.into(),
+            kind: AccountKind::Cash,
+            sort_order,
+            closed: false,
+        }
+    }
+
+    fn entry(id: &str, account_id: &str, date: &str) -> Entry {
+        Entry::manual(id, account_id, CalendarDate::parse(date).unwrap())
+    }
+
+    #[test]
+    fn all_accounts_register_keeps_closed_history_transfer_legs_and_global_order() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut database = Database::open(&directory.path().join("budget.sqlite3")).unwrap();
+        database
+            .create_account(&make_account("checking", "Checking", 0))
+            .unwrap();
+        database
+            .create_account(&make_account("savings", "Savings", 1))
+            .unwrap();
+        database
+            .create_account(&make_account("closed", "Old Cash", 2))
+            .unwrap();
+
+        database
+            .create_monthly_schedule(&MonthlyScheduleDraft {
+                account_id: "checking".into(),
+                start_date: CalendarDate::parse("2026-09-08").unwrap(),
+                day_of_month: None,
+                end_date: None,
+                payee_name: Some("Scheduled transfer".into()),
+                category_id: None,
+                memo: "Scheduled pair".into(),
+                flag_id: None,
+                amount: Huf(-60),
+                interval_months: 1,
+                counterpart_account_id: Some("savings".into()),
+            })
+            .unwrap();
+        let scheduled_transfer: (String, String) = database
+            .connection
+            .query_row(
+                "SELECT o.schedule_id,t.transfer_id FROM schedule_occurrences o JOIN transactions t ON t.id=o.transaction_id JOIN schedules s ON s.id=o.schedule_id WHERE s.counterpart_account_id IS NOT NULL",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        database
+            .connection
+            .execute(
+                "UPDATE transactions SET created_at='2026-09-08T00:00:00.000Z' WHERE transfer_id=?1",
+                [&scheduled_transfer.1],
+            )
+            .unwrap();
+
+        database
+            .create_transaction(&entry("posted", "checking", "2026-09-05"), Huf(-10))
+            .unwrap();
+        database
+            .create_transaction(&entry("scheduled", "savings", "2026-09-06"), Huf(20))
+            .unwrap();
+        database
+            .connection
+            .execute(
+                "UPDATE transactions SET posting_state='scheduled',cleared_state='uncleared' WHERE id='scheduled'",
+                [],
+            )
+            .unwrap();
+        let transfer = TransferDraft::manual(
+            "transfer",
+            Huf(40),
+            entry("transfer-out", "checking", "2026-09-07"),
+            entry("transfer-in", "closed", "2026-09-07"),
+            Direction::Outflow,
+        );
+        database.create_transfer(&transfer).unwrap();
+        database
+            .create_transaction(&entry("historic", "closed", "2026-08-01"), Huf(30))
+            .unwrap();
+        database.set_account_closed("closed", true).unwrap();
+        database
+            .connection
+            .execute(
+                "UPDATE transactions SET created_at='2026-09-07T00:00:00.000Z' WHERE id IN ('transfer-out','transfer-in')",
+                [],
+            )
+            .unwrap();
+
+        let rows = database.all_register_entries().unwrap();
+        let mut scheduled_pair_ids: Vec<String> = rows
+            .iter()
+            .filter(|row| row.entry.schedule_id.as_deref() == Some(scheduled_transfer.0.as_str()))
+            .map(|row| row.entry.id.clone())
+            .collect();
+        assert_eq!(scheduled_pair_ids.len(), 2);
+        scheduled_pair_ids.sort_by(|left, right| right.cmp(left));
+        let mut expected_ids = scheduled_pair_ids;
+        expected_ids.extend(
+            [
+                "transfer-out",
+                "transfer-in",
+                "scheduled",
+                "posted",
+                "historic",
+            ]
+            .map(str::to_owned),
+        );
+        assert_eq!(
+            rows.iter()
+                .map(|row| row.entry.id.as_str())
+                .collect::<Vec<_>>(),
+            expected_ids.iter().map(String::as_str).collect::<Vec<_>>()
+        );
+        let scheduled_pair: Vec<&AllAccountsRegisterEntry> = rows
+            .iter()
+            .filter(|row| row.entry.schedule_id.as_deref() == Some(scheduled_transfer.0.as_str()))
+            .collect();
+        let scheduled_outflow = scheduled_pair
+            .iter()
+            .find(|row| row.entry.amount == Huf(-60))
+            .unwrap();
+        let scheduled_inflow = scheduled_pair
+            .iter()
+            .find(|row| row.entry.amount == Huf(60))
+            .unwrap();
+        assert_eq!(scheduled_outflow.account_id, "checking");
+        assert_eq!(scheduled_inflow.account_id, "savings");
+        assert_eq!(
+            scheduled_outflow.entry.transfer_account_id.as_deref(),
+            Some("savings")
+        );
+        assert_eq!(
+            scheduled_inflow.entry.transfer_account_id.as_deref(),
+            Some("checking")
+        );
+        assert_ne!(scheduled_outflow.entry.id, scheduled_inflow.entry.id);
+        assert_eq!(
+            scheduled_outflow.entry.transfer_id,
+            scheduled_inflow.entry.transfer_id
+        );
+        for row in &scheduled_pair {
+            assert_eq!(
+                row.entry.schedule_id.as_deref(),
+                Some(scheduled_transfer.0.as_str())
+            );
+            assert_eq!(row.entry.repeat_interval_months, Some(1));
+        }
+
+        let outgoing = rows
+            .iter()
+            .find(|row| row.entry.id == "transfer-out")
+            .unwrap();
+        assert_eq!(outgoing.account_id, "checking");
+        assert_eq!(outgoing.account_name, "Checking");
+        assert_eq!(outgoing.entry.amount, Huf(-40));
+        assert_eq!(
+            outgoing.entry.transfer_account_id.as_deref(),
+            Some("closed")
+        );
+        assert_eq!(
+            outgoing.entry.transfer_account_name.as_deref(),
+            Some("Old Cash")
+        );
+        let incoming = rows
+            .iter()
+            .find(|row| row.entry.id == "transfer-in")
+            .unwrap();
+        assert_eq!(incoming.account_id, "closed");
+        assert_eq!(incoming.entry.amount, Huf(40));
+        assert_eq!(
+            incoming.entry.transfer_account_id.as_deref(),
+            Some("checking")
+        );
+        assert_eq!(
+            rows.iter()
+                .find(|row| row.entry.id == "scheduled")
+                .unwrap()
+                .entry
+                .posting_state,
+            PostingState::Scheduled
+        );
+        let historic = rows.iter().find(|row| row.entry.id == "historic").unwrap();
+        assert_eq!(historic.account_id, "closed");
+        assert_eq!(historic.account_name, "Old Cash");
+
+        let account_rows = database.register_entries("checking").unwrap();
+        assert_eq!(
+            account_rows
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                scheduled_outflow.entry.id.as_str(),
+                "transfer-out",
+                "posted"
+            ]
+        );
+        assert_eq!(
+            database.register_entries("closed").unwrap().len(),
+            2,
+            "the existing account-scoped read continues to include a closed account's history"
+        );
+        assert!(matches!(
+            database.register_entries("missing"),
+            Err(LedgerError::NotFound)
+        ));
+
+        let json = serde_json::to_value(outgoing).unwrap();
+        assert!(json.get("entry").is_none());
+        assert_eq!(json["accountId"], "checking");
+        assert_eq!(json["accountName"], "Checking");
+        assert_eq!(json["id"], "transfer-out");
+
+        let mut plan = database
+            .connection
+            .prepare("EXPLAIN QUERY PLAN SELECT id FROM ledger_entries WHERE account_id=?1")
+            .unwrap();
+        let details = plan
+            .query_map(["checking"], |row| row.get::<_, String>(3))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert!(
+            details
+                .iter()
+                .any(|detail| detail.contains("transactions_account_date")),
+            "account-filtered view query should use transactions_account_date: {details:?}"
+        );
+    }
 }

@@ -9,6 +9,7 @@ import {
   editAccount,
   loadAccountDetails,
   loadAccountRegister,
+  loadAllAccountsRegister,
   loadBalanceOverTime,
   loadBudgetInfo,
   loadForecast,
@@ -197,10 +198,22 @@ it("loads the selected account register without numeric money conversion", async
   expect(invoke).toHaveBeenCalledWith("get_account_register", { accountId: "cash" });
 });
 
+it("loads all account rows with ownership and exact transfer amounts", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  const entries = [
+    { id: "outgoing", accountId: "cash", accountName: "Cash", amount: "-9007199254740993", transferId: "pair" },
+    { id: "incoming", accountId: "tracking", accountName: "Tracking", amount: "9007199254740993", transferId: "pair" },
+  ];
+  vi.mocked(invoke).mockResolvedValue(entries);
+  expect(await loadAllAccountsRegister()).toEqual(entries);
+  expect(invoke).toHaveBeenCalledWith("get_all_accounts_register", {});
+});
+
 it("keeps workspace and register reads out of the browser preview", async () => {
   vi.mocked(isTauri).mockReturnValue(false);
   expect(await loadWorkspace("2026-09-14")).toBeNull();
   expect(await loadAccountRegister("cash")).toBeNull();
+  expect(await loadAllAccountsRegister()).toBeNull();
   expect(await loadPlanMonth("2026-09")).toBeNull();
   expect(invoke).not.toHaveBeenCalled();
 });

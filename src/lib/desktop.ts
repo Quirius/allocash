@@ -110,6 +110,11 @@ export interface RegisterEntry {
   repeatIntervalMonths?: 0 | 1 | 3 | 12 | null;
 }
 
+export interface AllAccountsRegisterEntry extends RegisterEntry {
+  accountId: string;
+  accountName: string;
+}
+
 export interface PayeeOption {
   id: string;
   name: string;
@@ -259,6 +264,11 @@ export async function loadWorkspace(asOf: string): Promise<WorkspaceSnapshot | n
 export async function loadAccountRegister(accountId: string): Promise<RegisterEntry[] | null> {
   if (!isTauri()) return null;
   return invoke<RegisterEntry[]>("get_account_register", { accountId });
+}
+
+export async function loadAllAccountsRegister(): Promise<AllAccountsRegisterEntry[] | null> {
+  if (!isTauri()) return null;
+  return invoke<AllAccountsRegisterEntry[]>("get_all_accounts_register", {});
 }
 
 export async function createManualTransaction(input: ManualTransactionInput): Promise<string> {
