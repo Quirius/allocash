@@ -63,6 +63,15 @@ pub struct PlanCategory {
     pub available: Huf,
     pub target: Option<CategoryTargetProgress>,
 }
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HiddenCategory {
+    pub group_id: String,
+    pub group_name: String,
+    pub category_id: String,
+    pub category_name: String,
+}
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanSnapshot {
@@ -170,6 +179,255 @@ struct PlanDerivation {
 }
 
 impl Database {
+    pub fn hidden_categories(&self) -> LedgerResult<Vec<HiddenCategory>> {
+        let mut statement = self.connection.prepare(
+            "SELECT g.id,g.name,c.id,c.name FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE c.hidden=1 AND g.hidden=0 ORDER BY g.sort_order,c.sort_order,c.id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(HiddenCategory {
+                group_id: row.get(0)?,
+                group_name: row.get(1)?,
+                category_id: row.get(2)?,
+                category_name: row.get(3)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn set_category_hidden(&mut self, category_id: &str, hidden: bool) -> LedgerResult<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let role: Option<(bool, bool)> = transaction
+            .query_row(
+                "SELECT lower(trim(g.name))='inflow' AND lower(trim(c.name))='ready to assign', EXISTS(SELECT 1 FROM credit_payment_categories p WHERE p.category_id=c.id) FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE c.id=?1",
+                [category_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((is_ready_to_assign, is_credit_payment)) = role else {
+            return Err(LedgerError::NotFound);
+        };
+        if hidden && is_ready_to_assign {
+            return Err(LedgerError::InvalidValue(
+                "Ready to Assign cannot be hidden.",
+            ));
+        }
+        if hidden && is_credit_payment {
+            return Err(LedgerError::InvalidValue(
+                "A mapped credit payment category cannot be hidden.",
+            ));
+        }
+        transaction.execute(
+            "UPDATE categories SET hidden=?1 WHERE id=?2",
+            params![hidden, category_id],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Deletes an unused category, or merges its preserved history into another
+    /// visible ordinary category before deleting the source ID.
+    pub fn delete_category(
+        &mut self,
+        category_id: &str,
+        destination_category_id: Option<&str>,
+    ) -> LedgerResult<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let source_role: Option<(bool, bool, String, String)> = transaction
+            .query_row(
+                "SELECT lower(trim(g.name))='inflow' AND lower(trim(c.name))='ready to assign', EXISTS(SELECT 1 FROM credit_payment_categories p WHERE p.category_id=c.id), c.name, c.notes FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE c.id=?1",
+                [category_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()?;
+        let Some((is_ready_to_assign, is_credit_payment, source_name, source_notes)) = source_role
+        else {
+            return Err(LedgerError::NotFound);
+        };
+        if is_ready_to_assign {
+            return Err(LedgerError::InvalidValue(
+                "Ready to Assign cannot be deleted.",
+            ));
+        }
+        if is_credit_payment {
+            return Err(LedgerError::InvalidValue(
+                "A mapped credit payment category cannot be deleted.",
+            ));
+        }
+
+        let (destination, merged_notes) = if let Some(destination_id) = destination_category_id {
+            if destination_id == category_id {
+                return Err(LedgerError::InvalidValue(
+                    "Choose a different category for the history.",
+                ));
+            }
+            let destination_role: Option<(bool, bool, bool, String)> = transaction
+                .query_row(
+                    "SELECT lower(trim(g.name))='inflow' AND lower(trim(c.name))='ready to assign', EXISTS(SELECT 1 FROM credit_payment_categories p WHERE p.category_id=c.id), c.hidden=0 AND g.hidden=0, c.notes FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE c.id=?1",
+                    [destination_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .optional()?;
+            let Some((is_rta, is_payment, is_visible, destination_notes)) = destination_role else {
+                return Err(LedgerError::NotFound);
+            };
+            if is_rta || is_payment || !is_visible {
+                return Err(LedgerError::InvalidValue(
+                    "Choose a visible ordinary category for the history.",
+                ));
+            }
+            let notes = if source_notes.is_empty() {
+                destination_notes
+            } else if destination_notes.is_empty() || source_notes == destination_notes {
+                source_notes.clone()
+            } else {
+                let capacity = destination_notes
+                    .len()
+                    .checked_add(2)
+                    .and_then(|length| length.checked_add(source_name.len()))
+                    .and_then(|length| length.checked_add(2))
+                    .and_then(|length| length.checked_add(source_notes.len()))
+                    .ok_or(LedgerError::InvalidValue(
+                        "Category notes are too long to merge.",
+                    ))?;
+                let mut merged = String::with_capacity(capacity);
+                merged.push_str(&destination_notes);
+                merged.push_str("\n\n");
+                merged.push_str(&source_name);
+                merged.push_str(":\n");
+                merged.push_str(&source_notes);
+                merged
+            };
+            (Some(destination_id), Some(notes))
+        } else {
+            if !source_notes.is_empty() {
+                return Err(LedgerError::InvalidValue(
+                    "Choose another category to preserve this category's notes.",
+                ));
+            }
+            (None, None)
+        };
+
+        let reference_count: i64 = transaction.query_row(
+            "SELECT (SELECT COUNT(*) FROM transactions WHERE category_id=?1) + (SELECT COUNT(*) FROM schedules WHERE category_id=?1) + (SELECT COUNT(*) FROM payees WHERE last_category_id=?1) + (SELECT COUNT(*) FROM category_month_assignments WHERE category_id=?1) + (SELECT COUNT(*) FROM category_month_moves WHERE from_category_id=?1 OR to_category_id=?1) + (SELECT COUNT(*) FROM category_target_revisions WHERE category_id=?1) + (SELECT COUNT(*) FROM category_target_snoozes WHERE category_id=?1)",
+            [category_id],
+            |row| row.get(0),
+        )?;
+        if destination.is_none() && reference_count > 0 {
+            return Err(LedgerError::InvalidValue(
+                "Choose another category to preserve this category's history.",
+            ));
+        }
+
+        if let Some(destination_id) = destination {
+            let merged_notes = merged_notes.expect("destination notes were validated");
+            transaction.execute(
+                "UPDATE categories SET notes=?1 WHERE id=?2",
+                params![merged_notes, destination_id],
+            )?;
+            let destination_has_targets: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM category_target_revisions WHERE category_id=?1)",
+                [destination_id],
+                |row| row.get(0),
+            )?;
+            let source_has_targets: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM category_target_revisions WHERE category_id=?1)",
+                [category_id],
+                |row| row.get(0),
+            )?;
+
+            let source_assignments = {
+                let mut statement = transaction.prepare(
+                    "SELECT month,amount_huf FROM category_month_assignments WHERE category_id=?1 ORDER BY month",
+                )?;
+                let rows = statement
+                    .query_map([category_id], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                rows
+            };
+            for (month, source_amount) in source_assignments {
+                let destination_amount: Option<i64> = transaction
+                    .query_row(
+                        "SELECT amount_huf FROM category_month_assignments WHERE category_id=?1 AND month=?2",
+                        params![destination_id, month],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let merged_amount = destination_amount
+                    .unwrap_or(0)
+                    .checked_add(source_amount)
+                    .ok_or(LedgerError::AmountOverflow)?;
+                transaction.execute(
+                    "INSERT INTO category_month_assignments (category_id,month,amount_huf) VALUES (?1,?2,?3) ON CONFLICT(category_id,month) DO UPDATE SET amount_huf=excluded.amount_huf,updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')",
+                    params![destination_id, month, merged_amount],
+                )?;
+            }
+
+            transaction.execute(
+                "UPDATE transactions SET category_id=?1 WHERE category_id=?2",
+                params![destination_id, category_id],
+            )?;
+            transaction.execute(
+                "UPDATE schedules SET category_id=?1 WHERE category_id=?2",
+                params![destination_id, category_id],
+            )?;
+            transaction.execute(
+                "UPDATE payees SET last_category_id=?1 WHERE last_category_id=?2",
+                params![destination_id, category_id],
+            )?;
+            transaction.execute(
+                "DELETE FROM category_month_assignments WHERE category_id=?1",
+                [category_id],
+            )?;
+            // A recorded move between these two IDs becomes a no-op after merge.
+            transaction.execute(
+                "DELETE FROM category_month_moves WHERE (from_category_id=?1 AND to_category_id=?2) OR (from_category_id=?2 AND to_category_id=?1)",
+                params![category_id, destination_id],
+            )?;
+            transaction.execute(
+                "UPDATE category_month_moves SET from_category_id=?1 WHERE from_category_id=?2",
+                params![destination_id, category_id],
+            )?;
+            transaction.execute(
+                "UPDATE category_month_moves SET to_category_id=?1 WHERE to_category_id=?2",
+                params![destination_id, category_id],
+            )?;
+            if destination_has_targets {
+                transaction.execute(
+                    "DELETE FROM category_target_revisions WHERE category_id=?1",
+                    [category_id],
+                )?;
+            } else if source_has_targets {
+                transaction.execute(
+                    "UPDATE category_target_revisions SET category_id=?1 WHERE category_id=?2",
+                    params![destination_id, category_id],
+                )?;
+                transaction.execute(
+                    "INSERT INTO category_target_snoozes (category_id,month) SELECT ?1,month FROM category_target_snoozes WHERE category_id=?2 ON CONFLICT(category_id,month) DO NOTHING",
+                    params![destination_id, category_id],
+                )?;
+            } else {
+                transaction.execute(
+                    "DELETE FROM category_target_snoozes WHERE category_id=?1",
+                    [category_id],
+                )?;
+            }
+            transaction.execute(
+                "DELETE FROM category_target_snoozes WHERE category_id=?1",
+                [category_id],
+            )?;
+        }
+
+        transaction.execute("DELETE FROM categories WHERE id=?1", [category_id])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn rename_category(&mut self, category_id: &str, name: &str) -> LedgerResult<()> {
         let name = name.trim();
         if name.is_empty() || name.chars().count() > 200 {
@@ -1334,7 +1592,9 @@ fn narrow(value: i128) -> LedgerResult<Huf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ledger::{Account, AccountKind, CalendarDate, Direction, Entry, TransferDraft};
+    use crate::ledger::{
+        Account, AccountKind, CalendarDate, ClearedState, Direction, Entry, Origin, TransferDraft,
+    };
 
     fn plan_fixture() -> (tempfile::TempDir, Database) {
         let directory = tempfile::tempdir().unwrap();
@@ -1762,6 +2022,756 @@ mod tests {
                 Err(LedgerError::InvalidValue(_))
             ));
         }
+    }
+
+    #[test]
+    fn category_hide_preserves_plan_math_and_is_undoable() {
+        let (_directory, mut database) = plan_fixture();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &month, Huf(400))
+            .unwrap();
+        let mut spending = Entry::manual(
+            "food-spend",
+            "cash",
+            CalendarDate::parse("2026-09-01").unwrap(),
+        );
+        spending.category_id = Some("food".into());
+        database.create_transaction(&spending, Huf(-100)).unwrap();
+        let before = database.plan_month(&month).unwrap();
+        assert_eq!(category_available(&before, "food"), Huf(300));
+        let before_derived = derive_plan(&database.connection, &month, None).unwrap();
+
+        database
+            .undoable("Hide category", |database| {
+                database
+                    .set_category_hidden("food", true)
+                    .map_err(|error| error.to_string())
+            })
+            .unwrap();
+        let hidden_plan = database.plan_month(&month).unwrap();
+        assert!(hidden_plan
+            .categories
+            .iter()
+            .all(|row| row.category_id != "food"));
+        assert_eq!(hidden_plan.ready_to_assign, before.ready_to_assign);
+        let hidden_derived = derive_plan(&database.connection, &month, None).unwrap();
+        assert_eq!(
+            hidden_derived.assigned.get("food"),
+            before_derived.assigned.get("food")
+        );
+        assert_eq!(
+            hidden_derived.activity.get("food"),
+            before_derived.activity.get("food")
+        );
+        assert_eq!(
+            hidden_derived.available.get("food"),
+            before_derived.available.get("food")
+        );
+        assert_eq!(database.hidden_categories().unwrap()[0].category_id, "food");
+
+        database.undo_last_action().unwrap();
+        let restored = database.plan_month(&month).unwrap();
+        assert_eq!(category_available(&restored, "food"), Huf(300));
+        assert_eq!(restored.ready_to_assign, before.ready_to_assign);
+        assert!(database.hidden_categories().unwrap().is_empty());
+    }
+
+    #[test]
+    fn category_hide_protects_special_and_mapped_categories_and_delete_checks_references() {
+        let (_directory, mut database) = plan_fixture();
+        database
+            .create_category("regular", "g", "Regular", 1)
+            .unwrap();
+        assert!(matches!(
+            database.set_category_hidden("rta", true),
+            Err(LedgerError::InvalidValue(_))
+        ));
+        database
+            .set_credit_payment_category("card", Some("food"))
+            .unwrap();
+        let mapped_destination = database.delete_category("regular", Some("food"));
+        assert!(
+            matches!(&mapped_destination, Err(LedgerError::InvalidValue(_))),
+            "unexpected mapped destination result: {mapped_destination:?}"
+        );
+        assert!(matches!(
+            database.delete_category("regular", Some("rta")),
+            Err(LedgerError::InvalidValue(_))
+        ));
+        assert!(matches!(
+            database.set_category_hidden("food", true),
+            Err(LedgerError::InvalidValue(_))
+        ));
+
+        // Each of these rows carries category meaning that deletion must preserve.
+        database
+            .set_monthly_assignment("food", &PlanMonth::parse("2026-09").unwrap(), Huf(0))
+            .unwrap();
+        assert!(matches!(
+            database.delete_category("food", None),
+            Err(LedgerError::InvalidValue(_))
+        ));
+        assert!(matches!(
+            database.delete_category("rta", None),
+            Err(LedgerError::InvalidValue(_))
+        ));
+
+        database
+            .connection
+            .execute(
+                "DELETE FROM category_month_assignments WHERE category_id='food'",
+                [],
+            )
+            .unwrap();
+        database
+            .connection
+            .execute(
+                "DELETE FROM credit_payment_categories WHERE category_id='food'",
+                [],
+            )
+            .unwrap();
+        database
+            .undoable("Delete category", |database| {
+                database
+                    .delete_category("food", None)
+                    .map_err(|error| error.to_string())
+            })
+            .unwrap();
+        assert!(matches!(
+            database
+                .connection
+                .query_row("SELECT 1 FROM categories WHERE id='food'", [], |row| row
+                    .get::<_, i64>(0)),
+            Err(rusqlite::Error::QueryReturnedNoRows)
+        ));
+        database.undo_last_action().unwrap();
+        assert!(database
+            .connection
+            .query_row("SELECT 1 FROM categories WHERE id='food'", [], |row| row
+                .get::<_, i64>(0))
+            .is_ok());
+    }
+
+    #[test]
+    fn delete_category_rejects_each_persisted_category_reference() {
+        let (_directory, mut database) = plan_fixture();
+        let reference_cases = [
+            ("transaction", "INSERT INTO transactions (id,account_id,transaction_date,category_id,amount_huf) VALUES ('ref-transaction','cash','2026-09-01',?1,-1)"),
+            ("schedule", "INSERT INTO schedules (id,account_id,category_id,amount_huf,start_date,day_of_month) VALUES ('ref-schedule','cash',?1,-1,'2026-09-01',1)"),
+            ("payee", "INSERT INTO payees (id,name,last_category_id) VALUES ('ref-payee','Reference',?1)"),
+            ("assignment", "INSERT INTO category_month_assignments (category_id,month,amount_huf) VALUES (?1,'2026-09',0)"),
+            ("move", "INSERT INTO category_month_moves (id,month,from_category_id,to_category_id,amount_huf) VALUES ('ref-move','2026-09',?1,'food',1)"),
+            ("credit mapping", "INSERT INTO credit_payment_categories (account_id,category_id) VALUES ('card',?1)"),
+            ("target", "INSERT INTO category_target_revisions (id,category_id,effective_month,active) VALUES ('ref-target',?1,'2026-09',0)"),
+            ("target snooze", "INSERT INTO category_target_snoozes (category_id,month) VALUES (?1,'2026-09')"),
+        ];
+        for (index, (reference_name, insert)) in reference_cases.iter().enumerate() {
+            let category_id = format!("ref-category-{index}");
+            database
+                .create_category(&category_id, "g", &category_id, 10 + index as i64)
+                .unwrap();
+            database
+                .connection
+                .execute(insert, [&category_id])
+                .unwrap_or_else(|error| {
+                    panic!("failed to create {reference_name} reference: {error}")
+                });
+            assert!(
+                matches!(
+                    database.delete_category(&category_id, None),
+                    Err(LedgerError::InvalidValue(_))
+                ),
+                "deletion should reject {reference_name} references"
+            );
+            assert!(database
+                .connection
+                .query_row(
+                    "SELECT 1 FROM categories WHERE id=?1",
+                    [&category_id],
+                    |row| row.get::<_, i64>(0)
+                )
+                .is_ok());
+        }
+    }
+
+    #[test]
+    fn category_merge_preserves_history_money_targets_and_is_undoable() {
+        let (_directory, mut database) = plan_fixture();
+        database
+            .create_category("source", "g", "Old category", 2)
+            .unwrap();
+        database.create_category("other", "g", "Other", 3).unwrap();
+        database
+            .set_category_notes("source", "Old category context")
+            .unwrap();
+        database
+            .set_category_notes("food", "Existing food context")
+            .unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("source", &september, Huf(400))
+            .unwrap();
+        database
+            .set_monthly_assignment("food", &september, Huf(300))
+            .unwrap();
+        database
+            .set_monthly_assignment("source", &PlanMonth::parse("2026-10").unwrap(), Huf(75))
+            .unwrap();
+
+        let hash = "a".repeat(64);
+        database
+            .connection
+            .execute(
+                "INSERT INTO import_batches (id,source_name,source_bytes,sha256) VALUES ('batch','export.zip',x'00',?1)",
+                [&hash],
+            )
+            .unwrap();
+        database
+            .connection
+            .execute(
+                "INSERT INTO import_rows (id,batch_id,source_file,row_number,raw_data) VALUES ('import-row','batch','transactions.csv',1,'{}')",
+                [],
+            )
+            .unwrap();
+        let mut imported = Entry::manual(
+            "imported-entry",
+            "cash",
+            CalendarDate::parse("2026-09-01").unwrap(),
+        );
+        imported.category_id = Some("source".into());
+        imported.origin = Origin::Import;
+        imported.import_row_id = Some("import-row".into());
+        imported.cleared_state = ClearedState::Reconciled;
+        database.create_transaction(&imported, Huf(-200)).unwrap();
+
+        let mut outflow = Entry::manual(
+            "transfer-out",
+            "cash",
+            CalendarDate::parse("2026-09-02").unwrap(),
+        );
+        outflow.category_id = Some("source".into());
+        let mut inflow = Entry::manual(
+            "transfer-in",
+            "card",
+            CalendarDate::parse("2026-09-02").unwrap(),
+        );
+        inflow.category_id = Some("source".into());
+        database
+            .create_transfer(&TransferDraft::manual(
+                "paired-transfer",
+                Huf(50),
+                outflow,
+                inflow,
+                Direction::Outflow,
+            ))
+            .unwrap();
+        database
+            .connection
+            .execute(
+                "INSERT INTO schedules (id,account_id,category_id,amount_huf,start_date,day_of_month) VALUES ('source-schedule','cash','source',-500,'2026-09-03',3)",
+                [],
+            )
+            .unwrap();
+        database
+            .connection
+            .execute(
+                "INSERT INTO payees (id,name,last_category_id) VALUES ('source-payee','Old merchant','source')",
+                [],
+            )
+            .unwrap();
+        database
+            .connection
+            .execute(
+                "INSERT INTO category_month_moves (id,month,from_category_id,to_category_id,amount_huf) VALUES ('move-collapse','2026-09','source','food',10),('move-keep','2026-09','source','other',20),('move-reverse-collapse','2026-09','food','source',5)",
+                [],
+            )
+            .unwrap();
+        database.connection.execute(
+            "INSERT INTO category_target_revisions (id,category_id,effective_month,active,behavior,amount_huf,due_kind,due_day) VALUES ('source-target','source','2026-09',1,'set_aside',100,'day',10)",
+            [],
+        ).unwrap();
+        database
+            .connection
+            .execute(
+                "INSERT INTO category_target_snoozes (category_id,month) VALUES ('source','2026-09')",
+                [],
+            )
+            .unwrap();
+
+        let before_plan = database.plan_month(&september).unwrap();
+        let before_assigned: i128 = before_plan
+            .categories
+            .iter()
+            .map(|row| i128::from(row.assigned.0))
+            .sum();
+        let before_activity: i128 = before_plan
+            .categories
+            .iter()
+            .map(|row| i128::from(row.activity.0))
+            .sum();
+        let balances_before: Vec<(String, i64)> = database.connection.prepare(
+            "SELECT account_id,SUM(amount_huf) FROM ledger_entries WHERE posting_state='posted' GROUP BY account_id ORDER BY account_id",
+        ).unwrap().query_map([], |row| Ok((row.get(0)?, row.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap();
+
+        database
+            .undoable("Delete category", |database| {
+                database
+                    .delete_category("source", Some("food"))
+                    .map_err(|error| error.to_string())
+            })
+            .unwrap();
+        let after_plan = database.plan_month(&september).unwrap();
+        assert_eq!(
+            after_plan
+                .categories
+                .iter()
+                .find(|row| row.category_id == "food")
+                .unwrap()
+                .assigned,
+            Huf(700)
+        );
+        assert_eq!(
+            after_plan
+                .categories
+                .iter()
+                .find(|row| row.category_id == "food")
+                .unwrap()
+                .available,
+            Huf(500)
+        );
+        assert_eq!(
+            after_plan
+                .categories
+                .iter()
+                .map(|row| i128::from(row.assigned.0))
+                .sum::<i128>(),
+            before_assigned
+        );
+        assert_eq!(
+            after_plan
+                .categories
+                .iter()
+                .map(|row| i128::from(row.activity.0))
+                .sum::<i128>(),
+            before_activity
+        );
+        let balances_after: Vec<(String, i64)> = database.connection.prepare(
+            "SELECT account_id,SUM(amount_huf) FROM ledger_entries WHERE posting_state='posted' GROUP BY account_id ORDER BY account_id",
+        ).unwrap().query_map([], |row| Ok((row.get(0)?, row.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(balances_after, balances_before);
+        let preserved_import: (String, String, String, String, String) = database
+            .connection
+            .query_row(
+                "SELECT id,category_id,import_row_id,origin,cleared_state FROM transactions WHERE id='imported-entry'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            preserved_import,
+            (
+                "imported-entry".into(),
+                "food".into(),
+                "import-row".into(),
+                "import".into(),
+                "reconciled".into()
+            )
+        );
+        let pair: Vec<(String, String, String)> = database.connection.prepare(
+            "SELECT id,category_id,transfer_id FROM transactions WHERE transfer_id='paired-transfer' ORDER BY id",
+        ).unwrap().query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))).unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(
+            pair,
+            vec![
+                (
+                    "transfer-in".into(),
+                    "food".into(),
+                    "paired-transfer".into()
+                ),
+                (
+                    "transfer-out".into(),
+                    "food".into(),
+                    "paired-transfer".into()
+                ),
+            ]
+        );
+        let statuses: Vec<String> = database.connection.prepare(
+            "SELECT cleared_state FROM transactions WHERE transfer_id='paired-transfer' ORDER BY id",
+        ).unwrap().query_map([], |row| row.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(statuses, ["cleared", "uncleared"]);
+        assert_eq!(
+            database
+                .connection
+                .query_row(
+                    "SELECT category_id FROM schedules WHERE id='source-schedule'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "food"
+        );
+        assert_eq!(
+            database
+                .connection
+                .query_row(
+                    "SELECT last_category_id FROM payees WHERE id='source-payee'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "food"
+        );
+        let move_rows: Vec<(String, String)> = database
+            .connection
+            .prepare("SELECT from_category_id,to_category_id FROM category_month_moves ORDER BY id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(move_rows, vec![("food".into(), "other".into())]);
+        assert_eq!(
+            database
+                .connection
+                .query_row(
+                    "SELECT category_id FROM category_target_revisions WHERE id='source-target'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "food"
+        );
+        assert_eq!(
+            database
+                .connection
+                .query_row(
+                    "SELECT category_id FROM category_target_snoozes WHERE month='2026-09'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "food"
+        );
+        assert_eq!(
+            database
+                .connection
+                .query_row("SELECT notes FROM categories WHERE id='food'", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .unwrap(),
+            "Existing food context\n\nOld category:\nOld category context"
+        );
+
+        database.undo_last_action().unwrap();
+        assert_eq!(
+            database
+                .connection
+                .query_row(
+                    "SELECT category_id FROM transactions WHERE id='imported-entry'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "source"
+        );
+        assert_eq!(database.connection.query_row("SELECT amount_huf FROM category_month_assignments WHERE category_id='food' AND month='2026-09'", [], |row| row.get::<_, i64>(0)).unwrap(), 300);
+        assert_eq!(
+            database
+                .connection
+                .query_row(
+                    "SELECT notes FROM categories WHERE id='source'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "Old category context"
+        );
+    }
+
+    #[test]
+    fn category_merge_target_precedence_and_note_requirements_are_explicit() {
+        let (_directory, mut database) = plan_fixture();
+        database.create_category("source", "g", "Old", 2).unwrap();
+        database
+            .create_category("destination", "g", "New", 3)
+            .unwrap();
+        database
+            .set_category_notes("source", "Preserve this")
+            .unwrap();
+        assert!(matches!(
+            database.delete_category("source", None),
+            Err(LedgerError::InvalidValue(_))
+        ));
+        database.connection.execute(
+            "INSERT INTO category_target_revisions (id,category_id,effective_month,active,behavior,amount_huf,due_kind,due_day) VALUES ('source-target','source','2026-09',1,'set_aside',100,'day',10),('destination-target','destination','2026-10',1,'refill',200,'last_day',NULL),('destination-tombstone','destination','2026-11',0,NULL,NULL,NULL,NULL)",
+            [],
+        ).unwrap();
+        database.connection.execute(
+            "INSERT INTO category_target_snoozes (category_id,month) VALUES ('source','2026-09'),('destination','2026-10')",
+            [],
+        ).unwrap();
+        database
+            .delete_category("source", Some("destination"))
+            .unwrap();
+        let target_ids: Vec<String> = database.connection.prepare(
+            "SELECT id FROM category_target_revisions WHERE category_id='destination' ORDER BY id",
+        ).unwrap().query_map([], |row| row.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(target_ids, ["destination-target", "destination-tombstone"]);
+        let snoozed_months: Vec<String> = database.connection.prepare(
+            "SELECT month FROM category_target_snoozes WHERE category_id='destination' ORDER BY month",
+        ).unwrap().query_map([], |row| row.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(snoozed_months, ["2026-10"]);
+        assert_eq!(
+            database
+                .connection
+                .query_row(
+                    "SELECT notes FROM categories WHERE id='destination'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "Preserve this"
+        );
+
+        database
+            .create_category("orphan", "g", "Orphan", 4)
+            .unwrap();
+        database.connection.execute(
+            "INSERT INTO category_target_snoozes (category_id,month) VALUES ('orphan','2026-11')",
+            [],
+        ).unwrap();
+        database.delete_category("orphan", Some("food")).unwrap();
+        assert_eq!(
+            database
+                .connection
+                .query_row(
+                    "SELECT COUNT(*) FROM category_target_snoozes WHERE category_id='food'",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn category_merge_overflow_rolls_back_all_changes() {
+        let (_directory, mut database) = plan_fixture();
+        database.create_category("source", "g", "Old", 2).unwrap();
+        database
+            .set_category_notes("source", "Source notes")
+            .unwrap();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("source", &month, Huf(i64::MAX))
+            .unwrap();
+        database
+            .set_monthly_assignment("food", &month, Huf(1))
+            .unwrap();
+        let mut entry = Entry::manual(
+            "source-entry",
+            "cash",
+            CalendarDate::parse("2026-09-01").unwrap(),
+        );
+        entry.category_id = Some("source".into());
+        database.create_transaction(&entry, Huf(-1)).unwrap();
+
+        assert!(matches!(
+            database.delete_category("source", Some("food")),
+            Err(LedgerError::AmountOverflow)
+        ));
+        assert!(database
+            .connection
+            .query_row("SELECT 1 FROM categories WHERE id='source'", [], |row| row
+                .get::<_, i64>(
+                0
+            ))
+            .is_ok());
+        assert_eq!(
+            database
+                .connection
+                .query_row(
+                    "SELECT category_id FROM transactions WHERE id='source-entry'",
+                    [],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            "source"
+        );
+        assert_eq!(database.connection.query_row("SELECT amount_huf FROM category_month_assignments WHERE category_id='food' AND month='2026-09'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        assert_eq!(
+            database
+                .connection
+                .query_row("SELECT notes FROM categories WHERE id='food'", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .unwrap(),
+            ""
+        );
+    }
+
+    #[test]
+    fn category_merge_redistributes_closed_cash_overspending_without_changing_total_budget() {
+        let (_directory, mut database) = plan_fixture();
+        database.create_category("source", "g", "Old", 2).unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        let october = PlanMonth::parse("2026-10").unwrap();
+        database
+            .set_monthly_assignment("food", &september, Huf(500))
+            .unwrap();
+        cash_spending(
+            &mut database,
+            "source-overspend",
+            "2026-09-10",
+            "source",
+            300,
+        );
+
+        let before = database.plan_month(&october).unwrap();
+        let before_available: i128 = before
+            .categories
+            .iter()
+            .map(|category| i128::from(category.available.0))
+            .sum();
+        assert_eq!(before.ready_to_assign, Huf(-800));
+        assert_eq!(before_available, 500);
+        assert_eq!(
+            before_available + i128::from(before.ready_to_assign.0),
+            -300
+        );
+
+        database.delete_category("source", Some("food")).unwrap();
+        let after = database.plan_month(&october).unwrap();
+        let after_available: i128 = after
+            .categories
+            .iter()
+            .map(|category| i128::from(category.available.0))
+            .sum();
+        assert_eq!(after.ready_to_assign, Huf(-500));
+        assert_eq!(after_available, 200);
+        assert_eq!(after_available + i128::from(after.ready_to_assign.0), -300);
+        assert_eq!(
+            after
+                .categories
+                .iter()
+                .find(|category| category.category_id == "food")
+                .unwrap()
+                .available,
+            Huf(200)
+        );
+    }
+
+    #[test]
+    fn category_merge_combines_credit_funding_capacity_and_preserves_card_debt_and_budget() {
+        let (_directory, mut database) = plan_fixture();
+        database.create_category("source", "g", "Old", 2).unwrap();
+        database
+            .create_category("payment", "g", "Card payment", 3)
+            .unwrap();
+        database
+            .set_credit_payment_category("card", Some("payment"))
+            .unwrap();
+        let september = PlanMonth::parse("2026-09").unwrap();
+        let october = PlanMonth::parse("2026-10").unwrap();
+        database
+            .set_monthly_assignment("food", &september, Huf(500))
+            .unwrap();
+        cash_spending(
+            &mut database,
+            "source-cash-spend",
+            "2026-09-05",
+            "source",
+            300,
+        );
+        let mut credit_purchase = Entry::manual(
+            "source-credit-spend",
+            "card",
+            CalendarDate::parse("2026-09-06").unwrap(),
+        );
+        credit_purchase.category_id = Some("source".into());
+        database
+            .create_transaction(&credit_purchase, Huf(-100))
+            .unwrap();
+
+        let before_september = database.plan_month(&september).unwrap();
+        let before_payment = before_september
+            .credit_payment_categories
+            .iter()
+            .find(|payment| payment.account_id == "card")
+            .unwrap();
+        assert_eq!(before_payment.current_balance, Huf(-100));
+        assert_eq!(before_payment.funded_spending, Huf(0));
+        assert_eq!(
+            before_september
+                .categories
+                .iter()
+                .find(|category| category.category_id == "payment")
+                .unwrap()
+                .available,
+            Huf(0)
+        );
+        let before_october = database.plan_month(&october).unwrap();
+        let before_october_available: i128 = before_october
+            .categories
+            .iter()
+            .map(|category| i128::from(category.available.0))
+            .sum();
+        assert_eq!(before_october.ready_to_assign, Huf(-800));
+        assert_eq!(before_october_available, 500);
+
+        let balances_before: Vec<(String, i64)> = database
+            .connection
+            .prepare(
+                "SELECT account_id,SUM(amount_huf) FROM ledger_entries WHERE posting_state='posted' GROUP BY account_id ORDER BY account_id",
+            )
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        database.delete_category("source", Some("food")).unwrap();
+
+        let after_september = database.plan_month(&september).unwrap();
+        let after_payment = after_september
+            .credit_payment_categories
+            .iter()
+            .find(|payment| payment.account_id == "card")
+            .unwrap();
+        assert_eq!(after_payment.current_balance, Huf(-100));
+        assert_eq!(after_payment.funded_spending, Huf(100));
+        assert_eq!(
+            after_september
+                .categories
+                .iter()
+                .find(|category| category.category_id == "payment")
+                .unwrap()
+                .available,
+            Huf(100)
+        );
+        let after_october = database.plan_month(&october).unwrap();
+        let after_october_available: i128 = after_october
+            .categories
+            .iter()
+            .map(|category| i128::from(category.available.0))
+            .sum();
+        assert_eq!(after_october.ready_to_assign, Huf(-500));
+        assert_eq!(after_october_available, 200);
+        assert_eq!(
+            after_october_available + i128::from(after_october.ready_to_assign.0),
+            before_october_available + i128::from(before_october.ready_to_assign.0)
+        );
+        let balances_after: Vec<(String, i64)> = database
+            .connection
+            .prepare(
+                "SELECT account_id,SUM(amount_huf) FROM ledger_entries WHERE posting_state='posted' GROUP BY account_id ORDER BY account_id",
+            )
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(balances_after, balances_before);
     }
 
     #[test]

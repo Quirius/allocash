@@ -18,6 +18,7 @@ import {
   loadInflowOutflowByMonth,
   loadOutflowOverTime,
   loadPlanMonth,
+  loadHiddenCategories,
   loadSpendingByPayee,
   movePlanMoney,
   loadWorkspace,
@@ -30,6 +31,8 @@ import {
   setCategoryTarget,
   setCategoryNotes,
   renameCategory,
+  setCategoryHidden,
+  deleteCategory,
   setCategoryTargetSnoozed,
   setRegisterEntryClearedState,
   realizeDueScheduledTransactions,
@@ -395,4 +398,19 @@ it.each([0, 1, 3, 12] as const)("sends scheduled register edits with exact HUF t
 it("renames a category through the saved mutation boundary", async () => {
   await renameCategory("rent", "Rent and utilities");
   expect(invoke).toHaveBeenCalledExactlyOnceWith("rename_category", { input: { categoryId: "rent", name: "Rent and utilities" } });
+});
+
+it("loads hidden categories and saves hide, unhide, and delete through the desktop bridge", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  vi.mocked(invoke).mockResolvedValue([]);
+  await expect(loadHiddenCategories()).resolves.toEqual([]);
+  expect(invoke).toHaveBeenNthCalledWith(1, "get_hidden_categories");
+  await setCategoryHidden("rent", true);
+  await setCategoryHidden("rent", false);
+  await deleteCategory("empty-category");
+  await deleteCategory("used-category", "rent");
+  expect(invoke).toHaveBeenNthCalledWith(2, "set_category_hidden", { input: { categoryId: "rent", hidden: true } });
+  expect(invoke).toHaveBeenNthCalledWith(3, "set_category_hidden", { input: { categoryId: "rent", hidden: false } });
+  expect(invoke).toHaveBeenNthCalledWith(4, "delete_category", { input: { categoryId: "empty-category" } });
+  expect(invoke).toHaveBeenNthCalledWith(5, "delete_category", { input: { categoryId: "used-category", destinationCategoryId: "rent" } });
 });

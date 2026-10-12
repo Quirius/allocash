@@ -153,7 +153,7 @@ it("Cancel and Escape close without writing and restore focus", async () => {
   expect(document.querySelector(".rta-assign-popup")).toBeNull();
   await act(async () => { await new Promise((resolve) => requestAnimationFrame(() => resolve(null))); });
   expect(document.activeElement).toBe(trigger);
-  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual(["get_plan_month", "get_hidden_categories"]);
 });
 
 it("prevents stale writes and duplicate submissions while the backend call is pending", async () => {

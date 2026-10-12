@@ -1,7 +1,6 @@
-import { CategoryNameEditor } from "./CategoryNameEditor";
 import { AmountInput } from "./AmountInput";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { assignReadyToAssign, getSavedMutationVersion, hasSavedMutationPending, loadPlanMonth, movePlanMoney, renameCategory, setCategoryNotes, setCategoryTarget, setCategoryTargetSnoozed, setPlanAssignment, type CreditPaymentCategory, type PlanCategory, type PlanSnapshot, type RecurrenceMonths } from "../lib/desktop";
+import { assignReadyToAssign, deleteCategory, getSavedMutationVersion, hasSavedMutationPending, loadHiddenCategories, loadPlanMonth, movePlanMoney, renameCategory, setCategoryHidden, setCategoryNotes, setCategoryTarget, setCategoryTargetSnoozed, setPlanAssignment, type CreditPaymentCategory, type HiddenCategory, type PlanCategory, type PlanSnapshot, type RecurrenceMonths } from "../lib/desktop";
 import { formatHuf, localCalendarMonth, parseSignedHufInput, shiftCalendarMonth } from "../lib/format";
 import { CreditPaymentDetails } from "./CreditPaymentDetails";
 import { creditPaymentStatus } from "./credit-payment";
@@ -11,6 +10,7 @@ import { editCategoryNote, finishCategoryNoteSave, markCategoryNoteSaving, recon
 import { isPlanCoverAmountValid, canSubmitPlanMove, createPlanCoverPayload, createPlanMovePayload, defaultPlanMoveAmount, isPlanMoveRequestCurrent, isReadyToAssignPlanCategory, ownedPlanMoveVersion, planCoverShortfall, planMoveDestinations, READY_TO_ASSIGN_DESTINATION, READY_TO_ASSIGN_SOURCE, shouldDismissPlanMove } from "./plan-move";
 import { PlanMonthArrow, PlanMonthPicker } from "./PlanMonthPicker";
 import { ReadyToAssign } from "./ReadyToAssign";
+import { CategoryActionsPopover } from "./CategoryActionsPopover";
 import { categoryTargetPresentation, shouldShowTargetAvailableCheck } from "./plan-category-presentation";
 
 export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending = false, onCategoryRenamed }: { refreshRevision?: number; readEpoch?: number; mutationPending?: boolean; onCategoryRenamed?: () => Promise<void> }) {
@@ -45,6 +45,17 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
   const targetDirty = useRef(false);
   const previousReadEpoch = useRef(readEpoch);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
+  const [categoryPopup, setCategoryPopup] = useState<{ category: PlanCategory; anchor: HTMLButtonElement; readEpoch: number; refreshRevision: number } | null>(null);
+  const [categoryPopupPosition, setCategoryPopupPosition] = useState({ left: 0, top: 0, above: false });
+  const [hiddenCategories, setHiddenCategories] = useState<HiddenCategory[]>([]);
+  const [hiddenCategoriesCurrent, setHiddenCategoriesCurrent] = useState(false);
+  const [categoryActionBusy, setCategoryActionBusy] = useState(false);
+  const [categoryActionError, setCategoryActionError] = useState<string | null>(null);
+  const categoryActionBusyRef = useRef(false);
+  const categoryPopupRef = useRef<HTMLDivElement>(null);
+  const categoryNameInput = useRef<HTMLInputElement>(null);
+  const categoryPopupGeneration = useRef(0);
+  const hiddenReadGeneration = useRef(0);
   currentSelectedCategory.current = selectedCategoryId;
   const [noteDrafts, setNoteDrafts] = useState<CategoryNoteDrafts>({});
   const noteDraftsRef = useRef<CategoryNoteDrafts>({});
@@ -141,7 +152,62 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     hydratedTarget.current = key;
   }, [plan, month, selectedCategoryId, targetHydrationRevision]);
   async function save(categoryId: string, value: string): Promise<boolean> { if (!canWritePlan()) { setActionError("Plan is updating. Your assignment is still here; blur the field again to retry."); return false; } try { await setPlanAssignment(categoryId, month, parseSignedHufInput(value).toString()); setActionError(null); return true; } catch { setActionError("Enter a whole HUF assignment amount."); return false; } }
-  async function rename(categoryId: string, name: string): Promise<void> { if (!canWritePlan()) throw new Error("Plan is updating."); await renameCategory(categoryId, name); setActionError(null); try { await onCategoryRenamed?.(); } catch { setActionError("Category renamed, but other views could not refresh. Reopen Allocash to refresh their category lists."); } }
+  useEffect(() => { const generation = ++hiddenReadGeneration.current; setHiddenCategoriesCurrent(false); void loadHiddenCategories().then((items) => { if (generation === hiddenReadGeneration.current && items) { setHiddenCategories(items); setHiddenCategoriesCurrent(true); } }).catch(() => { if (generation === hiddenReadGeneration.current) setActionError("Hidden Categories could not refresh. Retry Plan refresh."); }); return () => { if (hiddenReadGeneration.current === generation) hiddenReadGeneration.current++; }; }, [readEpoch, refreshRevision]);
+  useEffect(() => {
+    if (!categoryPopup || categoryActionBusyRef.current || !planCurrent) return;
+    const current = plan?.categories.find((item) => item.categoryId === categoryPopup.category.categoryId);
+    if (!current || current.categoryName !== categoryPopup.category.categoryName || current.groupId !== categoryPopup.category.groupId || categoryPopup.refreshRevision !== refreshRevision) {
+      categoryPopupGeneration.current++; setCategoryPopup(null);
+    }
+  }, [categoryPopup, plan, planCurrent, readEpoch, refreshRevision, categoryActionBusy]);
+  useEffect(() => {
+    const popup = categoryPopup;
+    if (!popup) return;
+    const reposition = () => {
+      if (!popup.anchor.isConnected) { setCategoryPopup(null); return; }
+      const rect = popup.anchor.getBoundingClientRect();
+      const width = Math.min(categoryPopupRef.current?.offsetWidth ?? 400, window.innerWidth - 16);
+      const height = categoryPopupRef.current?.offsetHeight ?? 180;
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+      const top = rect.bottom + height + 8 <= window.innerHeight - 8 ? rect.bottom + 8 : Math.max(8, rect.top - height - 8);
+      setCategoryPopupPosition({ left, top, above: top < rect.bottom });
+    };
+    const dismiss = (event: PointerEvent) => { if (!categoryActionBusyRef.current && !categoryPopupRef.current?.contains(event.target as Node) && !popup.anchor.contains(event.target as Node)) setCategoryPopup(null); };
+    const key = (event: KeyboardEvent) => { if (event.key === "Escape" && !categoryActionBusyRef.current) { setCategoryPopup(null); popup.anchor.focus({ preventScroll: true }); } };
+    reposition(); document.addEventListener("pointerdown", dismiss); document.addEventListener("keydown", key); window.addEventListener("resize", reposition); window.addEventListener("scroll", reposition, true);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(reposition); if (observer && categoryPopupRef.current) observer.observe(categoryPopupRef.current);
+    categoryNameInput.current?.focus({ preventScroll: true }); categoryNameInput.current?.select();
+    return () => { observer?.disconnect(); document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", key); window.removeEventListener("resize", reposition); window.removeEventListener("scroll", reposition, true); };
+  }, [categoryPopup, categoryActionError]);
+  async function categoryAction(action: "rename" | "hide" | "delete", category: PlanCategory, name?: string, destinationId?: string) {
+    if (categoryActionBusyRef.current || !canWritePlan()) return;
+    categoryActionBusyRef.current = true; setCategoryActionBusy(true); setCategoryActionError(null);
+    const generation = categoryPopupGeneration.current;
+    try {
+      if (action === "rename") { if (!canWritePlan()) throw new Error("Plan is updating."); await renameCategory(category.categoryId, name ?? ""); }
+      else if (action === "hide") await setCategoryHidden(category.categoryId, true);
+      else await deleteCategory(category.categoryId, destinationId);
+      if (action !== "rename") setHiddenCategoriesCurrent(false);
+      if (generation === categoryPopupGeneration.current) setCategoryPopup(null);
+      if (action !== "rename") { const read = ++hiddenReadGeneration.current; void loadHiddenCategories().then((result) => { if (read === hiddenReadGeneration.current && result) { setHiddenCategories(result); setHiddenCategoriesCurrent(true); } }).catch(() => { if (read === hiddenReadGeneration.current) { setHiddenCategoriesCurrent(false); setActionError("Category saved, but Hidden Categories could not refresh. Retry Plan refresh before making another category change."); } }); }
+      try { await onCategoryRenamed?.(); }
+      catch { setActionError("Category saved, but the Plan could not refresh. Retry Plan refresh before making another category change."); }
+    } catch (error) { if (generation === categoryPopupGeneration.current) setCategoryActionError(error instanceof Error ? error.message : "Could not update this category. Your changes are still here."); }
+    finally { categoryActionBusyRef.current = false; setCategoryActionBusy(false); }
+  }
+  async function unhideCategory(category: HiddenCategory) {
+    if (categoryActionBusyRef.current || !canWritePlan()) return;
+    categoryActionBusyRef.current = true; setCategoryActionBusy(true);
+    try { await setCategoryHidden(category.categoryId, false); setHiddenCategoriesCurrent(false); const read = ++hiddenReadGeneration.current; void loadHiddenCategories().then((result) => { if (read === hiddenReadGeneration.current && result) { setHiddenCategories(result); setHiddenCategoriesCurrent(true); } }).catch(() => { if (read === hiddenReadGeneration.current) { setHiddenCategoriesCurrent(false); setActionError("Category restored, but Hidden Categories could not refresh. Retry Plan refresh before making another category change."); } }); try { await onCategoryRenamed?.(); } catch { setActionError("Category restored, but the Plan could not refresh. Retry Plan refresh before making another category change."); } }
+    catch (error) { setActionError(error instanceof Error ? error.message : "Could not restore this category."); }
+    finally { categoryActionBusyRef.current = false; setCategoryActionBusy(false); }
+  }
+  async function retryCategoryRefresh() {
+    setActionError(null);
+    await reload(month, readEpoch);
+    try { await onCategoryRenamed?.(); } catch { setActionError("Plan refreshed, but other views could not refresh. Retry Plan refresh."); }
+    try { const read = ++hiddenReadGeneration.current; const result = await loadHiddenCategories(); if (read === hiddenReadGeneration.current && result) { setHiddenCategories(result); setHiddenCategoriesCurrent(true); } } catch { setHiddenCategoriesCurrent(false); setActionError("Plan refreshed, but Hidden Categories could not refresh. Retry Plan refresh."); }
+  }
   async function move(event: FormEvent) {
     event.preventDefault();
     if (!moveSource || moveBusyRef.current || !canWritePlan()) return;
@@ -299,10 +365,10 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     available: summary.available + BigInt(category.available),
     carryover: summary.carryover + BigInt(category.available) - BigInt(category.assigned) - BigInt(category.activity),
   }), { assigned: 0n, activity: 0n, available: 0n, carryover: 0n }) : null;
-  const detailsPanel = <CategoryDetailsPanel key={`${selectedCategory?.categoryId ?? "none"}:${month}`} category={selectedCategory} summary={monthlySummary} onRename={rename} renameBusy={!planCurrent || moveBusy || mutationPending} creditPayment={plan?.creditPaymentCategories.find((mapping) => mapping.categoryId === selectedCategory?.categoryId) ?? null} month={plan?.month ?? month} notes={selectedCategory ? (selectedNote?.value ?? selectedCategory.notes ?? "") : ""} noteStatus={selectedNote?.status ?? ""} noteBusy={mutationPending} onNotesChange={editNotes} onSaveNotes={saveNotes} targetBusy={!planCurrent || moveBusy} target={{ behavior: targetBehavior, amount: targetAmount, interval: targetInterval, dueKind, dueDay, firstDueMonth }} onTargetChange={(field, value) => { targetDirty.current = true; if (field === "behavior") setTargetBehavior(value as "refill" | "set_aside"); else if (field === "amount") setTargetAmount(value); else if (field === "interval") selectTargetInterval(Number(value) as RecurrenceMonths); else if (field === "dueKind") setDueKind(value as "day" | "last_day"); else if (field === "dueDay") setDueDay(value); else setFirstDueMonth(value); }} onSaveTarget={saveTarget} onClearTarget={clearTarget} onSnooze={(id, value) => toggleTargetSnooze(id, value)} />;
+  const detailsPanel = <CategoryDetailsPanel key={`${selectedCategory?.categoryId ?? "none"}:${month}`} category={selectedCategory} summary={monthlySummary} creditPayment={plan?.creditPaymentCategories.find((mapping) => mapping.categoryId === selectedCategory?.categoryId) ?? null} month={plan?.month ?? month} notes={selectedCategory ? (selectedNote?.value ?? selectedCategory.notes ?? "") : ""} noteStatus={selectedNote?.status ?? ""} noteBusy={mutationPending} onNotesChange={editNotes} onSaveNotes={saveNotes} targetBusy={!planCurrent || moveBusy} target={{ behavior: targetBehavior, amount: targetAmount, interval: targetInterval, dueKind, dueDay, firstDueMonth }} onTargetChange={(field, value) => { targetDirty.current = true; if (field === "behavior") setTargetBehavior(value as "refill" | "set_aside"); else if (field === "amount") setTargetAmount(value); else if (field === "interval") selectTargetInterval(Number(value) as RecurrenceMonths); else if (field === "dueKind") setDueKind(value as "day" | "last_day"); else if (field === "dueDay") setDueDay(value); else setFirstDueMonth(value); }} onSaveTarget={saveTarget} onClearTarget={clearTarget} onSnooze={(id, value) => toggleTargetSnooze(id, value)} />;
   return <section className="plan-view" aria-labelledby="plan-title">
     <div className="plan-toolbar"><div className="plan-month-nav"><PlanMonthArrow direction="previous" disabled={month <= "0001-01"} onClick={() => setMonth(shiftCalendarMonth(month, -1))} /><h2 id="plan-title" tabIndex={-1}><PlanMonthPicker month={month} onMonthChange={setMonth} /></h2><PlanMonthArrow direction="next" disabled={month >= "9999-12"} onClick={() => setMonth(shiftCalendarMonth(month, 1))} /></div>{plan && plan.month === month ? <ReadyToAssign plan={plan} planCurrent={planCurrent} canWrite={canWritePlan} readEpoch={readEpoch} mutationPending={mutationPending} onError={(message) => setActionError(message)} /> : <div className="plan-rta"><span>Ready to Assign</span><strong>—</strong></div>}<button className="plan-today" onClick={() => setMonth(localCalendarMonth())}>Today</button></div>
-    {error && <p className="editor-error" role="alert">{error}{loadError && <button type="button" onClick={() => void reload(month, readEpoch)}>Retry Plan refresh</button>}</p>}
+    {error && <p className="editor-error" role="alert">{error}{(loadError || actionError?.includes("Retry Plan refresh")) && <button type="button" onClick={() => void retryCategoryRefresh()}>Retry Plan refresh</button>}</p>}
     {!plan || plan.month !== month ? <><div className="register-message" role="status">Loading Plan…</div><div className="plan-content loading">{detailsPanel}</div></> : <>
       <span className="sr-only" role="status">{planCurrent ? "" : "Updating Plan…"}</span>
       <div className="plan-content">
@@ -327,11 +393,11 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
           const percent = target && denominator > 0n ? Math.max(0, Math.min(100, Number(BigInt(target.funded) * 10000n / denominator) / 100)) : null;
           return <div className={"plan-row" + (selectedCategoryId === category.categoryId ? " selected" : "")} key={category.categoryId} onClick={(event) => {
             selectCategory(category.categoryId);
-            if (!canWritePlan() || (event.target instanceof Element && event.target.closest("input, select, textarea, button:not(.plan-category-name)"))) return;
+            if (!canWritePlan() || (event.target instanceof Element && event.target.closest("input, select, textarea, button"))) return;
             const assigned = event.currentTarget.querySelector<HTMLInputElement>("input[data-plan-month]");
             if (assigned && !assigned.readOnly && !assigned.disabled) { assigned.focus({ preventScroll: true }); assigned.select(); }
           }} onFocusCapture={() => selectCategory(category.categoryId)}>
-            <button className="plan-category-name" type="button" aria-pressed={selectedCategoryId === category.categoryId} aria-controls="plan-category-details" onClick={() => selectCategory(category.categoryId)}>
+            <button className="plan-category-name" type="button" disabled={categoryActionBusy} aria-pressed={selectedCategoryId === category.categoryId} aria-haspopup="dialog" aria-expanded={categoryPopup?.category.categoryId === category.categoryId} aria-controls="plan-category-details" onClick={(event) => { event.stopPropagation(); selectCategory(category.categoryId); if (canWritePlan()) { categoryPopupGeneration.current++; setCategoryActionError(null); setCategoryPopup({ category, anchor: event.currentTarget, readEpoch, refreshRevision }); } }}>
               <span className="plan-category-topline"><span className="plan-category-label">{category.categoryName}</span>{targetPresentation && <span className={"plan-category-progress" + (targetPresentation.fullySpent ? " fully-spent" : "")}><strong>{targetPresentation.status}</strong>{targetPresentation.detail && <span>{targetPresentation.detail}</span>}</span>}</span>
               {target && <span className={"plan-target-meter" + (target.snoozed ? " snoozed" : "")} aria-label={targetPresentation?.status + "; " + targetPresentation?.detail}><i style={{ width: (percent ?? 100) + "%" }} /></span>}
             </button>
@@ -343,6 +409,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
           </div>;
         })}</div>;
       })}{visibleCategories.length === 0 && <p className="plan-empty-results">No categories match this filter.</p>}</div>
+      {hiddenCategoriesCurrent && hiddenCategories.length > 0 && <details className="plan-hidden-categories"><summary>Hidden Categories ({hiddenCategories.length})</summary><ul>{hiddenCategories.map((category) => <li key={category.categoryId}><span>{category.categoryName}<small>{category.groupName}</small></span><button type="button" disabled={!canWritePlan() || !hiddenCategoriesCurrent || categoryActionBusy} onClick={() => void unhideCategory(category)}>Unhide</button></li>)}</ul></details>}
       </div>
       {detailsPanel}
       </div>
@@ -363,6 +430,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
           <div><button type="button" disabled={moveBusy} onClick={() => closeMove()}>Cancel</button><button type="submit" disabled={!canSubmitPlanMove(moveSource.id, toCategory, moveAmount) || moveBusy || mutationPending}>{moveBusy ? "Saving…" : "Move"}</button></div>
         </>}
       </form>}
+      {categoryPopup && <CategoryActionsPopover key={categoryPopup.category.categoryId} ref={categoryPopupRef} inputRef={categoryNameInput} category={categoryPopup.category} destinations={(plan?.categories ?? []).filter((item) => item.categoryId !== categoryPopup.category.categoryId && !plan?.creditPaymentCategories.some((mapping) => mapping.categoryId === item.categoryId) && !isReadyToAssignPlanCategory(item))} protectedCategory={plan?.creditPaymentCategories.some((mapping) => mapping.categoryId === categoryPopup.category.categoryId) ?? false} position={categoryPopupPosition} canWrite={canWritePlan()} saving={categoryActionBusy} error={categoryActionError} onRename={(name) => void categoryAction("rename", categoryPopup.category, name)} onHide={() => void categoryAction("hide", categoryPopup.category)} onDelete={(destinationId) => void categoryAction("delete", categoryPopup.category, undefined, destinationId)} onCancel={() => setCategoryPopup(null)} />}
   </section>;
 }
 
@@ -381,11 +449,11 @@ function GroupChevron({ collapsed }: { collapsed: boolean }) { return <svg class
 function BankCardIcon() { return <svg className="plan-bank-card" aria-hidden="true" viewBox="0 0 20 16"><rect x="1" y="2" width="18" height="12" rx="1" fill="#31b9d8" stroke="none" /><path d="M1 5h18" stroke="#d9d9e7" strokeWidth="3" /><path d="M4 10h5" stroke="#fff" strokeWidth="2" /></svg>; }
 function FundedCheckIcon() { return <svg className="plan-funded-check" aria-hidden="true" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" /><path d="m4.2 8.2 2.3 2.2 5-5" /></svg>; }
 function targetFingerprint(target: { behavior: "set_aside" | "refill"; amount: string; dueKind: "day" | "last_day"; dueDay: number | null; intervalMonths?: RecurrenceMonths; firstDueMonth?: string | null } | null): string { return target ? JSON.stringify({ behavior: target.behavior, amount: target.amount, dueKind: target.dueKind, dueDay: target.dueDay, intervalMonths: target.intervalMonths ?? 1, firstDueMonth: target.firstDueMonth ?? null }) : "none"; }
-function CategoryDetailsPanel({ category, summary, month, notes, noteStatus, noteBusy, onNotesChange, onSaveNotes, targetBusy, target, onTargetChange, onSaveTarget, onClearTarget, onSnooze, creditPayment, onRename, renameBusy }: { onRename: (id: string, name: string) => Promise<void>; renameBusy: boolean; category: PlanCategory | null; summary: { assigned: bigint; activity: bigint; available: bigint; carryover: bigint } | null; creditPayment: CreditPaymentCategory | null; month: string; notes: string; noteStatus: string; noteBusy: boolean; onNotesChange: (id: string, value: string) => void; onSaveNotes: (id: string, value: string) => Promise<void>; targetBusy: boolean; target: TargetEditor; onTargetChange: (field: keyof TargetEditor, value: string) => void; onSaveTarget: (event: FormEvent) => Promise<void>; onClearTarget: () => Promise<void>; onSnooze: (id: string, value: boolean) => Promise<void> }) {
-  if (!category) return <aside id="plan-category-details" className="category-details empty" aria-label={`${month} monthly summary`}><h3>{month}</h3><dl className="plan-summary"><div><dt>Assigned</dt><dd>{summary ? formatHuf(summary.assigned) : "—"}</dd></div><div><dt>Activity</dt><dd>{summary ? formatHuf(summary.activity) : "—"}</dd></div><div><dt>Category Available</dt><dd>{summary ? formatHuf(summary.available) : "—"}</dd></div><div><dt>Carryover</dt><dd>{summary ? formatHuf(summary.carryover) : "—"}</dd></div></dl><p>Ready to Assign is shown above.</p></aside>;
+function CategoryDetailsPanel({ category, summary, month, notes, noteStatus, noteBusy, onNotesChange, onSaveNotes, targetBusy, target, onTargetChange, onSaveTarget, onClearTarget, onSnooze, creditPayment }: { category: PlanCategory | null; summary: { assigned: bigint; activity: bigint; available: bigint; carryover: bigint } | null; creditPayment: CreditPaymentCategory | null; month: string; notes: string; noteStatus: string; noteBusy: boolean; onNotesChange: (id: string, value: string) => void; onSaveNotes: (id: string, value: string) => Promise<void>; targetBusy: boolean; target: TargetEditor; onTargetChange: (field: keyof TargetEditor, value: string) => void; onSaveTarget: (event: FormEvent) => Promise<void>; onClearTarget: () => Promise<void>; onSnooze: (id: string, value: boolean) => Promise<void> }) {
+  if (!category) return <aside id="plan-category-details" className="category-details empty" aria-label={`${month} visible category summary`}><h3>{month}</h3><dl className="plan-summary"><div><dt>Assigned</dt><dd>{summary ? formatHuf(summary.assigned) : "—"}</dd></div><div><dt>Activity</dt><dd>{summary ? formatHuf(summary.activity) : "—"}</dd></div><div><dt>Category Available</dt><dd>{summary ? formatHuf(summary.available) : "—"}</dd></div><div><dt>Carryover</dt><dd>{summary ? formatHuf(summary.carryover) : "—"}</dd></div></dl><p>Visible category totals. Ready to Assign is shown above.</p></aside>;
   const progress = category.target;
   return <aside id="plan-category-details" className="category-details" aria-label={`${category.categoryName} details`}>
-    <h3>{category.categoryName}</h3><CategoryNameEditor categoryId={category.categoryId} name={category.categoryName} busy={renameBusy} onRename={onRename} /><p className="category-details-group">{category.groupName} · {month}</p>
+    <h3>{category.categoryName}</h3><p className="category-details-group">{category.groupName} · {month}</p>
     {creditPayment ? <CreditPaymentDetails category={category} payment={creditPayment} /> : <dl className="category-totals"><div><dt>Available</dt><dd>{formatHuf(BigInt(category.available))}</dd></div><div><dt>Assigned</dt><dd>{formatHuf(BigInt(category.assigned))}</dd></div><div><dt>Activity</dt><dd>{formatHuf(BigInt(category.activity))}</dd></div></dl>}
     {!creditPayment && <>{progress ? <section className="target-progress"><h4>Target progress</h4><p><strong>{formatHuf(BigInt(progress.neededThisMonth))}</strong> needed · {formatHuf(BigInt(progress.funded))} funded</p><p>{formatHuf(BigInt(progress.toGo))} to go · {recurrenceLabel(progress.intervalMonths)}{progress.dueMonth ? ` · Due ${progress.dueMonth}` : ""}</p><button type="button" disabled={targetBusy} onClick={() => void onSnooze(category.categoryId, !progress.snoozed)}>{progress.snoozed ? "Resume this month" : "Snooze this month"}</button>{progress.snoozed && <span> Snoozed this month</span>}</section> : <p className="target-progress-empty">No target set for this category.</p>}
     <details className="target-editor"><summary>Edit target</summary><form onSubmit={onSaveTarget}>

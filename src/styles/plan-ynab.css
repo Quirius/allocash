@@ -129,6 +129,31 @@
 .plan-view .plan-month-trigger { display: inline-flex; align-items: center; width: auto !important; height: auto !important; min-width: 0; white-space: nowrap; gap: 8px; padding: 3px 0 !important; border: 0 !important; border-radius: 0 !important; color: #f4f3fb !important; background: transparent !important; font-size: 21px !important; font-weight: 700; cursor: pointer; }
 .plan-view .plan-month-trigger svg { width: 11px; height: 8px; color: #737cff; fill: currentColor; }
 .plan-view .plan-month-trigger:focus-visible, .plan-view .plan-month-arrow:focus-visible, .plan-month-popup button:focus-visible { outline: 2px solid #737cff; outline-offset: 2px; }
+.plan-category-actions { box-sizing: border-box; position: fixed; z-index: 1250; width: min(400px, calc(100vw - 16px)); padding: 12px; border: 0; border-radius: 8px; color: #f5f4fb; background: #22223b; box-shadow: 0 14px 36px #000a; }
+.plan-category-actions::before { content: ""; position: absolute; top: -6px; left: 28px; width: 11px; height: 11px; transform: rotate(45deg); border-left: 1px solid #34344d; border-top: 1px solid #34344d; background: #22223b; }
+.plan-category-actions.above::before { top: auto; bottom: -6px; transform: rotate(225deg); }
+.plan-category-delete { display: grid; gap: 8px; }
+.plan-category-delete p { margin: 0; color: #c3c1d1; font-size: 12px; line-height: 1.4; }
+.plan-category-delete label { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; }
+.plan-category-delete select { box-sizing: border-box; width: 100%; min-width: 0; padding: 7px; border: 1px solid #77768e; border-radius: 4px; color: #fff; background: #414157; font: inherit; }
+.plan-category-actions form { display: grid; gap: 6px; }
+.plan-category-actions label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.plan-category-actions input { box-sizing: border-box; width: 100%; min-width: 0; height: 32px; padding: 6px 9px; border: 1px solid #77768e; border-radius: 4px; color: #fff; background: #414157; font: inherit; }
+.plan-category-actions-row { display: flex; justify-content: space-between; gap: 10px; margin-top: 20px; }
+.plan-category-actions-row > div { display: flex; gap: 8px; }
+.plan-category-actions button { min-width: 66px; padding: 7px 13px; border: 0; border-radius: 6px; color: #f5f4fb; background: #30304c; cursor: pointer; }
+.plan-category-actions-row > div:last-child button:last-child { background: #6055d9; }
+.plan-category-actions button:disabled { opacity: .5; cursor: default; }
+.plan-category-actions .plan-category-actions-row button.danger { color: #fff; background: #762f48; }
+.plan-category-actions-error { margin: 10px 0 0; color: #ffaaaa; font-size: 12px; }
+.plan-category-actions :focus-visible { outline: 2px solid #737cff; outline-offset: 2px; }
+.plan-hidden-categories { margin-top: 14px; padding: 10px 0; border-top: 1px solid #303047; color: #d8d7e5; }
+.plan-hidden-categories summary { cursor: pointer; font-weight: 600; }
+.plan-hidden-categories ul { display: grid; gap: 6px; max-height: 25vh; margin: 10px 0 0; padding: 0 4px 0 0; overflow-y: auto; scrollbar-gutter: stable; list-style: none; }
+.plan-hidden-categories li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 9px; border-radius: 5px; background: #15152b; }
+.plan-hidden-categories li span { display: grid; gap: 2px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.plan-hidden-categories small { color: #aaa9bc; }
+.plan-hidden-categories button { padding: 5px 8px; border: 1px solid #55546c; border-radius: 4px; color: #f5f4fb; background: #35354c; }
 .plan-month-popup { box-sizing: border-box; width: 240px; border: 1px solid #34344d; border-radius: 9px; color: #f4f3fb; background: #202037; box-shadow: 0 12px 32px #0008; }
 .plan-month-popup-scroll { box-sizing: border-box; padding: 12px; max-height: calc(100dvh - 18px); overflow-y: auto; border-radius: inherit; }
 .plan-month-popup-notch { position: absolute; top: -6px; left: 24px; width: 10px; height: 10px; transform: rotate(45deg); border-left: 1px solid #34344d; border-top: 1px solid #34344d; background: #202037; }

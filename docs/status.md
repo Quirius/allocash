@@ -1,5 +1,30 @@
 # Implementation and validation status
 
+On 2026-10-12, clicking a Plan category name now opens an anchored popup
+with its name selected and Hide, Delete, Cancel and OK actions. Other row content
+still focuses Assigned for immediate entry. Hidden Categories offers Unhide;
+hiding preserves all financial history and Plan derivation. Delete asks for a
+history destination and atomically retargets transactions, schedules and payee
+category memory while combining monthly assignments with checked arithmetic.
+Ledger IDs, transfer links, cleared/posting states and import provenance remain
+intact. Notes are preserved; destination target history takes precedence, or source
+targets and snoozes migrate when the destination has no target revisions. Moves
+that become self-moves are removed as neutral audit entries. Empty categories can
+be deleted without a destination; referenced categories require one. Ready to
+Assign and mapped card payment categories remain protected. All actions use the
+existing undo boundary. Regrouping historical spending can legitimately shift
+Ready to Assign and payment funding; explicit cash and credit fixtures verify
+those derived changes and preserved account balances. All 303 frontend tests
+plus focused follow-up checks,
+the 217-test Rust suite plus focused follow-up provenance checks, TypeScript,
+formatting, Cargo check, independent review and synthetic browser checks passed.
+The browser checks cover name selection, rename, hide/unhide, failed-delete draft
+retention, destination routing and popup bounds at desktop and narrow widths;
+a subscription-aware regression checks failed writes across app mutation epochs.
+Production/native builds passed. Installation preserved budget bytes, the
+installed executable matches the release build and Allocash reopened a responsive
+window. No schema changes were made. Owner category actions, history merge and undo confirmation remain open.
+
 On 2026-10-12, All Accounts became a unified register with an Account
 column, combined cleared/uncleared/working balances and full-ledger search before
 bounded pagination. The single read query includes closed-account history and

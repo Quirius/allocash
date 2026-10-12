@@ -55,7 +55,7 @@ it("disables a cover gap outside the signed HUF range without sending a write", 
   expect(document.querySelector<HTMLButtonElement>('.plan-cover-popup button[type="submit"]')!.disabled).toBe(true);
   expect(document.querySelector('.plan-cover-popup [role="alert"]')?.textContent).toContain("too large");
   await submitCover();
-  expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual(["get_plan_month"]);
+  expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual(["get_plan_month", "get_hidden_categories"]);
 });
 
 it("covers a red negative category from a chosen category in the correct direction", async () => {
@@ -91,7 +91,7 @@ it("Cancel and Escape dismiss cover selection without writing", async () => {
   click(trigger);
   await act(async () => { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await Promise.resolve(); });
   expect(document.querySelector(".plan-cover-popup")).toBeNull();
-  expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual(["get_plan_month"]);
+  expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual(["get_plan_month", "get_hidden_categories"]);
 });
 
 it("does not repeat a cover write while the first request is pending", async () => {

@@ -14,7 +14,7 @@ use crate::ledger::{
     RegisterEntry, RegisterEntryEdit, ScheduledOccurrence, SpendingCategoryTotal,
     SpendingPayeeTotal, SpendingReportInput, TransactionFormOptions,
 };
-use crate::plan::{CategoryTargetDefinition, PlanMonth, PlanSnapshot};
+use crate::plan::{CategoryTargetDefinition, HiddenCategory, PlanMonth, PlanSnapshot};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::Manager;
@@ -645,6 +645,18 @@ struct CategoryRenameInput {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct CategoryHiddenInput {
+    category_id: String,
+    hidden: bool,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CategoryDeleteInput {
+    category_id: String,
+    destination_category_id: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct PlanMoveInput {
     from_category_id: String,
     to_category_id: Option<String>,
@@ -686,6 +698,16 @@ fn get_plan_month(
         database
             .plan_month_as_of(&month, &as_of)
             .map_err(ledger_error)
+    })
+}
+
+#[tauri::command]
+fn get_hidden_categories(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+) -> Result<Vec<HiddenCategory>, String> {
+    with_database(&app, &state, |database| {
+        database.hidden_categories().map_err(ledger_error)
     })
 }
 
@@ -770,6 +792,43 @@ fn rename_category(
         database.undoable("Rename category", |database| {
             database
                 .rename_category(&input.category_id, &input.name)
+                .map_err(ledger_error)
+        })
+    })
+}
+
+#[tauri::command]
+fn set_category_hidden(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: CategoryHiddenInput,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database.undoable(
+            if input.hidden {
+                "Hide category"
+            } else {
+                "Unhide category"
+            },
+            |database| {
+                database
+                    .set_category_hidden(&input.category_id, input.hidden)
+                    .map_err(ledger_error)
+            },
+        )
+    })
+}
+
+#[tauri::command]
+fn delete_category(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: CategoryDeleteInput,
+) -> Result<(), String> {
+    with_database(&app, &state, |database| {
+        database.undoable("Delete category", |database| {
+            database
+                .delete_category(&input.category_id, input.destination_category_id.as_deref())
                 .map_err(ledger_error)
         })
     })
@@ -902,10 +961,13 @@ pub fn run() {
             preview_account_reconciliation,
             reconcile_account,
             get_plan_month,
+            get_hidden_categories,
             set_plan_assignment,
             assign_ready_to_assign,
             set_category_notes,
             rename_category,
+            set_category_hidden,
+            delete_category,
             move_plan_money,
             set_credit_payment_category,
             set_category_target,

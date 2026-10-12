@@ -15,9 +15,20 @@ independently with a visible scrollbar on its right when rows overflow. Column
 headings stay pinned, and selecting a category preserves the list's scroll.
 Narrow windows keep the category list scrollable and let the details below it be
 reached through the content area's scroll without overlapping category rows.
-Category and group selection squares are omitted. Activating a category name or
-clicking its row focuses the existing
-Assigned editor and selects the full amount for immediate entry. Clicking an
+Category and group selection squares are omitted. Clicking a category name opens
+an anchored popup with its name selected, Hide, Delete, Cancel and OK. Clicking
+other non-control row content focuses the existing Assigned editor and selects
+the full amount for immediate entry. Hiding preserves transactions, assignments
+and balances; Hidden Categories offers Unhide. Delete asks where to move existing history. Transactions and recurring entries
+retain their identities and states; monthly assignments combine exactly in the
+destination. An existing destination target takes precedence; otherwise the
+source target history moves with the category. Notes are preserved. Snoozes
+follow only migrated target history; destination snoozes are retained. Moves
+that become self-moves disappear as neutral audit entries. Regrouping historical
+spending may recalculate prior overspending and card-payment funding while
+preserving ledger balances and history. Empty categories may be deleted without
+a destination; referenced categories cannot be removed without a valid destination. Ready to Assign and mapped card payment categories
+retain their special protections. All saved actions use the existing undo boundary. Clicking an
 Available badge retains its money popup focus, and stale read-only fields are
 not focused for editing. Group collapse uses SVG
 chevrons, and credit payment groups use a sharp card icon. Category names and
