@@ -10,7 +10,11 @@ The owner requested a close YNAB dark-theme match on 2026-10-10, with later
 customization. The shared shell offers Plan, Reports, Accounts and Budget &
 backups, with a collapsible account sidebar. Plan uses dense category rows,
 group totals, funding bars, Available pills and the existing right-side details.
-Category and group selection squares are omitted. Group collapse uses SVG
+Category and group selection squares are omitted. Activating a category name or
+clicking its row focuses the existing
+Assigned editor and selects the full amount for immediate entry. Clicking an
+Available badge retains its money popup focus, and stale read-only fields are
+not focused for editing. Group collapse uses SVG
 chevrons, and credit payment groups use a sharp card icon. Category names and
 funding descriptions share a row above the progress bar. Assigned values show
 formatted HUF while idle and retain the shared amount editor on focus. Available

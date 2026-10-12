@@ -89,6 +89,17 @@ it("collapses a category group without writing Plan data", async () => {
   expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual(["get_plan_month"]);
 });
 
+it("focuses and selects Assigned when activating a category name, while Available opens its popup", async () => {
+  await mount();
+  const row = host.querySelector('.plan-row')!;
+  const input = row.querySelector<HTMLInputElement>('input[aria-label="Alpha assigned"]')!;
+  act(() => row.querySelector<HTMLButtonElement>('.plan-category-name')!.click());
+  expect(document.activeElement).toBe(input);
+  expect([input.selectionStart, input.selectionEnd]).toEqual([0, input.value.length]);
+  act(() => row.querySelector<HTMLButtonElement>('.plan-available')!.click());
+  expect(document.activeElement).toBe(document.querySelector('input[aria-label="Move amount"]'));
+});
+
 it("keeps an invalid assignment draft visible after blur", async () => {
   await mount();
   const input = host.querySelector<HTMLInputElement>('input[aria-label="Alpha assigned"]')!;

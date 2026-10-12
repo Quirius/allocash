@@ -1,5 +1,17 @@
 # Implementation and validation status
 
+On 2026-10-12, activating a Plan category name or clicking non-editor row
+content now focuses its existing Assigned input and selects the full amount.
+The field remains mounted and focus does not scroll the view. Direct amount
+editing and Available money popups retain their own focus, while stale read-only
+fields are not focused for editing. All 18 focused Plan/amount/cover tests and
+synthetic browser checks passed, including immediate Assigned focus, full-value
+selection, operator seeding, Escape reset and the existing cover workflows.
+Production/native builds passed. Installation preserved budget bytes, the
+installed executable matches the release build and a responsive native window
+reopened. Rust accounting and schema are unchanged; owner immediate-entry
+confirmation remains open.
+
 On 2026-10-12, red overspent and yellow underfunded Plan Available badges
 now open Cover overspending from with the clicked category fixed as destination.
 The source dropdown lists other visible categories and Ready to Assign, and OK

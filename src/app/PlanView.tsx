@@ -325,7 +325,12 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
           const coverGap = availableState === "negative" || availableState === "overspent" ? planCoverShortfall(category.available) : availableState === "underfunded" ? planCoverShortfall(category.available, payment?.currentBalance, target?.toGo) : 0n;
           const denominator = target ? BigInt(target.neededThisMonth) : 0n;
           const percent = target && denominator > 0n ? Math.max(0, Math.min(100, Number(BigInt(target.funded) * 10000n / denominator) / 100)) : null;
-          return <div className={"plan-row" + (selectedCategoryId === category.categoryId ? " selected" : "")} key={category.categoryId} onClick={() => selectCategory(category.categoryId)} onFocusCapture={() => selectCategory(category.categoryId)}>
+          return <div className={"plan-row" + (selectedCategoryId === category.categoryId ? " selected" : "")} key={category.categoryId} onClick={(event) => {
+            selectCategory(category.categoryId);
+            if (!canWritePlan() || (event.target instanceof Element && event.target.closest("input, select, textarea, button:not(.plan-category-name)"))) return;
+            const assigned = event.currentTarget.querySelector<HTMLInputElement>("input[data-plan-month]");
+            if (assigned && !assigned.readOnly && !assigned.disabled) { assigned.focus({ preventScroll: true }); assigned.select(); }
+          }} onFocusCapture={() => selectCategory(category.categoryId)}>
             <button className="plan-category-name" type="button" aria-pressed={selectedCategoryId === category.categoryId} aria-controls="plan-category-details" onClick={() => selectCategory(category.categoryId)}>
               <span className="plan-category-topline"><span className="plan-category-label">{category.categoryName}</span>{targetPresentation && <span className={"plan-category-progress" + (targetPresentation.fullySpent ? " fully-spent" : "")}><strong>{targetPresentation.status}</strong>{targetPresentation.detail && <span>{targetPresentation.detail}</span>}</span>}</span>
               {target && <span className={"plan-target-meter" + (target.snoozed ? " snoozed" : "")} aria-label={targetPresentation?.status + "; " + targetPresentation?.detail}><i style={{ width: (percent ?? 100) + "%" }} /></span>}
