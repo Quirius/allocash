@@ -39,10 +39,10 @@ beforeEach(() => {
 });
 afterEach(() => { act(() => root?.unmount()); host?.remove(); vi.restoreAllMocks(); });
 
-function mount(entries: RegisterEntry[], onChanged = vi.fn(async () => {})) {
+function mount(entries: RegisterEntry[], onChanged = vi.fn(async () => {}), currentAccount = account, accountList = accounts) {
   host = document.createElement("div"); document.body.append(host);
   root = createRoot(host);
-  act(() => root.render(<AccountRegister account={account} accounts={accounts} options={options}
+  act(() => root.render(<AccountRegister account={currentAccount} accounts={accountList} options={options}
     register={{ status: "ready", entries }} onRetry={vi.fn()} onChanged={onChanged} />));
   return { onChanged };
 }
@@ -79,6 +79,76 @@ it.each([
   act(() => button("Cancel", editingRow).click());
   expect(tbody.querySelector(`tr.register-edit-row[data-entry-id="${item.id}"]`)).toBeNull();
   expect(tbody.querySelector(`[data-entry-id="${item.id}"]`)).not.toBeNull();
+  expect(invoke).not.toHaveBeenCalled();
+});
+
+const focusFields = ["flag", "date", "payee", "category", "memo", "outflow", "inflow"] as const;
+it.each(["past", "upcoming"] as const)("double-clicking each %s register cell focuses its matching edit control", (kind) => {
+  const item = kind === "past" ? entry() : entry({ id: "future", date: "2026-11-10", payeeName: "Insurance", clearedState: "uncleared" });
+  for (const fieldName of focusFields) {
+    if (fieldName === "inflow") item.amount = "1200";
+    else if (fieldName === "outflow") item.amount = "-1200";
+    mount([item]);
+    const row = host.querySelector(`[data-entry-id="${item.id}"]`)!;
+    act(() => row.querySelector(`[data-register-field="${fieldName}"]`)!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+    const editor = host.querySelector(`tr.register-edit-row[data-entry-id="${item.id}"]`)!;
+    expect(host.querySelector(".new-entry-row")).toBeNull();
+    const marker = editor.querySelector<HTMLElement>(`[data-register-editor-field="${fieldName}"]`)!;
+    const target = fieldName === "date" ? marker.querySelector<HTMLButtonElement>(".date-picker-trigger")! : marker.matches("input,select") ? marker : marker.querySelector("input,select")!;
+    expect(document.activeElement, `${kind} ${fieldName}`).toBe(target);
+    if (target instanceof HTMLInputElement && ["payee", "memo", "outflow", "inflow"].includes(fieldName)) {
+      expect(target.selectionStart).toBe(0);
+      expect(target.selectionEnd).toBe(target.value.length);
+    }
+    if (fieldName === "date") {
+      expect(target.getAttribute("aria-expanded")).toBe("false");
+      expect(document.querySelector(".date-repeat-popover")).toBeNull();
+    }
+    act(() => button("Cancel", editor).click());
+    expect(invoke).not.toHaveBeenCalled();
+    act(() => root.unmount()); host.remove();
+  }
+});
+
+it("falls back from a disabled category control to Payee", () => {
+  const tracking: AccountOverview = { ...account, id: "tracking", name: "Investment", kind: "tracking" };
+  mount([entry()], undefined, tracking, [tracking, account, ...accounts.slice(1)]);
+  const row = host.querySelector('[data-entry-id="past"]')!;
+  act(() => row.querySelector('[data-register-field="category"]')!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  const category = host.querySelector<HTMLSelectElement>('[data-register-editor-field="category"]')!;
+  const payee = host.querySelector<HTMLInputElement>('[data-register-editor-field="payee"]')!;
+  expect(category.disabled).toBe(true);
+  expect(document.activeElement).toBe(payee);
+  expect(payee.selectionStart).toBe(0);
+  expect(payee.selectionEnd).toBe(payee.value.length);
+  expect(invoke).not.toHaveBeenCalled();
+});
+
+it("keeps generic Enter editing focused on Payee and leaves status-button double-click behavior alone", () => {
+  mount([entry({ clearedState: "uncleared" })]);
+  const row = host.querySelector<HTMLElement>('[data-entry-id="past"]')!;
+  act(() => row.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  expect(document.activeElement).toBe(host.querySelector('[data-register-editor-field="payee"]'));
+  act(() => button("Cancel", host).click());
+  const statusButton = host.querySelector('[data-entry-id="past"] .status-column button')!;
+  act(() => statusButton.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
+  expect(host.querySelector(".transaction-inline")).toBeNull();
+  expect(invoke).not.toHaveBeenCalled();
+});
+
+it("keeps generic context-menu Edit on Payee and routes Edit Memo to Memo", () => {
+  mount([entry()]);
+  const row = host.querySelector<HTMLElement>('[data-entry-id="past"]')!;
+  act(() => row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 20 })));
+  act(() => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent?.includes("Edit"))!.click());
+  expect(document.activeElement).toBe(host.querySelector('[data-register-editor-field="payee"]'));
+  act(() => button("Cancel", host).click());
+  act(() => host.querySelector('[data-entry-id="past"]')!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: 20, clientY: 20 })));
+  act(() => [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((item) => item.textContent?.includes("Edit Memo"))!.click());
+  const memo = host.querySelector<HTMLInputElement>('[data-register-editor-field="memo"]')!;
+  expect(document.activeElement).toBe(memo);
+  expect(memo.selectionStart).toBe(0);
+  expect(memo.selectionEnd).toBe(memo.value.length);
   expect(invoke).not.toHaveBeenCalled();
 });
 

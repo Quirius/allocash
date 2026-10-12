@@ -1,5 +1,21 @@
 # Implementation and validation status
 
+On 2026-10-12, double-clicking a transaction cell now opens its inline
+editor in the original row and focuses the matching Flag, Date, Payee, Category,
+Memo, Outflow or Inflow control. Text and amount values are selected in full;
+date and dropdown controls receive focus without changing values. Disabled
+Category controls remain disabled and fall back to selected Payee. Generic Edit
+and row Enter default to Payee; Edit Memo uses the same scoped focus path.
+Focus runs once per editor opening without scrolling or resetting draft entry,
+while status buttons retain their separate click action. No empty editor row is
+added above existing transactions. All 285 frontend tests and synthetic browser
+checks passed, including each past-field mapping, upcoming Memo, full input
+selection, Cancel without a write and the existing schedule/transfer workflows.
+TypeScript, diff checks and production/native builds passed. Installation
+preserved budget bytes, the executable matches the verified release build and
+Allocash reopened a responsive window. Rust accounting and schema are unchanged;
+owner field-focus interaction confirmation remains open.
+
 On 2026-10-12, activating a Plan category name or clicking non-editor row
 content now focuses its existing Assigned input and selects the full amount.
 The field remains mounted and focus does not scroll the view. Direct amount

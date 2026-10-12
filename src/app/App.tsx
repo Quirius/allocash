@@ -30,7 +30,7 @@ import {
 } from "../lib/desktop";
 import { formatDate, formatHuf, localCalendarDate } from "../lib/format";
 import { partitionRegisterEntries } from "../lib/register";
-import { draftFromPostedEntry, RegisterEntryEditor, TransactionComposer, type TransactionDraft } from "./TransactionEditor";
+import { draftFromPostedEntry, RegisterEntryEditor, TransactionComposer, type RegisterEntryFocusField, type TransactionDraft } from "./TransactionEditor";
 import { ReconciliationEditor } from "./ReconciliationEditor";
 import { PlanView } from "./PlanView";
 import { ReportsView } from "./ReportsView";
@@ -508,13 +508,14 @@ export function AccountRegister({
   onChanged: () => Promise<void>;
   onStatusChanged?: (id: string, state: "cleared" | "uncleared") => Promise<void>;
 }) {
-  const [editor, setEditor] = useState<"new" | "reconcile" | RegisterEntry | { kind: "duplicate"; key: number; draft: TransactionDraft } | null>(null);
+  const [editor, setEditor] = useState<"new" | "reconcile" | { kind: "edit-entry"; key: number; entry: RegisterEntry; focusField: RegisterEntryFocusField } | { kind: "duplicate"; key: number; draft: TransactionDraft } | null>(null);
   const [scheduleAction, setScheduleAction] = useState(false);
   const actionLock = useRef(false);
   const retryRead = useRef<() => Promise<void>>(onChanged);
   const [refreshPending, setRefreshPending] = useState(false);
   const [menu, setMenu] = useState<{ entry: RegisterEntry; x: number; y: number } | null>(null);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const editKey = useRef(0);
   const [registerPage, setRegisterPage] = useState(0);
   const [upcomingPage, setUpcomingPage] = useState(0);
   const registerPageSize = 100;
@@ -577,14 +578,14 @@ export function AccountRegister({
     finally { actionLock.current = false; setScheduleAction(false); }
   }
 
-  function edit(entry: RegisterEntry) {
-    if (!actionLock.current && !refreshPending && !hasSavedMutationPending()) setEditor(entry);
+  function edit(entry: RegisterEntry, focusField: RegisterEntryFocusField = "payee") {
+    if (!actionLock.current && !refreshPending && !hasSavedMutationPending()) setEditor({ kind: "edit-entry", key: ++editKey.current, entry, focusField });
   }
 
   function duplicate(entry: RegisterEntry, repeating: boolean) {
     if (actionLock.current || refreshPending || hasSavedMutationPending()) return;
     if (repeating && (entry.postingState === "scheduled" || entry.date > today)) {
-      setEditor({ ...entry, repeatIntervalMonths: 1 }); return;
+      edit({ ...entry, repeatIntervalMonths: 1 }); return;
     }
     try {
       const draft = draftFromPostedEntry(entry, account.id, accounts);
@@ -646,7 +647,7 @@ export function AccountRegister({
         onStatusChange={(next) => changeStatus(menu.entry, next)}
         onSkip={menu.entry.postingState === "scheduled" ? () => void mutate(() => skipScheduledOccurrence(menu.entry.id)) : undefined}
         onPost={menu.entry.postingState === "scheduled" ? () => void mutate(() => postScheduledOccurrence(menu.entry.id)) : undefined}
-        onEditMemo={() => { edit(menu.entry); requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".memo-field input")?.focus()); }} />}
+        onEditMemo={() => edit(menu.entry, "memo")} />}
 
       {editor === "reconcile" && (
         <ReconciliationEditor account={account} onSaved={onChanged} onCancel={() => setEditor(null)} />
@@ -687,7 +688,7 @@ export function AccountRegister({
                 </tr>
               </thead>
               <tbody>
-                {(editor === "new" || (editor && typeof editor === "object" && "kind" in editor)) && <tr className="register-edit-row new-entry-row"><td colSpan={8}>
+                {(editor === "new" || (editor && typeof editor === "object" && editor.kind === "duplicate")) && <tr className="register-edit-row new-entry-row"><td colSpan={8}>
       {editor === "new" && (
         <TransactionComposer inline
           account={account}
@@ -710,24 +711,25 @@ export function AccountRegister({
                 return (
                   <Fragment key={entry.id}>
                   {!isUpcoming && entry.id === pageEntries[0]?.id && partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={8} scope="rowgroup">Transactions</th></tr>}
-                  {editor && typeof editor === "object" && !("kind" in editor) && editor.id === entry.id ? <tr className="register-edit-row" data-entry-id={entry.id}><td colSpan={8}>
-      {editor && typeof editor === "object" && !("kind" in editor) && (
+                  {editor && typeof editor === "object" && editor.kind === "edit-entry" && editor.entry.id === entry.id ? <tr className="register-edit-row" data-entry-id={entry.id}><td colSpan={8}>
+      {editor && typeof editor === "object" && editor.kind === "edit-entry" && (
         <RegisterEntryEditor inline
-          key={editor.id}
-          entry={editor}
+          key={`${editor.entry.id}:${editor.key}`}
+          entry={editor.entry}
           account={account}
           accounts={accounts}
           options={options}
-          onMakeRepeating={() => { try { const draft = draftFromPostedEntry(editor, account.id, accounts); setEditor({ kind: "duplicate", key: Date.now(), draft }); } catch (cause) { setScheduleError(cause instanceof Error ? cause.message : "Could not prepare this repeating entry."); } }}
+          initialFocusField={editor.focusField}
+          onMakeRepeating={() => { try { const draft = draftFromPostedEntry(editor.entry, account.id, accounts); setEditor({ kind: "duplicate", key: Date.now(), draft }); } catch (cause) { setScheduleError(cause instanceof Error ? cause.message : "Could not prepare this repeating entry."); } }}
           onSaved={onChanged}
           onCancel={() => setEditor(null)}
         />
       )}                  </td></tr> : (
                   <tr className={isUpcoming ? "upcoming-row" : undefined} data-entry-id={entry.id} tabIndex={0}
-                    onDoubleClick={(event) => { if (!(event.target as HTMLElement).closest("button")) edit(entry); }}
+                    onDoubleClick={(event) => { if (!(event.target as HTMLElement).closest("button")) { const field = (event.target as HTMLElement).closest<HTMLElement>("[data-register-field]")?.dataset.registerField as RegisterEntryFocusField | undefined; edit(entry, field ?? "payee"); } }}
                     onContextMenu={(event) => { event.preventDefault(); if (!actionLock.current && !refreshPending) setMenu({ entry, x: event.clientX, y: event.clientY }); }}
                     onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter") edit(entry); if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) { event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect(); setMenu({ entry, x: rect.left + 80, y: rect.top }); } }}>
-                    <td className="flag-column">
+                    <td className="flag-column" data-register-field="flag">
                       {entry.flagColor && (
                         <span
                           className={`flag flag-${entry.flagColor}`}
@@ -735,12 +737,12 @@ export function AccountRegister({
                         />
                       )}
                     </td>
-                    <td className="date-column">{formatDate(entry.date)}</td>
-                    <td className="payee-column">{displayPayee(entry)}</td>
-                    <td className="category-column">{displayCategory(entry, account)}</td>
-                    <td className="memo-column">{entry.memo || <span>—</span>}</td>
-                    <td className="money-column outflow">{amount < 0n ? `(${huf((-amount).toString())})` : ""}</td>
-                    <td className="money-column inflow">{amount >= 0n ? huf(amount.toString()) : ""}</td>
+                    <td className="date-column" data-register-field="date">{formatDate(entry.date)}</td>
+                    <td className="payee-column" data-register-field="payee">{displayPayee(entry)}</td>
+                    <td className="category-column" data-register-field="category">{displayCategory(entry, account)}</td>
+                    <td className="memo-column" data-register-field="memo">{entry.memo || <span>—</span>}</td>
+                    <td className="money-column outflow" data-register-field="outflow">{amount < 0n ? `(${huf((-amount).toString())})` : ""}</td>
+                    <td className="money-column inflow" data-register-field="inflow">{amount >= 0n ? huf(amount.toString()) : ""}</td>
                     <td className="status-column">
                       <TransactionStatusIcon state={entry.clearedState} pending={isUpcoming} disabled={scheduleAction || refreshPending || hasSavedMutationPending()}
                         onToggle={entry.clearedState === "reconciled" ? undefined : () => changeStatus(entry, entry.clearedState === "cleared" ? "uncleared" : "cleared")} />

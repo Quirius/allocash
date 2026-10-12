@@ -118,6 +118,11 @@ The owner supplied YNAB dark-theme references on 2026-10-10. The register uses
 compact table rows, the Cleared + Uncleared = Working balance equation and muted
 upcoming rows within the main register. Editing a historical or future entry
 replaces that same row with inline fields; it does not relocate it above history.
+Double-clicking a field focuses its matching editor control. Text and amount
+inputs select their full value; the date cell focuses the date picker trigger.
+Disabled category controls keep their category rules and fall back to Payee.
+Generic Edit and row Enter default to Payee, while Edit Memo focuses Memo.
+Focus is applied once on opening without scrolling or changing transaction values.
 New entries open as the first table row. Existing pagination remains to bound
 rendering. Secondary options retain account/type, cleared state and repeating
 shortcuts; category visibility still follows the budget boundary. Date/Repeat

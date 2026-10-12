@@ -368,6 +368,8 @@ export function TransactionComposer({
   );
 }
 
+export type RegisterEntryFocusField = "flag" | "date" | "payee" | "category" | "memo" | "outflow" | "inflow";
+
 export function RegisterEntryEditor({
   entry,
   account,
@@ -377,6 +379,7 @@ export function RegisterEntryEditor({
   onSaved,
   onCancel,
   inline = false,
+  initialFocusField,
 }: {
   entry: RegisterEntry;
   account: AccountOverview;
@@ -386,7 +389,10 @@ export function RegisterEntryEditor({
   onSaved: () => Promise<void>;
   onCancel: () => void;
   inline?: boolean;
+  initialFocusField?: RegisterEntryFocusField;
 }) {
+  const editorFormRef = useRef<HTMLFormElement>(null);
+  const initialFocusApplied = useRef(false);
   const transferPeer = entry.transferId
     ? (entry.transferAccountId ? accounts.find((option) => option.id === entry.transferAccountId) : accounts.find((option) => option.id !== account.id && option.name === entry.transferAccountName))
     : undefined;
@@ -439,6 +445,19 @@ export function RegisterEntryEditor({
     : editCategoryRule.readyToAssignDefault && (categoryTouched || direction !== initialDirection || accountId !== account.id)
       ? "Ready to Assign (automatic)"
       : "Uncategorized";
+
+  useEffect(() => {
+    if (!initialFocusField || initialFocusApplied.current) return;
+    initialFocusApplied.current = true;
+    const marked = editorFormRef.current?.querySelector<HTMLElement>(`[data-register-editor-field="${initialFocusField}"]`);
+    const target = initialFocusField === "date" ? marked?.querySelector<HTMLElement>(".date-picker-trigger") ?? null : marked;
+    const focused = target instanceof HTMLSelectElement && target.disabled
+      ? editorFormRef.current?.querySelector<HTMLElement>('[data-register-editor-field="payee"]') ?? null
+      : target;
+    if (!focused || (focused instanceof HTMLInputElement && focused.disabled) || (focused instanceof HTMLButtonElement && focused.disabled)) return;
+    focused.focus({ preventScroll: true });
+    if (focused instanceof HTMLInputElement) focused.select();
+  }, [initialFocusField]);
 
   useEffect(() => {
     const currentPeerId = editedTransferPeer?.id ?? null;
@@ -580,7 +599,7 @@ export function RegisterEntryEditor({
   }
 
   return (
-    <form className={`transaction-editor compact${inline ? " transaction-inline" : ""}`} onSubmit={submit}>
+    <form ref={editorFormRef} className={`transaction-editor compact${inline ? " transaction-inline" : ""}`} onSubmit={submit}>
       {!inline && <div className="editor-heading">
         <div><span>EDIT ENTRY</span><h3>{entry.transferAccountName ? `Transfer: ${entry.transferAccountName}` : entry.payeeName || "No payee"}</h3>
           {scheduled && <p>Changes apply to this upcoming entry and future repeats. Posted history is unchanged.</p>}
@@ -589,20 +608,20 @@ export function RegisterEntryEditor({
       </div>}
       <div className="inline-controls" inert={saving || refreshPending}>
       <div className="editor-fields inline-fields">
-        <label>Flag<select value={flagId} onChange={(event) => setFlagId(event.target.value)}><option value="">No flag</option>{options.flags.map((option) => <option key={option.id} value={option.id}>{option.color} {option.name}</option>)}</select></label>
-        <div className="inline-date editor-date-field">
+        <label>Flag<select data-register-editor-field="flag" value={flagId} onChange={(event) => setFlagId(event.target.value)}><option value="">No flag</option>{options.flags.map((option) => <option key={option.id} value={option.id}>{option.color} {option.name}</option>)}</select></label>
+        <div className="inline-date editor-date-field" data-register-editor-field="date">
         <DateRepeatPicker date={date} onDateChange={setDate} {...(scheduled || upcomingRepeatEligible ? { repeat: repeatIntervalMonths === 1 ? "monthly" as const : repeatIntervalMonths === 3 ? "quarterly" as const : repeatIntervalMonths === 12 ? "yearly" as const : "never" as const, onRepeatChange: (value: EntryRepeat) => setRepeatIntervalMonths(value === "monthly" ? 1 : value === "quarterly" ? 3 : value === "yearly" ? 12 : 0) } : {})} disabled={saving} />
           {!inline && (scheduled || upcomingRepeatEligible) && repeatIntervalMonths === 0 && <button type="button" className="secondary" disabled={saving} onClick={() => setRepeatIntervalMonths(1)}>Make repeating</button>}
           {!inline && !scheduled && !upcomingRepeatEligible && entry.postingState === "posted" && entry.date <= localCalendarDate() && <button type="button" className="secondary" disabled={saving} onClick={onMakeRepeating}>Make repeating</button>}
         </div>
-        <label>Payee<input list={`edit-payees-${entry.id}`} value={payee} onChange={(event) => setPayee(event.target.value)} /><datalist id={`edit-payees-${entry.id}`}>
+        <label>Payee<input data-register-editor-field="payee" list={`edit-payees-${entry.id}`} value={payee} onChange={(event) => setPayee(event.target.value)} /><datalist id={`edit-payees-${entry.id}`}>
           {options.payees.map((option) => <option key={option.id} value={option.name} />)}
           {accounts.filter((option) => option.id !== editAccount.id && (!option.closed || option.id === transferPeer?.id)).flatMap((option) => [<option key={`transfer-${option.id}`} value={`Transfer: ${option.name}`} />, <option key={`payment-${option.id}`} value={`Payment: ${option.name}`} />])}
         </datalist></label>
-        {editCategoryRule.show ? <label>Category<select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setCategoryOrigin(event.target.value ? "explicit" : "empty"); setCategoryTouched(true); setCategoryPeerId(editedTransferPeer?.id ?? null); setCategoryAccountId(editAccount.id); setCategoryDirection(direction); }}><option value="">{categoryEmptyLabel}</option>{entry.categoryId && !options.categories.some((option) => option.id === entry.categoryId) && <option value={entry.categoryId}>{entry.categoryGroupName} / {entry.categoryName} (hidden)</option>}{options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}</select></label> : <label>Category<select disabled value=""><option value="">Not used</option></select></label>}
-        <label className="memo-field">Memo<input value={memo} onChange={(event) => setMemo(event.target.value)} /></label>
-        <label>Outflow<AmountInput required={direction === "outflow"} inputMode="numeric" value={direction === "outflow" ? amount : ""} onChange={(event) => { setAmount(event.target.value); if (event.target.value) setDirection("outflow"); }} placeholder="0 Ft" /></label>
-        <label>Inflow<AmountInput required={direction === "inflow"} inputMode="numeric" value={direction === "inflow" ? amount : ""} onChange={(event) => { setAmount(event.target.value); if (event.target.value) setDirection("inflow"); }} placeholder="0 Ft" /></label>
+        {editCategoryRule.show ? <label>Category<select data-register-editor-field="category" value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setCategoryOrigin(event.target.value ? "explicit" : "empty"); setCategoryTouched(true); setCategoryPeerId(editedTransferPeer?.id ?? null); setCategoryAccountId(editAccount.id); setCategoryDirection(direction); }}><option value="">{categoryEmptyLabel}</option>{entry.categoryId && !options.categories.some((option) => option.id === entry.categoryId) && <option value={entry.categoryId}>{entry.categoryGroupName} / {entry.categoryName} (hidden)</option>}{options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}</select></label> : <label>Category<select data-register-editor-field="category" disabled value=""><option value="">Not used</option></select></label>}
+        <label className="memo-field">Memo<input data-register-editor-field="memo" value={memo} onChange={(event) => setMemo(event.target.value)} /></label>
+        <label>Outflow<AmountInput data-register-editor-field="outflow" required={direction === "outflow"} inputMode="numeric" value={direction === "outflow" ? amount : ""} onChange={(event) => { setAmount(event.target.value); if (event.target.value) setDirection("outflow"); }} placeholder="0 Ft" /></label>
+        <label>Inflow<AmountInput data-register-editor-field="inflow" required={direction === "inflow"} inputMode="numeric" value={direction === "inflow" ? amount : ""} onChange={(event) => { setAmount(event.target.value); if (event.target.value) setDirection("inflow"); }} placeholder="0 Ft" /></label>
         <div className="inline-status"><TransactionStatusIcon state={clearedState} pending={pendingOrFuture || (upcomingRepeatEligible && repeatIntervalMonths > 0)} />{pendingOrFuture || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? (scheduled ? "Scheduled" : "Upcoming") : clearedState[0]!.toUpperCase() + clearedState.slice(1)}</div>
       </div>
       <details className="inline-secondary"><summary>Account and entry options</summary><div>
