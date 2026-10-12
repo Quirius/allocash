@@ -1,5 +1,19 @@
 # Implementation and validation status
 
+On 2026-10-12, the Plan category list now fills a bounded grid track
+instead of expanding beyond the window. Its own overflow scrollbar is visible
+on the right, column headings stay pinned, and category selection keeps the
+list's scroll position. Narrow windows stack the list and details without overlap
+and let both the final category and the details remain reachable. Funding text
+also stays within its column. Synthetic browser checks with 164 categories passed
+at desktop and 500-pixel widths, including mouse-wheel scrolling, final-row
+reachability, reserved scrollbar gutter, sticky headings and selection scroll
+preservation. The existing interaction browser checks also passed. This is a
+stylesheet-only product change; Rust accounting, schema and UI financial logic
+are unchanged. Production/native builds passed. Installation preserved budget
+bytes, the executable matches the release build and Allocash reopened a
+responsive window. Owner category-scroll confirmation remains open.
+
 On 2026-10-12, double-clicking a transaction cell now opens its inline
 editor in the original row and focuses the matching Flag, Date, Payee, Category,
 Memo, Outflow or Inflow control. Text and amount values are selected in full;

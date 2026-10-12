@@ -10,6 +10,11 @@ The owner requested a close YNAB dark-theme match on 2026-10-10, with later
 customization. The shared shell offers Plan, Reports, Accounts and Budget &
 backups, with a collapsible account sidebar. Plan uses dense category rows,
 group totals, funding bars, Available pills and the existing right-side details.
+The category list is constrained to the remaining window height and scrolls
+independently with a visible scrollbar on its right when rows overflow. Column
+headings stay pinned, and selecting a category preserves the list's scroll.
+Narrow windows keep the category list scrollable and let the details below it be
+reached through the content area's scroll without overlapping category rows.
 Category and group selection squares are omitted. Activating a category name or
 clicking its row focuses the existing
 Assigned editor and selects the full amount for immediate entry. Clicking an
