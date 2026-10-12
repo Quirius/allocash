@@ -1,5 +1,23 @@
 # Implementation and validation status
 
+On 2026-10-12, red overspent and yellow underfunded Plan Available badges
+now open Cover overspending from with the clicked category fixed as destination.
+The source dropdown lists other visible categories and Ready to Assign, and OK
+covers the exact negative Available deficit or remaining credit payment shortfall.
+Category sources use the existing atomic money move in the inward direction;
+Ready to Assign uses the atomic increment command with the captured Assigned
+guard. Existing move amounts may still exceed source Available. Green and neutral
+badges retain the outward move popup. Cancel, Escape and stale reads make no
+write; pending duplicate submits are blocked and saved read retries do not repeat
+a cover. Amounts outside the single-action HUF range show a clear message and
+cannot submit. The 278-test frontend suite and 13 focused follow-up tests passed,
+alongside TypeScript, independent financial-flow review and synthetic browser
+checks of red/category, Ready to Assign and yellow/payment covers, cancellation,
+retained Plan table and narrow popup bounds. Production/native builds passed.
+Installation preserved budget bytes, the executable matches the release build
+and Allocash reopened a responsive window. Rust accounting and schema are
+unchanged; owner cover and undo interaction confirmation remain open.
+
 On 2026-10-12, Plan category rows were refined against the supplied close-up
 references without adding selection squares. Group headers use sharp SVG
 chevrons and mapped credit payment groups have a cyan card icon. Category names

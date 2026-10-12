@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canSubmitPlanMove, createPlanMovePayload, defaultPlanMoveAmount, isPlanMoveRequestCurrent, ownedPlanMoveVersion, planMoveDestinations, READY_TO_ASSIGN_DESTINATION, shouldDismissPlanMove } from "../src/app/plan-move";
+import { canSubmitPlanMove, createPlanCoverPayload, createPlanMovePayload, defaultPlanMoveAmount, isPlanMoveRequestCurrent, isReadyToAssignPlanCategory, ownedPlanMoveVersion, planCoverShortfall, planMoveDestinations, READY_TO_ASSIGN_DESTINATION, READY_TO_ASSIGN_SOURCE, shouldDismissPlanMove } from "../src/app/plan-move";
 
 describe("Plan move popup helpers", () => {
   it("prefills only positive Available values", () => {
@@ -29,6 +29,24 @@ describe("Plan move popup helpers", () => {
     expect(canSubmitPlanMove("a", "b", "1.5")).toBe(false);
     expect(canSubmitPlanMove("a", "b", "9223372036854775808")).toBe(false);
     expect(canSubmitPlanMove("a", "a", "10")).toBe(false);
+  });
+
+  it("computes red, credit-underfunded, and target shortfalls", () => {
+    expect(planCoverShortfall("-300")).toBe(300n);
+    expect(planCoverShortfall("200", "-1000")).toBe(800n);
+    expect(planCoverShortfall("0", undefined, "250")).toBe(250n);
+  });
+
+  it("keeps the clicked overspending category as destination and guards its Assigned value", () => {
+    expect(createPlanCoverPayload("food", "rent", "300", "125", "125")).toEqual({ fromCategoryId: "food", toCategoryId: "rent", amount: "300", expectedAssigned: "125" });
+    expect(createPlanCoverPayload(READY_TO_ASSIGN_SOURCE, "rent", "300", "125", "125")).toEqual({ fromCategoryId: "", toCategoryId: null, amount: "300", expectedAssigned: "125" });
+    expect(() => createPlanCoverPayload("rent", "rent", "300", "125", "125")).toThrow();
+    expect(() => createPlanCoverPayload("food", "rent", "300", "125", "150")).toThrow(/changed/);
+    expect(() => createPlanCoverPayload("food", "rent", "9223372036854775808", "125", "125")).toThrow();
+    expect(() => createPlanCoverPayload("food", "rent", "0", "125", "125")).toThrow();
+    expect(READY_TO_ASSIGN_SOURCE).not.toBe(READY_TO_ASSIGN_DESTINATION);
+    expect(isReadyToAssignPlanCategory({ groupName: " Inflow ", categoryName: "Ready to Assign " })).toBe(true);
+    expect(isReadyToAssignPlanCategory({ groupName: "Savings", categoryName: "Ready to Assign" })).toBe(false);
   });
 
   it("accepts completion only for the same month and popup generation", () => {

@@ -98,13 +98,19 @@ Past entries retain the separate unsaved-copy Make repeating workflow.
 ## Moving assigned money
 
 Click a category's Available amount to open a move popup anchored to that amount.
-The clicked category is the fixed source; choose a destination from a grouped
-dropdown, including Ready to Assign. Prefill a positive Available balance and
-select it for editing; zero or negative balances start with an empty amount.
+For green or neutral badges the clicked category is the fixed source; choose a
+destination from a grouped dropdown, including Ready to Assign. Prefill a positive
+Available balance and select it for editing; zero balances start with an empty
+amount. Red or yellow badges instead open Cover overspending from: the clicked
+category is the fixed destination and the dropdown chooses the funding source.
+The cover amount is the negative Available deficit for red badges, or the
+remaining card-payment shortfall for a yellow payment category. Choosing a
+category moves that amount into the destination; choosing Ready to Assign adds
+the amount to its existing assignment with the atomic expected-value guard.
 Saving subtracts from the source month's Assigned and adds the same amount to
 the destination month's Assigned. Returning money to Ready to Assign reduces
 only the source assignment, allowing Ready to Assign to increase through its
-normal derivation. There is no separate Move Money form or source dropdown.
+normal derivation. There is no separate Move Money form.
 Cancel, Escape and outside clicks dismiss without saving. Moves remain one
 undoable saved action and permit positive amounts exceeding Available, consistent
 with negative assignments and balances already supported by the Plan.

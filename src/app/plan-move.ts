@@ -1,8 +1,37 @@
 import { parseSignedHufInput } from "../lib/format";
 
 export const READY_TO_ASSIGN_DESTINATION = "__ready_to_assign__";
+export const READY_TO_ASSIGN_SOURCE = "__ready_to_assign_source__";
+
+export function isReadyToAssignPlanCategory(category: { groupName: string; categoryName: string }): boolean {
+  return category.groupName.trim().toLowerCase() === "inflow" && category.categoryName.trim().toLowerCase() === "ready to assign";
+}
 
 export type PlanMovePayload = { fromCategoryId: string; toCategoryId: string | null; amount: string };
+export type PlanCoverPayload = { fromCategoryId: string; toCategoryId: string | null; amount: string; expectedAssigned: string };
+
+export function isPlanCoverAmountValid(amount: string): boolean {
+  try { return parseSignedHufInput(amount) > 0n; }
+  catch { return false; }
+}
+
+export function planCoverShortfall(available: string, currentBalance?: string, targetToGo?: string): bigint {
+  const current = BigInt(available);
+  if (current < 0n) return -current;
+  if (currentBalance !== undefined) {
+    const debt = BigInt(currentBalance) < 0n ? -BigInt(currentBalance) : 0n;
+    return debt > current ? debt - current : 0n;
+  }
+  return targetToGo !== undefined && BigInt(targetToGo) > 0n ? BigInt(targetToGo) : 0n;
+}
+
+export function createPlanCoverPayload(sourceId: string, destinationId: string, amount: string, expectedAssigned: string, currentAssigned: string): PlanCoverPayload {
+  const parsedAmount = parseSignedHufInput(amount);
+  if (!sourceId || !destinationId || parsedAmount <= 0n) throw new Error("Choose a source and positive cover amount.");
+  if (sourceId === destinationId) throw new Error("Source and destination must differ.");
+  if (expectedAssigned !== currentAssigned) throw new Error("The destination category changed while the popup was open.");
+  return { fromCategoryId: sourceId === READY_TO_ASSIGN_SOURCE ? "" : sourceId, toCategoryId: sourceId === READY_TO_ASSIGN_SOURCE ? null : destinationId, amount: parsedAmount.toString(), expectedAssigned };
+}
 
 export function defaultPlanMoveAmount(available: string): string {
   return BigInt(available) > 0n ? available : "";

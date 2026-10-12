@@ -1,14 +1,14 @@
 import { CategoryNameEditor } from "./CategoryNameEditor";
 import { AmountInput } from "./AmountInput";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { getSavedMutationVersion, hasSavedMutationPending, loadPlanMonth, movePlanMoney, renameCategory, setCategoryNotes, setCategoryTarget, setCategoryTargetSnoozed, setPlanAssignment, type CreditPaymentCategory, type PlanCategory, type PlanSnapshot, type RecurrenceMonths } from "../lib/desktop";
+import { assignReadyToAssign, getSavedMutationVersion, hasSavedMutationPending, loadPlanMonth, movePlanMoney, renameCategory, setCategoryNotes, setCategoryTarget, setCategoryTargetSnoozed, setPlanAssignment, type CreditPaymentCategory, type PlanCategory, type PlanSnapshot, type RecurrenceMonths } from "../lib/desktop";
 import { formatHuf, localCalendarMonth, parseSignedHufInput, shiftCalendarMonth } from "../lib/format";
 import { CreditPaymentDetails } from "./CreditPaymentDetails";
 import { creditPaymentStatus } from "./credit-payment";
 import { recurrenceLabel } from "../lib/recurrence";
 import { createRequestSequence } from "../lib/request-sequence";
 import { editCategoryNote, finishCategoryNoteSave, markCategoryNoteSaving, reconcileCategoryNoteDrafts, type CategoryNoteDrafts } from "./category-notes";
-import { canSubmitPlanMove, createPlanMovePayload, defaultPlanMoveAmount, isPlanMoveRequestCurrent, ownedPlanMoveVersion, planMoveDestinations, READY_TO_ASSIGN_DESTINATION, shouldDismissPlanMove } from "./plan-move";
+import { isPlanCoverAmountValid, canSubmitPlanMove, createPlanCoverPayload, createPlanMovePayload, defaultPlanMoveAmount, isPlanMoveRequestCurrent, isReadyToAssignPlanCategory, ownedPlanMoveVersion, planCoverShortfall, planMoveDestinations, READY_TO_ASSIGN_DESTINATION, READY_TO_ASSIGN_SOURCE, shouldDismissPlanMove } from "./plan-move";
 import { PlanMonthArrow, PlanMonthPicker } from "./PlanMonthPicker";
 import { ReadyToAssign } from "./ReadyToAssign";
 import { categoryTargetPresentation, shouldShowTargetAvailableCheck } from "./plan-category-presentation";
@@ -28,13 +28,14 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
   const error = actionError ?? loadError;
   const planCurrent = !!plan && plan.month === month && planEpoch === readEpoch && !mutationPending;
   function canWritePlan() { return planCurrent && plan?.month === currentMonth.current && planEpoch === getSavedMutationVersion() && !hasSavedMutationPending(); }
-  const [moveSource, setMoveSource] = useState<{ id: string; name: string; available: string; categories: PlanSnapshot["categories"]; readyToAssign: string } | null>(null);
+  const [moveSource, setMoveSource] = useState<{ mode: "move" | "cover"; id: string; name: string; available: string; categories: PlanSnapshot["categories"]; readyToAssign: string; gap?: string; expectedAssigned?: string } | null>(null);
   const [toCategory, setToCategory] = useState(""); const [moveAmount, setMoveAmount] = useState(""); const [moveBusy, setMoveBusy] = useState(false); const moveBusyRef = useRef(false);
+  const [coverSource, setCoverSource] = useState("");
   const [moveError, setMoveError] = useState<string | null>(null);
   const moveGeneration = useRef(0);
   const ownedMoveVersion = useRef<number | null>(null);
   const focusedMoveGeneration = useRef(-1);
-  const popupRef = useRef<HTMLFormElement>(null); const amountRef = useRef<HTMLInputElement>(null); const sourceButtonRef = useRef<HTMLButtonElement | null>(null);
+  const popupRef = useRef<HTMLFormElement>(null); const amountRef = useRef<HTMLInputElement>(null); const coverSelectRef = useRef<HTMLSelectElement>(null); const sourceButtonRef = useRef<HTMLButtonElement | null>(null);
   const restoreFocusCategory = useRef<string | null>(null);
   const [popupPosition, setPopupPosition] = useState<{ left: number; top: number; above: boolean }>({ left: 0, top: 0, above: false });
   const [targetBehavior, setTargetBehavior] = useState<"set_aside" | "refill">("refill"); const [targetAmount, setTargetAmount] = useState(""); const [dueKind, setDueKind] = useState<"day" | "last_day">("last_day"); const [dueDay, setDueDay] = useState("1");
@@ -78,7 +79,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     if (moveBusyRef.current && !force) return;
     moveGeneration.current += 1;
     if (restoreFocus && moveSource) restoreFocusCategory.current = moveSource.id;
-    setMoveSource(null); setMoveAmount(""); setToCategory(""); setMoveError(null);
+    setMoveSource(null); setMoveAmount(""); setToCategory(""); setCoverSource(""); setMoveError(null);
     if (!moveBusyRef.current) setMoveBusy(false);
     if (restoreFocus) requestAnimationFrame(restoreMoveFocus);
   }
@@ -143,16 +144,30 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
   async function rename(categoryId: string, name: string): Promise<void> { if (!canWritePlan()) throw new Error("Plan is updating."); await renameCategory(categoryId, name); setActionError(null); try { await onCategoryRenamed?.(); } catch { setActionError("Category renamed, but other views could not refresh. Reopen Allocash to refresh their category lists."); } }
   async function move(event: FormEvent) {
     event.preventDefault();
-    if (!moveSource || !toCategory || moveBusyRef.current || !canWritePlan()) return;
+    if (!moveSource || moveBusyRef.current || !canWritePlan()) return;
     const requestedMonth = month;
     const requestedGeneration = moveGeneration.current;
     const startingVersion = getSavedMutationVersion();
-    let payload: ReturnType<typeof createPlanMovePayload>;
-    try { payload = createPlanMovePayload(moveSource.id, toCategory, parseSignedHufInput(moveAmount).toString()); }
-    catch { setMoveError("Choose a destination and a positive whole HUF amount."); return; }
+    let write: () => Promise<void>;
+    try {
+      if (moveSource.mode === "cover") {
+        if (!coverSource || !moveSource.gap || moveSource.expectedAssigned === undefined) throw new Error();
+        const destination = plan?.categories.find((category) => category.categoryId === moveSource.id);
+        if (!destination) throw new Error();
+        const payload = createPlanCoverPayload(coverSource, moveSource.id, moveSource.gap, moveSource.expectedAssigned, destination.assigned);
+        write = coverSource === READY_TO_ASSIGN_SOURCE
+          ? () => assignReadyToAssign({ categoryId: moveSource.id, month: requestedMonth, amount: payload.amount, expectedAssigned: payload.expectedAssigned })
+          : () => movePlanMoney(payload.fromCategoryId, payload.toCategoryId, requestedMonth, payload.amount);
+      } else {
+        if (!toCategory) throw new Error();
+        const payload = createPlanMovePayload(moveSource.id, toCategory, parseSignedHufInput(moveAmount).toString());
+        write = () => movePlanMoney(payload.fromCategoryId, payload.toCategoryId, requestedMonth, payload.amount);
+      }
+    }
+    catch (error) { setMoveError(moveSource.mode === "cover" ? error instanceof Error && error.message.includes("changed") ? error.message : "Choose a source category to cover this amount." : "Choose a destination and a positive whole HUF amount."); return; }
     moveBusyRef.current = true; setMoveBusy(true);
     try {
-      await movePlanMoney(payload.fromCategoryId, payload.toCategoryId, requestedMonth, payload.amount);
+      await write();
       ownedMoveVersion.current = ownedPlanMoveVersion(startingVersion, getSavedMutationVersion());
       moveBusyRef.current = false; setMoveBusy(false);
       if (isPlanMoveRequestCurrent(requestedMonth, currentMonth.current, requestedGeneration, moveGeneration.current)) { setActionError(null); closeMove(ownedMoveVersion.current !== null); }
@@ -170,8 +185,28 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     const rect = button.getBoundingClientRect(); const width = Math.min(360, window.innerWidth - 24); const height = 184;
     const above = rect.bottom + height > window.innerHeight - 12 && rect.top > height;
     setPopupPosition({ left: Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)), top: above ? rect.top : Math.min(rect.bottom + 6, window.innerHeight - height - 12), above });
-    setActionError(null); setMoveError(null); setMoveSource({ id: category.categoryId, name: category.categoryName, available: category.available, categories: plan.categories, readyToAssign: plan.readyToAssign });
-    setMoveAmount(defaultPlanMoveAmount(category.available)); setToCategory("");
+    setActionError(null); setMoveError(null); setMoveSource({ mode: "move", id: category.categoryId, name: category.categoryName, available: category.available, categories: plan.categories, readyToAssign: plan.readyToAssign });
+    setMoveAmount(defaultPlanMoveAmount(category.available)); setToCategory(""); setCoverSource("");
+  }
+  function openCover(category: PlanSnapshot["categories"][number], button: HTMLButtonElement, gap: bigint) {
+    if (!canWritePlan() || moveBusyRef.current || !plan || gap <= 0n) return;
+    moveGeneration.current += 1;
+    sourceButtonRef.current = button;
+    const rect = button.getBoundingClientRect(); const width = Math.min(360, window.innerWidth - 24); const height = 160;
+    const above = rect.bottom + height > window.innerHeight - 12 && rect.top > height;
+    setPopupPosition({ left: Math.max(12, Math.min(rect.left, window.innerWidth - width - 12)), top: above ? rect.top : Math.min(rect.bottom + 6, window.innerHeight - height - 12), above });
+    setActionError(null); setMoveError(null); setMoveSource({ mode: "cover", id: category.categoryId, name: category.categoryName, available: category.available, categories: plan.categories, readyToAssign: plan.readyToAssign, gap: gap.toString(), expectedAssigned: category.assigned });
+    setMoveAmount(""); setToCategory(""); setCoverSource("");
+  }
+  function openCategoryMoney(category: PlanSnapshot["categories"][number], button: HTMLButtonElement) {
+    const state = planAvailableClass(category, plan?.creditPaymentCategories ?? []);
+    if (state === "negative" || state === "overspent") { openCover(category, button, planCoverShortfall(category.available)); return; }
+    if (state === "underfunded") {
+      const payment = plan?.creditPaymentCategories.find((mapping) => mapping.categoryId === category.categoryId);
+      openCover(category, button, planCoverShortfall(category.available, payment?.currentBalance, category.target?.toGo));
+      return;
+    }
+    openMove(category, button);
   }
   useEffect(() => {
     if (!moveSource) return;
@@ -189,9 +224,9 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); closeMove(); } };
     update();
     document.addEventListener("pointerdown", onPointerDown); document.addEventListener("keydown", onKeyDown); window.addEventListener("resize", update); window.addEventListener("scroll", update, true);
-    if (focusedMoveGeneration.current !== moveGeneration.current) { focusedMoveGeneration.current = moveGeneration.current; amountRef.current?.focus(); amountRef.current?.select(); }
+    if (focusedMoveGeneration.current !== moveGeneration.current) { focusedMoveGeneration.current = moveGeneration.current; if (moveSource.mode === "cover") coverSelectRef.current?.focus(); else { amountRef.current?.focus(); amountRef.current?.select(); } }
     return () => { document.removeEventListener("pointerdown", onPointerDown); document.removeEventListener("keydown", onKeyDown); window.removeEventListener("resize", update); window.removeEventListener("scroll", update, true); };
-  }, [moveSource, moveError, plan]);
+  }, [moveSource, moveError, coverSource, plan]);
   useEffect(() => { if (mutationPending && !moveBusy) closeMove(false); }, [mutationPending, moveBusy]);
   async function saveTarget(event: FormEvent) {
     event.preventDefault(); if (!canWritePlan()) return; const categoryId = selectedCategoryId; const targetMonth = month;
@@ -285,6 +320,9 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
           const isCreditPayment = plan.creditPaymentCategories.some((mapping) => mapping.categoryId === category.categoryId);
           const targetPresentation = target ? categoryTargetPresentation(target, category.activity, category.available, month) : null;
           const targetCheck = shouldShowTargetAvailableCheck(target, category.available, isCreditPayment);
+          const availableState = planAvailableClass(category, plan.creditPaymentCategories);
+          const payment = plan.creditPaymentCategories.find((mapping) => mapping.categoryId === category.categoryId);
+          const coverGap = availableState === "negative" || availableState === "overspent" ? planCoverShortfall(category.available) : availableState === "underfunded" ? planCoverShortfall(category.available, payment?.currentBalance, target?.toGo) : 0n;
           const denominator = target ? BigInt(target.neededThisMonth) : 0n;
           const percent = target && denominator > 0n ? Math.max(0, Math.min(100, Number(BigInt(target.funded) * 10000n / denominator) / 100)) : null;
           return <div className={"plan-row" + (selectedCategoryId === category.categoryId ? " selected" : "")} key={category.categoryId} onClick={() => selectCategory(category.categoryId)} onFocusCapture={() => selectCategory(category.categoryId)}>
@@ -294,7 +332,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
             </button>
             <PlanAssignmentInput month={month} category={category} readOnly={!planCurrent} onSave={save} />
             <span>{formatHuf(BigInt(category.activity))}</span>
-            <button type="button" data-category-id={category.categoryId} className={"plan-available " + planAvailableClass(category, plan.creditPaymentCategories) + (targetCheck ? " target-funded" + (BigInt(category.available) === 0n ? " fully-spent" : "") : "")} title={planPaymentDescription(category, plan.creditPaymentCategories)} aria-label={category.categoryName + " available " + formatHuf(BigInt(category.available)) + (planPaymentDescription(category, plan.creditPaymentCategories) ? "; " + planPaymentDescription(category, plan.creditPaymentCategories) : "") + "; move money"} disabled={!planCurrent || moveBusy} onClick={(event) => openMove(category, event.currentTarget)}>
+            <button type="button" data-category-id={category.categoryId} className={"plan-available " + availableState + (targetCheck ? " target-funded" + (BigInt(category.available) === 0n ? " fully-spent" : "") : "")} title={coverGap > 0n ? "Cover " + formatHuf(coverGap) + " for " + category.categoryName : planPaymentDescription(category, plan.creditPaymentCategories)} aria-label={category.categoryName + " available " + formatHuf(BigInt(category.available)) + (coverGap > 0n ? "; cover " + formatHuf(coverGap) : planPaymentDescription(category, plan.creditPaymentCategories) ? "; " + planPaymentDescription(category, plan.creditPaymentCategories) : "") + (coverGap > 0n ? "; cover money into this category" : "; move money from this category")} disabled={!planCurrent || moveBusy} onClick={(event) => openCategoryMoney(category, event.currentTarget)}>
               {targetCheck && <FundedCheckIcon />}<span>{formatHuf(BigInt(category.available))}</span>
             </button>
           </div>;
@@ -304,12 +342,21 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
       {detailsPanel}
       </div>
     </>}
-      {moveSource && <form ref={popupRef} className="plan-move-popup" style={{ left: popupPosition.left, top: popupPosition.top, transform: popupPosition.above ? "translateY(-100%)" : undefined }} onSubmit={move} aria-label={`Move money out of ${moveSource.name}`}>
-        <strong>Move from {moveSource.name}</strong>
-        <label>Amount<AmountInput ref={amountRef} aria-label="Move amount" disabled={moveBusy} value={moveAmount} onChange={(event) => setMoveAmount(event.target.value)} placeholder="HUF" inputMode="numeric" /></label>
-        <label>To<select aria-label="Move money to" disabled={moveBusy} value={toCategory} onChange={(event) => setToCategory(event.target.value)}><option value="">Choose destination</option><option value={READY_TO_ASSIGN_DESTINATION}>Ready to Assign — {formatHuf(BigInt(moveSource.readyToAssign))}</option>{Array.from(new Set(moveSource.categories.map((category) => category.groupName))).map((group) => <optgroup key={group} label={group}>{planMoveDestinations(moveSource.categories.filter((category) => category.groupName === group), moveSource.id).map((category) => <option key={category.categoryId} value={category.categoryId}>{category.categoryName} — {formatHuf(BigInt(category.available))}</option>)}</optgroup>)}</select></label>
-        {moveError && <p className="editor-error" role="alert">{moveError}</p>}
-        <div><button type="button" disabled={moveBusy} onClick={() => closeMove()}>Cancel</button><button type="submit" disabled={!canSubmitPlanMove(moveSource.id, toCategory, moveAmount) || moveBusy || mutationPending}>{moveBusy ? "Saving…" : "Move"}</button></div>
+      {moveSource && <form ref={popupRef} className={moveSource.mode === "cover" ? "plan-move-popup plan-cover-popup" : "plan-move-popup"} style={{ left: popupPosition.left, top: popupPosition.top, transform: popupPosition.above ? "translateY(-100%)" : undefined }} onSubmit={move} aria-label={moveSource.mode === "cover" ? `Cover money into ${moveSource.name}` : `Move money out of ${moveSource.name}`}>
+        {moveSource.mode === "cover" ? <>
+          <strong>Cover overspending from</strong>
+          <label>Source<select ref={coverSelectRef} aria-label="Cover overspending from" disabled={moveBusy} value={coverSource} onChange={(event) => setCoverSource(event.target.value)}><option value="">Choose source</option><option value={READY_TO_ASSIGN_SOURCE}>Ready to Assign — {formatHuf(BigInt(moveSource.readyToAssign))}</option>{Array.from(new Set(moveSource.categories.filter((category) => !isReadyToAssignPlanCategory(category)).map((category) => category.groupName))).map((group) => <optgroup key={group} label={group}>{planMoveDestinations(moveSource.categories.filter((category) => category.groupName === group && !isReadyToAssignPlanCategory(category)), moveSource.id).map((category) => <option key={category.categoryId} value={category.categoryId}>{category.categoryName} — {formatHuf(BigInt(category.available))}</option>)}</optgroup>)}</select></label>
+          <p className="plan-cover-gap">Cover {formatHuf(BigInt(moveSource.gap ?? "0"))} for {moveSource.name}</p>
+          {!isPlanCoverAmountValid(moveSource.gap ?? "") && <p className="editor-error" role="alert">This amount is too large for one cover action. Adjust Assigned in smaller amounts.</p>}
+          {moveError && <p className="editor-error" role="alert">{moveError}</p>}
+          <div><button type="button" disabled={moveBusy} onClick={() => closeMove()}>Cancel</button><button type="submit" disabled={!coverSource || !isPlanCoverAmountValid(moveSource.gap ?? "") || !planCurrent || moveBusy || mutationPending}>{moveBusy ? "Saving…" : "OK"}</button></div>
+        </> : <>
+          <strong>Move from {moveSource.name}</strong>
+          <label>Amount<AmountInput ref={amountRef} aria-label="Move amount" disabled={moveBusy} value={moveAmount} onChange={(event) => setMoveAmount(event.target.value)} placeholder="HUF" inputMode="numeric" /></label>
+          <label>To<select aria-label="Move money to" disabled={moveBusy} value={toCategory} onChange={(event) => setToCategory(event.target.value)}><option value="">Choose destination</option><option value={READY_TO_ASSIGN_DESTINATION}>Ready to Assign — {formatHuf(BigInt(moveSource.readyToAssign))}</option>{Array.from(new Set(moveSource.categories.map((category) => category.groupName))).map((group) => <optgroup key={group} label={group}>{planMoveDestinations(moveSource.categories.filter((category) => category.groupName === group), moveSource.id).map((category) => <option key={category.categoryId} value={category.categoryId}>{category.categoryName} — {formatHuf(BigInt(category.available))}</option>)}</optgroup>)}</select></label>
+          {moveError && <p className="editor-error" role="alert">{moveError}</p>}
+          <div><button type="button" disabled={moveBusy} onClick={() => closeMove()}>Cancel</button><button type="submit" disabled={!canSubmitPlanMove(moveSource.id, toCategory, moveAmount) || moveBusy || mutationPending}>{moveBusy ? "Saving…" : "Move"}</button></div>
+        </>}
       </form>}
   </section>;
 }

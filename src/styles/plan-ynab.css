@@ -97,6 +97,14 @@
 .plan-view .plan-credit summary { color: #b8b3ff; }
 .plan-move-popup { background: #202037; border-color: #817aff; color: #fff; }
 .plan-move-popup input,.plan-move-popup select { background: #414157; color: #fff; border-color: #77768e; }
+.plan-cover-popup { display: grid; gap: 9px; width: min(340px, calc(100vw - 24px)); }
+.plan-cover-popup label { display: grid; gap: 5px; color: #c8c6d8; }
+.plan-cover-popup select { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px; border: 1px solid #77768e; border-radius: 5px; }
+.plan-cover-popup .plan-cover-gap { margin: 0; color: #dddbea; font-size: 12px; }
+.plan-cover-popup > div { display: flex; justify-content: flex-end; gap: 8px; }
+.plan-cover-popup button { padding: 6px 12px; border: 1px solid #55546c; border-radius: 5px; color: #eee; background: #2a2942; cursor: pointer; }
+.plan-cover-popup button[type="submit"] { border-color: #6964ff; color: #fff; background: #5954ff; font-weight: 700; }
+.plan-cover-popup button:disabled { opacity: .55; cursor: default; }
 .plan-view .plan-row .plan-available.negative,.plan-view .plan-row .plan-available.overspent { background: #ce1835; color: white; }
 .plan-view .plan-target-meter small { top: -18px; font-size: 12px; line-height: 14px; background: transparent; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plan-view .plan-category-name:has(.plan-target-meter) .plan-category-label { padding-right: 60%; }
