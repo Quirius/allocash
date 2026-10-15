@@ -189,13 +189,21 @@ current-month spending and refunds do not alter progress. The initial target
 slice supports monthly, quarterly and yearly targets with a day-of-month or
 last-day due marker; targets never auto-assign money.
 
-Quarterly/yearly definitions store an explicit first due month. The first cycle
-starts at the revision's effective month and ends in that due month; later cycles
+Quarterly/yearly definitions store an explicit first due month. A refill cycle
+starts at the earlier of the revision month or the full three/twelve-month
+interval ending in the first due month. This includes earlier funding and
+spending for a late-created target, while allowing a longer first cycle for a
+distant deadline.
+The target revision still becomes visible only from its effective month. The
+first set-aside cycle starts at the revision's effective month. Later cycles
 repeat every three or twelve months. `Set aside another` requires new assignments
 equal to the full amount each cycle. `Refill up to` subtracts the cycle's positive
 opening Available balance from that total. Previous net assignments within the
 cycle reduce the remaining funding; spending during the cycle does not create
-another funding requirement. Needed This Month is the remaining amount divided
+another funding requirement. Net period spending is derived from cutoff-filtered
+Plan activity and is used for periodic refill presentation, not counted again
+as funding. A completed annual or quarterly spending goal stays Fully Spent
+with zero Available even when the selected month has no activity. Needed This Month is the remaining amount divided
 by inclusive months through the due month, rounded up to whole HUF. Current-month
 positive Assigned supplies Funded, capped at Needed. For periodic targets, To Go
 subtracts signed current-month Assigned from Needed, clamped at zero, so removing

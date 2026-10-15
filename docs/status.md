@@ -1,5 +1,24 @@
 # Implementation and validation status
 
+On 2026-10-15, yearly and quarterly refill targets now include the full
+active interval when added partway through it. Earlier assignments and opening
+Available satisfy the funding goal; period spending is not double-counted as
+funding. Net cutoff-filtered period activity is exposed separately for status,
+so a fully funded and spent yearly category shows Fully Spent with zero Assigned
+and no current-month activity. A fully available completed pool shows Funded,
+while partial monthly progress can remain On Track. Refunds reduce net spending
+and the next cycle resets its spending progress. Monthly and set-aside target
+semantics remain unchanged. Historical derivations are shared within each Plan
+read, keeping results current without repeating work for every yearly target.
+The 307-test frontend suite plus 19 focused follow-up checks, all 219 Rust tests,
+TypeScript, formatting, independent review
+and synthetic browser checks passed. Browser fixtures show quiet-month Charity
+as Fully Spent and a complete unspent Gifts pool as Funded, with existing Plan,
+account and editing checks retained. Production/native builds passed. Installation
+preserved budget bytes, the installed executable matches the release build and
+Allocash reopened a responsive window. This changes target guidance only; ledger money and schema
+are unchanged. Owner yearly target and cycle rollover confirmation remain open.
+
 On 2026-10-12, the category actions popup is now limited to clicking the
 name text. Funding descriptions, progress bars and surrounding cell space are
 separate from that button and retain row selection/Assigned focus. Right-clicking

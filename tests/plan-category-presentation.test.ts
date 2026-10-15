@@ -60,3 +60,24 @@ describe("plan category target presentation", () => {
     expect(shouldShowTargetAvailableCheck(null, "1", false)).toBe(false);
   });
 });
+
+describe("periodic refill completion", () => {
+  const yearly = target({ intervalMonths: 12, firstDueMonth: "2026-12", dueMonth: "2026-12", neededThisMonth: "0", funded: "0", toGo: "0", periodSpent: "30000" });
+  it("shows fully spent after earlier period spending even with zero monthly activity", () => {
+    const result = categoryTargetPresentation(yearly, "0", "0", month);
+    expect(result.status).toBe("Fully Spent");
+    expect(result.fullySpent).toBe(true);
+    expect(result.detail).toBe("");
+    expect(shouldShowTargetAvailableCheck(yearly, "0", false)).toBe(true);
+  });
+  it("distinguishes a completed annual pool from only meeting this month's pace", () => {
+    expect(categoryTargetPresentation({ ...yearly, periodSpent: "0" }, "0", "30000", month).status).toBe("Funded");
+    expect(categoryTargetPresentation({ ...yearly, periodSpent: "10000" }, "0", "0", month).status).toBe("On Track");
+    expect(categoryTargetPresentation({ ...yearly, toGo: "1" }, "0", "0", month).status).toBe("Underfunded");
+    expect(categoryTargetPresentation({ ...yearly, snoozed: true }, "0", "0", month).status).toBe("Snoozed");
+  });
+  it("keeps refunds and remaining money from appearing fully spent", () => {
+    expect(categoryTargetPresentation({ ...yearly, periodSpent: "20000" }, "10000", "10000", month).status).toBe("Funded");
+    expect(categoryTargetPresentation(yearly, "0", "1000", month).status).toBe("Funded");
+  });
+});

@@ -327,3 +327,12 @@ Known categories include:
 - Overflow
 
 Imported ordering is authoritative.
+
+For periodic refill targets, adding the target partway through its period includes
+funding and spending from the full interval ending at the due month. A yearly
+refill already spent in that interval needs no replacement funding and shows Fully
+Spent in later quiet months, with zero Available. Fully available completed goals
+show Funded; meeting only the current monthly pace can still show On Track.
+Refunds offset period spending, and a new cycle starts fresh. Spending is not
+added to assignments when calculating funding, so partial funding is not counted
+twice. Monthly and set-aside contribution semantics remain unchanged.

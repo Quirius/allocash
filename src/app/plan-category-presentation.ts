@@ -13,10 +13,14 @@ export function categoryTargetPresentation(target: CategoryTargetProgress, activ
   const monthlyActivity = BigInt(activity);
   const monthlySpend = monthlyActivity < 0n ? -monthlyActivity : 0n;
   const fullyFunded = !target.snoozed && toGo <= 0n;
-  const fullySpent = fullyFunded && BigInt(available) === 0n && monthlySpend > 0n;
-  const onTrack = fullyFunded && !!target.dueMonth && target.dueMonth > month;
-  const status = target.snoozed ? "Snoozed" : fullySpent ? "Fully Spent" : onTrack ? "On Track" : fullyFunded ? "Funded" : "Underfunded";
+  const periodicRefill = target.behavior === "refill" && (target.intervalMonths ?? 1) > 1 && target.periodSpent != null;
+  const spend = periodicRefill ? BigInt(target.periodSpent!) : monthlySpend;
   const referenceAmount = BigInt(target.amount);
+  const positiveAvailable = BigInt(available) > 0n ? BigInt(available) : 0n;
+  const periodComplete = periodicRefill && spend + positiveAvailable >= referenceAmount;
+  const fullySpent = fullyFunded && BigInt(available) === 0n && (periodicRefill ? spend >= referenceAmount : spend > 0n);
+  const onTrack = fullyFunded && !periodComplete && !!target.dueMonth && target.dueMonth > month;
+  const status = target.snoozed ? "Snoozed" : fullySpent ? "Fully Spent" : onTrack ? "On Track" : fullyFunded ? "Funded" : "Underfunded";
   const detail = target.snoozed || (fullyFunded && monthlySpend === 0n) ? ""
     : monthlySpend > 0n
     ? "Spent " + formatHuf(monthlySpend) + " of " + formatHuf(referenceAmount)
