@@ -184,13 +184,16 @@ plans:
     priority: "high"
     due_date: "2026-10-08"
     completed_at: null
-    details: "Owner-confirmed core entry/edit/delete, transfers, Plan moves, clearing/reconciliation, register responsiveness, upcoming display/deletion, session undo and current balances/Ready to Assign are recorded in docs/status.md. Expanded Plan, category, account, All Accounts, credit-payment and date/repeat workflows are implemented, tested and installed, but owner acceptance remains open. Verify category name/right-click actions, hide/unhide/history merge and undo; All Accounts search/editing; Plan assignment, cover/move and month navigation; account and transfer actions; credit breakdowns; and upcoming repeat Save/Cancel/undo. Finish required target/recurrence recreation, remaining view comparisons and native backup/reopen checks in the clean migration rehearsal. Detailed dated implementation, test, installation and owner evidence remains in docs/status.md and the evidence refs below. Keep this gate planned until the remaining migration-critical owner checks pass."
+    details: "Owner-confirmed core entry/edit/delete, transfers, Plan moves, clearing/reconciliation, register responsiveness, upcoming display/deletion, session undo and current balances/Ready to Assign are recorded in docs/status.md. Expanded Plan, category, account, All Accounts, credit-payment and date/repeat workflows are implemented, tested and installed, but owner acceptance remains open. Verify category name/right-click actions, hide/unhide/history merge and undo; All Accounts search/editing; Plan assignment, cover/move and month navigation; account and transfer actions; credit breakdowns; and upcoming repeat Save/Cancel/undo. Finish required target/recurrence recreation, remaining view comparisons and native backup/reopen checks in the clean migration rehearsal. Detailed dated implementation, test, installation and owner evidence remains in docs/status.md and the evidence refs below. Keep this gate planned until the remaining migration-critical owner checks pass. Yearly refill target progress now includes the full active target interval, including funding and spending before late target creation. Yearly refill completion and quiet-month Fully Spent are installed; owner confirmation remains open."
     acceptance_criteria:
       - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
       - "Non-essential feature expansion is deferred until after migration."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "e2f56544b7ed8cb48c72eb8041d0ba0e8327b98b"
+        note: "Records full-period refill target progress, quiet-month Fully Spent, validation and installation."
       - path: "docs/status.md"
         ref: "00a80286cebcca7b86d75316ffaf6d4d3f765423"
         note: "Records category-name click target, category-row right-click, validation and installation."
