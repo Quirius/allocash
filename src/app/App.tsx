@@ -40,6 +40,8 @@ import { isUndoShortcutEligible } from "../lib/undo";
 import { createRequestSequence } from "../lib/request-sequence";
 import { DEFAULT_REGISTER_VIEW_OPTIONS, filterRegisterEntries, getRegisterRunningBalances, type RegisterViewOptions } from "./register-view";
 import { RegisterViewOptionsPopup } from "./RegisterViewOptions";
+import { RegisterSearch } from "./RegisterSearch";
+import { buildRegisterSearchSuggestions, matchesRegisterSearchFilter, type SearchFilter } from "./register-search";
 
 const CreditPaymentSettings = lazy(() => import("./CreditPaymentSettings").then((module) => ({ default: module.CreditPaymentSettings })));
 
@@ -101,18 +103,6 @@ function aggregateAccounts(accounts: AccountOverview[]): AccountOverview {
 function entryOwner(entry: RegisterEntry | AllAccountsRegisterEntry, accounts: AccountOverview[], fallback: AccountOverview, allAccounts = false): AccountOverview | null {
   if ("accountId" in entry) return accounts.find((account) => account.id === entry.accountId) ?? null;
   return allAccounts ? null : fallback;
-}
-
-function matchesRegisterSearch(entry: RegisterEntry | AllAccountsRegisterEntry, account: AccountOverview | null, query: string): boolean {
-  const amount = BigInt(entry.amount);
-  const searchable = [
-    "accountName" in entry ? entry.accountName : account?.name ?? "",
-    entry.date, formatDate(entry.date), entry.payeeName ?? "", entry.transferAccountName ?? "",
-    entry.categoryGroupName ?? "", entry.categoryName ?? "", entry.memo, entry.flagName ?? "", entry.flagColor ?? "",
-    amount.toString(), formatHuf(amount), amount < 0n ? (-amount).toString() : "", amount < 0n ? formatHuf(-amount) : "",
-  ].join(" ").toLowerCase();
-  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  return terms.every((term) => searchable.includes(term));
 }
 
 function registerEntryFingerprint(entry: RegisterEntry | AllAccountsRegisterEntry): string {
@@ -659,6 +649,7 @@ export function AccountRegister({
   const editKey = useRef(0);
   const [newEntryAccountId, setNewEntryAccountId] = useState(allAccounts ? "" : account.id);
   const [registerSearch, setRegisterSearch] = useState("");
+  const [registerSearchFilter, setRegisterSearchFilter] = useState<SearchFilter>({ kind: "any", query: "" });
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
   const scopeKey = allAccounts ? "allocash-register-view-all" : `allocash-register-view-${account.id}`;
   const [viewOptions, setViewOptions] = useState<RegisterViewOptions>(() => {
@@ -687,8 +678,18 @@ export function AccountRegister({
     && editingBaselineFingerprint !== registerEntryFingerprint(freshEditingEntry);
   const filteredEntries = useMemo(() => register.status !== "ready" ? [] : filterRegisterEntries(register.entries, viewOptions, today).filter((entry) => {
     if (!registerSearch.trim()) return true;
-    return matchesRegisterSearch(entry, entryOwner(entry, accounts, account, allAccounts), registerSearch);
-  }), [register, allAccounts, registerSearch, accounts, account, viewOptions, today]);
+    return matchesRegisterSearchFilter(entry, entryOwner(entry, accounts, account, allAccounts), registerSearchFilter);
+  }), [register, allAccounts, registerSearch, registerSearchFilter, accounts, account, viewOptions, today]);
+  const searchSuggestions = useMemo(() => buildRegisterSearchSuggestions(registerSearch, accounts, options, register.status === "ready" ? register.entries : [], allAccounts), [registerSearch, accounts, options, register, allAccounts]);
+  function changeRegisterSearch(value: string) {
+    setRegisterSearch(value); setRegisterSearchFilter({ kind: "any", query: value });
+    setRegisterPage(0); setUpcomingPage(0);
+  }
+  function selectRegisterSearch(filter: SearchFilter) {
+    setRegisterSearchFilter(filter);
+    setRegisterSearch("query" in filter ? filter.query : filter.label);
+    setRegisterPage(0); setUpcomingPage(0);
+  }
   const runningBalances = useMemo(() => !allAccounts && viewOptions.showRunningBalance && register.status === "ready" ? getRegisterRunningBalances(register.entries, today) : new Map<string, string | null>(), [register, today, allAccounts, viewOptions.showRunningBalance]);
   const tableColumnCount = (allAccounts ? 9 : 8) - (viewOptions.showFlags ? 0 : 1) + (viewOptions.showRunningBalance && !allAccounts ? 1 : 0);
   const partitionedEntries = useMemo(
@@ -831,7 +832,7 @@ export function AccountRegister({
           <strong>{allAccounts ? "All accounts" : "All transactions"}</strong>
           <span>{register.status === "ready" ? `${entryCount} entries` : "Local history"}</span>
         </div>
-        <label className={`all-register-search register-search${allAccounts ? "" : " account-register-search"}`}>{allAccounts ? "Search all accounts" : "Search"}<input type="search" disabled={editor !== null} value={registerSearch} onChange={(event) => { setRegisterSearch(event.target.value); setRegisterPage(0); setUpcomingPage(0); }} placeholder={allAccounts ? "Search All Accounts" : `Search ${account.name}`} /></label>
+        <RegisterSearch value={registerSearch} filter={registerSearchFilter} onChange={changeRegisterSearch} onSelect={selectRegisterSearch} suggestions={searchSuggestions} disabled={editor !== null} placeholder={allAccounts ? "Search All Accounts" : `Search ${account.name}`} />
         <div className="register-view-anchor"><button type="button" className="register-view-button" disabled={editor !== null} aria-expanded={viewOptionsOpen} onClick={() => setViewOptionsOpen((open) => !open)}>View</button>{viewOptionsOpen && <RegisterViewOptionsPopup value={viewOptions} allAccounts={allAccounts} earliestMonth={earliestOptionMonth} latestMonth={latestOptionMonth} onClose={() => setViewOptionsOpen(false)} onResetWidths={() => setColumnWidths({ ...defaultWidths })} onApply={(next) => { setViewOptions(next); setRegisterPage(0); setUpcomingPage(0); setViewOptionsOpen(false); }}/>}</div>
         {!allAccounts && <button
           disabled={account.closed}

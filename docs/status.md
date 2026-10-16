@@ -1,5 +1,24 @@
 # Implementation and validation status
 
+On 2026-10-16, register search gained a scrollable, keyboard-accessible
+suggestion menu that responds to typed text. All Accounts suggests matching
+accounts; both register scopes suggest current and historical categories,
+category group names and coloured flags. Account/category/flag selections filter
+stable identities; category groups match their displayed group name. Duplicate
+category names include group context. Find actions restrict text matching to
+Payee, Category or Memo, or retain any-field search. Search still filters full
+loaded history before pagination and combines with View date/reconciled options.
+The selected field is visible, typing resets to any-field search, and Enter keeps
+a chosen scope. Clear, Escape, outside dismissal, mouse/keyboard selection and
+touch interactions are supported. Search remains disabled during inline editing.
+All 335 frontend tests, TypeScript, independent review and synthetic browser
+checks passed, including exact account and category selection, Memo isolation,
+Enter retention, long-list scrolling and wide/narrow popup bounds. Rust accounting,
+IPC and schema are unchanged. Production/native installer builds passed; installation
+preserved budget bytes, matched the release executable and reopened a responsive
+window. Generated build files were cleaned after preserving the latest installer.
+Owner search and visual confirmation remains open.
+
 On 2026-10-16, All Accounts and individual account registers gained search
 across the complete loaded history before pagination, plus a View Options popup.
 The popup offers calendar presets, inclusive From/To month and year controls,

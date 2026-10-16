@@ -519,3 +519,12 @@ header cleared/uncleared/working balances remain unfiltered.
 Columns can be resized; Reset Column Widths restores their defaults. View options
 and widths are presentation preferences, with no ledger writes or undo entries.
 Search and applying view changes pause during inline editing to preserve drafts.
+
+Typing in register search opens a scrollable suggestion menu of matching account
+names (All Accounts), categories and flags, including historical identities.
+Selecting an identity filters that exact account/category/flag rather than text
+in unrelated fields. Category groups may also be searched. Find actions search
+the typed text in any field, Payee, Category or Memo; changing text returns to
+any-field search. Matching is case-insensitive and requires all typed words.
+The active search scope is visible. Arrow keys, Enter, Escape, mouse selection,
+outside dismissal and Clear are supported without changing ledger data.

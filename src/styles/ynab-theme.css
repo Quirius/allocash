@@ -180,3 +180,26 @@ button:hover:not(:disabled) { filter: brightness(1.16); }
  .register-view-presets { flex-wrap: wrap; justify-content: flex-start; }
  .register-date-range { gap: 10px; flex-wrap: wrap; }
 }
+
+/* Field-aware register search and matching identity suggestions. */
+.register-toolbar > .register-search { position: relative; display: block; flex: 0 1 330px; width: min(330px, 32vw); min-width: 190px; margin: 0; z-index: 30; }
+.register-search input { box-sizing: border-box; width: 100%; padding: 5px 30px 5px 28px; background: #0b0b20; font-size: 13px; }
+.register-search input:focus { border-color: #9995ff; outline: 1px solid #7770ff; }
+.register-search input::-webkit-search-cancel-button { display: none; }
+.register-search-icon { position: absolute; top: 8px; left: 8px; width: 15px; height: 15px; color: #9c9ec1; pointer-events: none; }
+.register-search .register-search-clear { position: absolute; top: 3px; right: 4px; width: 24px; height: 24px; padding: 0; color: #a9accb; font-size: 18px; border-radius: 50%; }
+.register-search .register-search-filter { position: absolute; bottom: calc(100% + 2px); right: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #bab7ff; font-size: 10px; }
+.register-search-suggestions { position: absolute; top: calc(100% + 4px); right: 0; width: 420px; max-width: calc(100vw - 28px); max-height: min(560px, calc(100vh - 240px)); overflow-y: auto; overscroll-behavior: contain; padding: 12px 6px; box-sizing: border-box; border-radius: 4px; background: #202037; box-shadow: 0 10px 24px #0006; scrollbar-width: thin; scrollbar-color: #43435c #202037; }
+.register-search-suggestion { display: grid; grid-template-columns: 90px minmax(0, 1fr); align-items: center; column-gap: 14px; position: relative; min-height: 33px; padding: 5px 16px 5px 6px; border-radius: 3px; cursor: pointer; }
+.register-search-suggestion:hover, .register-search-suggestion.active { background: #34345f; }
+.register-search .register-search-suggestion-field { grid-column: 1; text-align: right; color: #bcbcca; font-size: 12px; }
+.register-search .register-search-suggestion-label { grid-column: 2; color: #fff; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.register-search .register-search-suggestion-color { position: absolute; left: 104px; width: 15px; height: 10px; clip-path: polygon(0 0,100% 0,75% 50%,100% 100%,0 100%); }
+.register-search-suggestion:has(.register-search-suggestion-color) .register-search-suggestion-label { padding-left: 23px; }
+@media (max-width: 740px) {
+ .register-search-suggestions { position: fixed; top: 160px; left: 14px; right: auto; max-height: calc(100vh - 174px); width: 440px; }
+ .register-search-suggestion { grid-template-columns: 70px minmax(0, 1fr); }
+ .register-search .register-search-suggestion-color { left: 84px; }
+}
+
+.register .register-toolbar > .register-search { margin-left: 0; margin-right: 0; }
