@@ -2,7 +2,7 @@ import { AccountEditor } from "./AccountEditor";
 import { AddAccountDialog } from "./AddAccountDialog";
 import { TransactionContextMenu } from "./TransactionContextMenu";
 import { TransactionStatusIcon } from "./TransactionStatusIcon";
-import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import {
   createNativeBackup,
   deleteRegisterEntry,
@@ -38,6 +38,8 @@ import { PlanView } from "./PlanView";
 import { ReportsView } from "./ReportsView";
 import { isUndoShortcutEligible } from "../lib/undo";
 import { createRequestSequence } from "../lib/request-sequence";
+import { DEFAULT_REGISTER_VIEW_OPTIONS, filterRegisterEntries, getRegisterRunningBalances, type RegisterViewOptions } from "./register-view";
+import { RegisterViewOptionsPopup } from "./RegisterViewOptions";
 
 const CreditPaymentSettings = lazy(() => import("./CreditPaymentSettings").then((module) => ({ default: module.CreditPaymentSettings })));
 
@@ -138,6 +140,34 @@ function displayCategory(entry: RegisterEntry, account: AccountOverview): string
 }
 
 function accountKindLabel(kind?: AccountKind): string { return kind === "cash" ? "Cash account" : kind === "credit" ? "Credit account" : kind === "loan" ? "Loan account" : kind === "tracking" ? "Tracking account" : "Accounts"; }
+
+const registerDatePresets = new Set(["ThisMonth", "LastMonth", "Latest3Months", "ThisYear", "LastYear", "AllDates", "Custom"]);
+function readRegisterViewOptions(key: string): RegisterViewOptions {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(key) || "{}");
+    if (!value || typeof value !== "object" || Array.isArray(value)) return DEFAULT_REGISTER_VIEW_OPTIONS;
+    const stored = value as Record<string, unknown>;
+    const month = (candidate: unknown, fallback: string) => typeof candidate === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(candidate) ? candidate : fallback;
+    return {
+      datePreset: typeof stored.datePreset === "string" && registerDatePresets.has(stored.datePreset) ? stored.datePreset as RegisterViewOptions["datePreset"] : DEFAULT_REGISTER_VIEW_OPTIONS.datePreset,
+      customFromMonth: month(stored.customFromMonth, DEFAULT_REGISTER_VIEW_OPTIONS.customFromMonth),
+      customToMonth: month(stored.customToMonth, DEFAULT_REGISTER_VIEW_OPTIONS.customToMonth),
+      showReconciled: typeof stored.showReconciled === "boolean" ? stored.showReconciled : DEFAULT_REGISTER_VIEW_OPTIONS.showReconciled,
+      showFlags: typeof stored.showFlags === "boolean" ? stored.showFlags : DEFAULT_REGISTER_VIEW_OPTIONS.showFlags,
+      showRunningBalance: typeof stored.showRunningBalance === "boolean" ? stored.showRunningBalance : DEFAULT_REGISTER_VIEW_OPTIONS.showRunningBalance,
+    };
+  } catch { return DEFAULT_REGISTER_VIEW_OPTIONS; }
+}
+function readColumnWidths(key: string, defaults: Record<string, number>): Record<string, number> {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(key) || "{}");
+    if (!value || typeof value !== "object" || Array.isArray(value)) return defaults;
+    return Object.fromEntries(Object.entries(defaults).map(([name, fallback]) => {
+      const candidate = (value as Record<string, unknown>)[name];
+      return [name, typeof candidate === "number" && Number.isFinite(candidate) ? Math.max(28, Math.min(640, candidate)) : fallback];
+    }));
+  } catch { return defaults; }
+}
 
 export function App() {
   const [startup, setStartup] = useState<Startup>({ status: "loading" });
@@ -629,6 +659,15 @@ export function AccountRegister({
   const editKey = useRef(0);
   const [newEntryAccountId, setNewEntryAccountId] = useState(allAccounts ? "" : account.id);
   const [registerSearch, setRegisterSearch] = useState("");
+  const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
+  const scopeKey = allAccounts ? "allocash-register-view-all" : `allocash-register-view-${account.id}`;
+  const [viewOptions, setViewOptions] = useState<RegisterViewOptions>(() => {
+    return readRegisterViewOptions(scopeKey);
+  });
+  const defaultWidths = { flag: 40, account: 145, date: 112, payee: 220, category: 240, memo: 220, outflow: 125, inflow: 125, balance: 130, status: 30 };
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    return readColumnWidths(`${scopeKey}-columns`, defaultWidths);
+  });
   const [registerPage, setRegisterPage] = useState(0);
   const [upcomingPage, setUpcomingPage] = useState(0);
   const registerPageSize = 100;
@@ -646,10 +685,12 @@ export function AccountRegister({
   const editorRowMissing = !!editingAllEntry && readCurrent && register.status === "ready" && !freshEditingEntry;
   const editorRowChanged = !!editingAllEntry && readCurrent && !!freshEditingEntry
     && editingBaselineFingerprint !== registerEntryFingerprint(freshEditingEntry);
-  const filteredEntries = useMemo(() => register.status !== "ready" ? [] : register.entries.filter((entry) => {
-    if (!allAccounts || !registerSearch.trim()) return true;
+  const filteredEntries = useMemo(() => register.status !== "ready" ? [] : filterRegisterEntries(register.entries, viewOptions, today).filter((entry) => {
+    if (!registerSearch.trim()) return true;
     return matchesRegisterSearch(entry, entryOwner(entry, accounts, account, allAccounts), registerSearch);
-  }), [register, allAccounts, registerSearch, accounts, account]);
+  }), [register, allAccounts, registerSearch, accounts, account, viewOptions, today]);
+  const runningBalances = useMemo(() => !allAccounts && viewOptions.showRunningBalance && register.status === "ready" ? getRegisterRunningBalances(register.entries, today) : new Map<string, string | null>(), [register, today, allAccounts, viewOptions.showRunningBalance]);
+  const tableColumnCount = (allAccounts ? 9 : 8) - (viewOptions.showFlags ? 0 : 1) + (viewOptions.showRunningBalance && !allAccounts ? 1 : 0);
   const partitionedEntries = useMemo(
     () => register.status === "ready" ? partitionRegisterEntries(filteredEntries, today) : { upcoming: [], history: [] },
     [register.status, filteredEntries, today],
@@ -675,6 +716,27 @@ export function AccountRegister({
     setUpcomingPage(0);
     setEditor(null);
   }, [account.id, allAccounts]);
+
+  useEffect(() => { const saved = readRegisterViewOptions(scopeKey); setViewOptions({ ...saved, showRunningBalance: allAccounts ? false : saved.showRunningBalance }); }, [scopeKey, allAccounts]);
+  useEffect(() => { try { localStorage.setItem(scopeKey, JSON.stringify(viewOptions)); } catch { /* Optional UI preference. */ } }, [scopeKey, viewOptions]);
+  useEffect(() => { setColumnWidths(readColumnWidths(`${scopeKey}-columns`, defaultWidths)); }, [scopeKey]);
+  useEffect(() => { try { localStorage.setItem(`${scopeKey}-columns`, JSON.stringify(columnWidths)); } catch { /* Optional UI preference. */ } }, [scopeKey, columnWidths]);
+  const columnKeys = [...(viewOptions.showFlags ? ["flag"] : []), ...(allAccounts ? ["account"] : []), "date", "payee", "category", "memo", "outflow", "inflow", ...(viewOptions.showRunningBalance && !allAccounts ? ["balance"] : []), "status"];
+  function resizeColumn(key: string, event: ReactPointerEvent<HTMLSpanElement>) {
+    event.preventDefault(); event.stopPropagation();
+    const startX = event.clientX; const initial = columnWidths[key] ?? defaultWidths[key as keyof typeof defaultWidths];
+    const move = (moveEvent: PointerEvent) => setColumnWidths((current) => ({ ...current, [key]: Math.max(28, Math.min(640, initial + moveEvent.clientX - startX)) }));
+    const stop = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", stop); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", stop, { once: true });
+  }
+  function resizeByKeyboard(key: string, event: ReactKeyboardEvent<HTMLSpanElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault(); setColumnWidths((current) => ({ ...current, [key]: Math.max(28, Math.min(640, (current[key] ?? defaultWidths[key as keyof typeof defaultWidths]) + (event.key === "ArrowRight" ? 10 : -10))) }));
+  }
+  const resizeHandle = (key: string) => <span className="register-column-resizer" role="separator" aria-orientation="vertical" aria-label={`Resize ${key} column`} tabIndex={0} onPointerDown={(event) => resizeColumn(key, event)} onKeyDown={(event) => resizeByKeyboard(key, event)} />;
+  const optionMonths = register.status === "ready" ? register.entries.map((entry) => entry.date.slice(0, 7)) : [];
+  const earliestOptionMonth = optionMonths.length ? optionMonths.reduce((min, month) => month < min ? month : min, optionMonths[0]!) : "";
+  const latestOptionMonth = optionMonths.length ? optionMonths.reduce((max, month) => month > max ? month : max, optionMonths[0]!) : "";
 
   useEffect(() => {
     if (editorRowMissing) {
@@ -756,7 +818,7 @@ export function AccountRegister({
   }
 
   return (
-    <section className={`register${allAccounts ? " all-accounts-register" : ""}`} aria-labelledby="register-title">
+    <section className={`register${allAccounts ? " all-accounts-register" : ""}${viewOptions.showFlags ? "" : " hide-register-flags"}${viewOptions.showRunningBalance && !allAccounts ? " show-running-balance" : ""}`} aria-labelledby="register-title">
       <h2 className="sr-only" id="register-title">{account.name} transaction register</h2>
       <div className="balance-strip">
         <div><strong className={BigInt(account.balance.cleared) < 0n ? "negative" : "positive"}>{huf(account.balance.cleared)}</strong><span>Cleared Balance</span></div><span className="balance-operator">+</span>
@@ -769,7 +831,8 @@ export function AccountRegister({
           <strong>{allAccounts ? "All accounts" : "All transactions"}</strong>
           <span>{register.status === "ready" ? `${entryCount} entries` : "Local history"}</span>
         </div>
-        {allAccounts && <label className="all-register-search">Search all accounts<input type="search" disabled={editor !== null} value={registerSearch} onChange={(event) => { setRegisterSearch(event.target.value); setRegisterPage(0); setUpcomingPage(0); }} placeholder="Account, payee, category, memo…" /></label>}
+        <label className={`all-register-search register-search${allAccounts ? "" : " account-register-search"}`}>{allAccounts ? "Search all accounts" : "Search"}<input type="search" disabled={editor !== null} value={registerSearch} onChange={(event) => { setRegisterSearch(event.target.value); setRegisterPage(0); setUpcomingPage(0); }} placeholder={allAccounts ? "Search All Accounts" : `Search ${account.name}`} /></label>
+        <div className="register-view-anchor"><button type="button" className="register-view-button" disabled={editor !== null} aria-expanded={viewOptionsOpen} onClick={() => setViewOptionsOpen((open) => !open)}>View</button>{viewOptionsOpen && <RegisterViewOptionsPopup value={viewOptions} allAccounts={allAccounts} earliestMonth={earliestOptionMonth} latestMonth={latestOptionMonth} onClose={() => setViewOptionsOpen(false)} onResetWidths={() => setColumnWidths({ ...defaultWidths })} onApply={(next) => { setViewOptions(next); setRegisterPage(0); setUpcomingPage(0); setViewOptionsOpen(false); }}/>}</div>
         {!allAccounts && <button
           disabled={account.closed}
           title={account.closed ? "Reopen this account before reconciling" : undefined}
@@ -807,7 +870,7 @@ export function AccountRegister({
         </div>
       )}
       {register.status === "ready" && filteredEntries.length === 0 && (
-        <div className="register-message">{allAccounts && registerSearch.trim() ? "No matching transactions." : allAccounts ? "No transactions in any account yet." : "No transactions in this account yet."}</div>
+        <div className="register-message">{registerSearch.trim() ? "No matching transactions." : allAccounts ? "No transactions in any account yet." : "No transactions in this account yet."}</div>
       )}
       {register.status === "ready" && (
         <>
@@ -821,21 +884,23 @@ export function AccountRegister({
           </nav>}
           <div className="register-table-wrap">
             <table className="register-table">
+              <colgroup>{columnKeys.map((key) => <col key={key} style={{ width: columnWidths[key] ?? defaultWidths[key as keyof typeof defaultWidths] }} />)}</colgroup>
               <thead>
                 <tr>
-                  <th className="flag-column"><span className="sr-only">Flag</span></th>
-                  {allAccounts && <th className="account-column">Account</th>}
-                  <th>Date</th>
-                  <th>Payee</th>
-                  <th>Category</th>
-                  <th>Memo</th>
-                  <th className="money-column">Outflow</th>
-                  <th className="money-column">Inflow</th>
-                  <th className="status-column"><span className="sr-only">Cleared status</span>ⓒ</th>
+                  <th aria-label="Flag" className="flag-column"><span className="sr-only">Flag</span>{resizeHandle("flag")}</th>
+                  {allAccounts && <th aria-label="Account" className="account-column">Account{resizeHandle("account")}</th>}
+                  <th aria-label="Date">Date{resizeHandle("date")}</th>
+                  <th aria-label="Payee">Payee{resizeHandle("payee")}</th>
+                  <th aria-label="Category">Category{resizeHandle("category")}</th>
+                  <th aria-label="Memo">Memo{resizeHandle("memo")}</th>
+                  <th aria-label="Outflow" className="money-column">Outflow{resizeHandle("outflow")}</th>
+                  <th aria-label="Inflow" className="money-column">Inflow{resizeHandle("inflow")}</th>
+                  {viewOptions.showRunningBalance && !allAccounts && <th aria-label="Balance" className="money-column running-balance-column">Balance{resizeHandle("balance")}</th>}
+                  <th aria-label="Cleared status" className="status-column"><span className="sr-only">Cleared status</span>ⓒ{resizeHandle("status")}</th>
                 </tr>
               </thead>
               <tbody>
-                {(editor === "new" || editor === "choose-account" || (editor && typeof editor === "object" && editor.kind === "duplicate")) && <tr className="register-edit-row new-entry-row"><td colSpan={allAccounts ? 9 : 8}>
+                {(editor === "new" || editor === "choose-account" || (editor && typeof editor === "object" && editor.kind === "duplicate")) && <tr className="register-edit-row new-entry-row"><td colSpan={tableColumnCount}>
       {editor === "choose-account" && <div className="all-account-composer-choice">
         <label>Account<select autoFocus value={newEntryAccountId} onChange={(event) => setNewEntryAccountId(event.target.value)}><option value="">Choose an open account</option>{accounts.filter((item) => !item.closed).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <button type="button" disabled={!newEntryAccount} onClick={() => setEditor("new")}>Continue</button>
@@ -859,15 +924,15 @@ export function AccountRegister({
       {typeof editor === "object" && editor !== null && "kind" in editor && editor.kind === "duplicate" && allAccounts && !duplicateSourceAccount && <div role="alert" className="register-message error">Source account is no longer available. <button type="button" onClick={() => setEditor(null)}>Close</button></div>}
 
                 </td></tr>}
-              {partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={allAccounts ? 9 : 8} scope="rowgroup">Upcoming</th></tr>}
+              {partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={tableColumnCount} scope="rowgroup">Upcoming</th></tr>}
               {[...upcomingPageEntries, ...pageEntries].map((entry) => {
                 const amount = BigInt(entry.amount);
                 const isUpcoming = entry.postingState === "scheduled" || entry.date > today;
                 const owner = entryOwner(entry, accounts, account, allAccounts);
                 return (
                   <Fragment key={entry.id}>
-                  {!isUpcoming && entry.id === pageEntries[0]?.id && partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={allAccounts ? 9 : 8} scope="rowgroup">Transactions</th></tr>}
-                  {editor && typeof editor === "object" && editor.kind === "edit-entry" && editor.entry.id === entry.id && owner ? <tr className="register-edit-row" data-entry-id={entry.id}><td colSpan={allAccounts ? 9 : 8}>
+                  {!isUpcoming && entry.id === pageEntries[0]?.id && partitionedEntries.upcoming.length > 0 && <tr className="upcoming-divider"><th colSpan={tableColumnCount} scope="rowgroup">Transactions</th></tr>}
+                  {editor && typeof editor === "object" && editor.kind === "edit-entry" && editor.entry.id === entry.id && owner ? <tr className="register-edit-row" data-entry-id={entry.id}><td colSpan={tableColumnCount}>
       {editor && typeof editor === "object" && editor.kind === "edit-entry" && owner && (
         <RegisterEntryEditor inline
           key={`${editor.entry.id}:${editor.key}`}
@@ -902,6 +967,7 @@ export function AccountRegister({
                     <td className="memo-column" data-register-field="memo">{entry.memo || <span>—</span>}</td>
                     <td className="money-column outflow" data-register-field="outflow">{amount < 0n ? `(${huf((-amount).toString())})` : ""}</td>
                     <td className="money-column inflow" data-register-field="inflow">{amount >= 0n ? huf(amount.toString()) : ""}</td>
+                    {viewOptions.showRunningBalance && !allAccounts && <td className="money-column running-balance-column">{runningBalances.get(entry.id) == null ? "—" : huf(runningBalances.get(entry.id)!)}</td>}
                     <td className="status-column">
                       <TransactionStatusIcon state={entry.clearedState} pending={isUpcoming} disabled={scheduleAction || refreshPending || !readCurrent || hasSavedMutationPending()}
                         onToggle={entry.clearedState === "reconciled" ? undefined : () => changeStatus(entry, entry.clearedState === "cleared" ? "uncleared" : "cleared")} />

@@ -78,7 +78,7 @@ button:hover:not(:disabled) { filter: brightness(1.16); }
 .all-account-composer-choice button { min-height: 30px; padding: 4px 12px; border: 1px solid #6257ff; border-radius: 3px; background: #6257ff; color: #fff; }
 .all-account-composer-choice button.secondary { border-color: #625f93; background: transparent; }
 .register-toolbar button { border: 0; color: #b1adff; background: transparent; }
-.register-toolbar button:last-child { order: -1; }
+.register-toolbar > button:last-child { order: -1; }
 .view-register .workspace-actions { padding-right: 110px; }
 .register-toolbar > button:not(:last-child) { position: absolute; top: 29px; right: 16px; color: white; background: #6257ff; padding: 7px 14px; }
 .register-table-wrap { flex: 1; min-height: 0; overflow: auto; border: 0; border-radius: 0; background: #0b0b20; scrollbar-color: #43435c transparent; scrollbar-width: thin; }
@@ -110,6 +110,39 @@ button:hover:not(:disabled) { filter: brightness(1.16); }
 .register-table tr.register-edit-row td { overflow: visible; white-space: normal; padding: 0; background: #1d1d49; }
 .register-pagination { flex: 0 0 auto; padding: 6px 12px; margin: 0; border-top: 1px solid var(--line); background: var(--surface); color: #a9accb; font-size: 11px; }
 .register-pagination button { padding: 3px 8px; font-size: 11px; }
+.register-search { margin-left: auto; }
+.register-search input { width: min(300px, 26vw); min-width: 170px; }
+.account-register-search { margin-left: auto; }
+.register-view-anchor { order: 1; }
+.register-search { order: 2; margin-left: 0; }
+.register-view-anchor { position: relative; z-index: 10; margin: 0 !important; }
+.register-view-button { min-height: 30px; padding: 4px 13px; border: 1px solid #414157 !important; border-radius: 4px; color: #f5f5ff !important; background: #202037 !important; }
+.register-view-popup { position: absolute; top: calc(100% + 7px); right: 0; z-index: 100; width: 330px; padding: 12px; border: 1px solid #6257ff; border-radius: 7px; background: #202037; box-shadow: 0 10px 28px #0009; color: #fff; }
+.register-view-popup header, .register-view-popup footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.register-view-popup header { margin-bottom: 10px; }
+.register-view-popup header button { width: 26px; height: 26px; padding: 0; border: 0; background: transparent; font-size: 20px; }
+.register-view-popup fieldset { display: grid; gap: 8px; margin: 0 0 10px; padding: 8px; border: 1px solid #414157; border-radius: 5px; }
+.register-view-popup legend { padding: 0 4px; color: #c1c4e6; font-size: 11px; }
+.register-view-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.register-view-presets button { min-height: 27px; padding: 3px 6px; border: 1px solid #414157; background: #15152b; text-align: left; font-size: 11px; }
+.register-view-presets button.selected { border-color: #8d86ff; background: #35306c; }
+.register-date-range { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.register-month-year { display: grid; gap: 5px; min-width: 0; }
+.register-month-year label { display: grid; gap: 3px; color: #c1c4e6; font-size: 10px; }
+.register-date-range select { min-width: 0; height: 29px; border: 1px solid #414157; border-radius: 4px; background: #111132; color: #fff; }
+.register-view-popup fieldset > label { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.register-view-popup fieldset p { margin: 0; color: #ff8490; font-size: 11px; }
+.register-view-popup footer { justify-content: flex-end; }
+.register-view-popup footer button { padding: 5px 12px; }
+.register-view-popup footer .apply { border-color: #6257ff; background: #6257ff; }
+.register-view-footer span { flex: 1; }
+.register-table { table-layout: fixed; }
+.register-table th { position: relative; overflow: visible; }
+.register-column-resizer { position: absolute; z-index: 2; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; touch-action: none; }
+.register-column-resizer::after { content: ""; position: absolute; top: 20%; bottom: 20%; left: 3px; width: 1px; background: transparent; }
+.register-column-resizer:hover::after, .register-column-resizer:focus-visible::after { background: #8d86ff; }
+.hide-register-flags .register-table .flag-column, .hide-register-flags .register-table .register-hidden-flag-col { display: none; }
+.running-balance-column { color: #d4d6ee; font-variant-numeric: tabular-nums; }
 .cleared-state { width: 15px; height: 15px; font-size: 10px; }
 .account-editor { background: #202037; color: #fff; border-color: #726ac7; }
 .account-editor input, .account-editor textarea { background: #414157; color: #fff; border-color: #77768e; }
@@ -126,3 +159,24 @@ button:hover:not(:disabled) { filter: brightness(1.16); }
 .transaction-inline .inline-fields .memo-field { grid-column: auto; }
 @media (max-width: 1450px) { .app-shell:not(.sidebar-collapsed) { grid-template-columns: 270px minmax(0, 1fr); } }
 @media (max-width: 760px) { .app-shell:not(.sidebar-collapsed) { grid-template-columns: 240px minmax(0, 1fr); } .sidebar-collapsed .budget-identity > div,.sidebar-collapsed .account-groups,.sidebar-collapsed .offline-label,.sidebar-collapsed .primary-navigation button > span:last-child { display: none; } .sidebar { width: auto; padding: 0 5px; } .primary-navigation button { padding: 0 10px; } .workspace-header { padding: 12px; } .balance-strip { flex-wrap: wrap; } }
+
+/* Register View follows the wide date-preset layout, with a compact fallback. */
+.register-view-popup { width: 630px; max-width: calc(100vw - 28px); max-height: calc(100vh - 120px); overflow-y: auto; box-sizing: border-box; }
+.register-view-popup > header { position: static; display: flex; min-height: 24px; padding: 0 0 10px; margin: 0; background: transparent; border: 0; }
+.register-view-popup > header strong { display: block; font-size: 16px; color: #fff; }
+.register-view-popup fieldset { border: 0; border-top: 1px solid #414157; border-radius: 0; padding: 12px 0; }
+.register-view-popup legend { display: none; }
+.register-view-presets { display: flex; justify-content: space-between; gap: 5px; }
+.register-view-presets button { border: 0; border-radius: 18px; background: transparent; text-align: center; color: #9995ff; font-size: 12px; white-space: nowrap; }
+.register-view-presets button.selected { background: #6257ff; color: #fff; }
+.register-date-range { display: flex; gap: 18px; margin-top: 12px; }
+.register-month-year { display: flex; align-items: end; gap: 7px; }
+.register-month-year select { background: #414157; padding: 0 8px; }
+.register-view-popup .register-view-footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.register-view-popup .register-view-footer button { background: #34345f; border-radius: 7px; color: #eee; white-space: nowrap; }
+.register-view-popup .register-view-footer .apply { background: #6257ff; }
+@media (max-width: 740px) {
+ .register-view-popup { position: fixed; top: 160px; left: 14px; right: auto; width: 440px; max-height: calc(100vh - 174px); }
+ .register-view-presets { flex-wrap: wrap; justify-content: flex-start; }
+ .register-date-range { gap: 10px; flex-wrap: wrap; }
+}

@@ -497,3 +497,25 @@ text areas or editable text retains the field's native Ctrl+Z behavior. Undo is
 unavailable while a saved mutation or restore is in progress; new saved actions
 cannot interleave with undo and its view refresh. All balances and active views
 refresh after undo, preserving selected Plan month and report filters.
+
+## Register search and View options
+
+Both All Accounts and individual account registers have a search field and View
+button. Search covers account, date, payee, category, memo, flag and formatted or
+raw amounts across the complete loaded register before pagination. The View popup
+has This Month, Last Month, Latest 3 Months, This Year, Last Year and All Dates
+presets, plus inclusive From and To month/year controls. Apply commits the draft;
+Cancel, Escape and outside dismissal discard it. Invalid reversed ranges cannot
+be applied. Show Reconciled Transactions and Show Flags control row/column
+visibility; Show Images is omitted because transaction images are not supported.
+
+Show Running Balance is available only in an individual account. It uses exact
+integer HUF over all posted entries through today, including opening transactions,
+older filtered-out entries and hidden reconciled rows. Same-day entries follow
+oldest-to-newest creation/ID order. Search, date filters and pagination never
+rebase a row's balance. Scheduled and future rows have no running balance, and
+header cleared/uncleared/working balances remain unfiltered.
+
+Columns can be resized; Reset Column Widths restores their defaults. View options
+and widths are presentation preferences, with no ledger writes or undo entries.
+Search and applying view changes pause during inline editing to preserve drafts.

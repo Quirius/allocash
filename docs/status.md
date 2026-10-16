@@ -1,5 +1,25 @@
 # Implementation and validation status
 
+On 2026-10-16, All Accounts and individual account registers gained search
+across the complete loaded history before pagination, plus a View Options popup.
+The popup offers calendar presets, inclusive From/To month and year controls,
+reconciled-transaction and flag visibility, Cancel/Apply and column-width reset.
+Unsupported transaction images are omitted. Individual accounts additionally
+support running balances calculated with integer HUF from the complete posted
+ledger through today, independent of search, date and reconciled-row filters;
+future and scheduled rows do not invent forecast balances. Headers retain full
+account totals. Column resizing supports pointer and keyboard input, and validated
+preferences are stored separately by register scope. View/search changes are
+paused during transaction editing. All 322 frontend tests, a 10-test focused
+follow-up, TypeScript, independent review and synthetic browser checks passed.
+Browser checks cover search beyond pagination, both transfer legs, preset
+Cancel/Apply, hidden reconciled/flag rows, running balances under search, draft
+guards, keyboard column resizing/reset and wide/narrow popup bounds. Rust accounting and schema are unchanged.
+Production and native installer builds passed. Installation preserved budget bytes,
+the installed executable matches the release build and a responsive window
+reopened. Generated build artifacts were removed after preserving the latest
+installer. Owner visual and daily-use confirmation remains open.
+
 On 2026-10-16, category Activity amounts now turn blue and underlined on
 hover or keyboard focus and open a read-only popup for the selected Plan month.
 The table shows Account, Date, Payee, Memo and signed Amount, newest dates first;
