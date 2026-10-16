@@ -11,13 +11,14 @@ progress:
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
 next_action: "Complete owner acceptance of category actions and All Accounts; Plan assignment, cover/move and month navigation; account/transfer editing, status and scheduled realization; credit breakdowns; and date/repeat Save/Cancel/undo. Continue target/recurrence recreation, remaining view comparisons and native backup/reopen checks; detailed checks remain in summary.in_progress and docs/status.md."
-updated_at: "2026-10-16T18:53:25Z"
+updated_at: "2026-10-16T19:10:48Z"
 source:
   branch: "main"
-  commit: "f7beb40cc145a5b358ddf49591866580d438e355"
-  verified_at: "2026-10-16T18:53:25Z"
+  commit: "80314b4102bb3e148a29fefffacc32dac688672d"
+  verified_at: "2026-10-16T19:10:48Z"
 summary:
   completed:
+    - "Register search now suggests matching accounts, categories, category group names and coloured flags while typing. Identity suggestions narrow to the selected account/category/flag, while Find actions search any field, Payee, Category or Memo. Selected scopes remain visible and survive Enter; typing returns to any-field search. Keyboard, mouse, touch, Clear, Escape, outside dismissal and scrolling are supported. All 335 frontend tests, TypeScript, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes and reopened a responsive window; generated build files were cleaned after retaining the installer. Rust accounting, IPC and schema are unchanged; owner search and visual confirmation remains open."
     - "All Accounts and individual registers now support search across full loaded history before pagination and a View popup with date presets, month/year ranges, reconciled and flag visibility, and resizable/resettable columns. Individual registers add running balances from the complete posted ledger independent of filtering. Transaction images are omitted. All 322 frontend tests, 10 focused follow-up tests, TypeScript, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes and reopened a responsive window; generated build artifacts were cleaned after keeping the installer. Rust accounting and schema are unchanged; owner visual and daily-use confirmation remains open."
     - "Category Activity amounts now turn blue and underlined on hover or keyboard focus and open a read-only monthly breakdown with Account, Date, Payee, Memo and signed Amount. Long lists scroll under pinned headings, Close stays visible and narrow windows support horizontal table scrolling. Rows use the same captured cutoff as Plan, include eligible refunds, closed history and transfer legs, and must sum exactly to Plan Activity. Mapped card categories use explicitly labeled monthly funding and payment summaries without invented dates. Loading, empty, retry, stale reads and focus behavior are covered. All 312 frontend tests, 220 Rust tests, TypeScript, formatting, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Generated build files were removed while retaining the installer. Financial writes, schema and Plan calculations are unchanged; owner popup confirmation remains open."
     - "Yearly and quarterly refill targets now include earlier funding and spending in the full active interval when added late. Completed spending stays Fully Spent in quiet months without new assignments; complete available pools show Funded. Period spending is derived separately and is not double-counted as funding. Future assignments cannot fund an earlier Plan view; new cycles reset spending. Historical derivations are shared within each Plan read. The 307-test frontend suite plus 19 focused follow-up checks, all 219 Rust tests, TypeScript, formatting, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Target guidance changed; ledger money and schema are unchanged. Owner yearly target and rollover confirmation remain open."
@@ -82,6 +83,7 @@ summary:
     - "The owner's historical Net Worth reference matches 1,734 account-month balances and 51 monthly totals in the Net Worth and Balance Over Time reports."
     - "The January–October 2026 Income v Expense reference matches all monthly totals, 40 income-source cells, 50 expense-group cells, 200 category cells, and report totals and averages; related report totals match for the same scope."
   in_progress:
+    - "Intelligent register search suggestions and field filters are installed; owner search and visual confirmation remains open."
     - "Register search and View options are implemented and installed; owner visual, search, date-filter and daily-use confirmation remains open."
     - "Category Activity popup is implemented and installed; owner hover, transaction-list and scrolling confirmation remains open."
     - "Full-period yearly refill target completion is implemented and installed; owner target and rollover confirmation remains open."
@@ -120,6 +122,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "80314b4102bb3e148a29fefffacc32dac688672d"
+    note: "Records intelligent register search suggestions, field filters, validation and installation."
   - path: "docs/status.md"
     ref: "f7beb40cc145a5b358ddf49591866580d438e355"
     note: "Records register search, View date and visibility options, running balances, column widths, validation and installation."
