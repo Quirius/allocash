@@ -95,7 +95,7 @@ it("collapses a category group without writing Plan data", async () => {
   expect(vi.mocked(invoke).mock.calls.map(([command]) => command)).toEqual(["get_plan_month", "get_hidden_categories"]);
 });
 
-it("opens the name popup, while clicking other row content focuses Assigned and Available keeps its popup", async () => {
+it("opens the name popup, activity popup, and Available popup without stealing row assignment focus", async () => {
   await mount();
   const row = host.querySelector('.plan-row')!;
   const input = row.querySelector<HTMLInputElement>('input[aria-label="Alpha assigned"]')!;
@@ -103,7 +103,11 @@ it("opens the name popup, while clicking other row content focuses Assigned and 
   expect(document.activeElement).toBe(document.querySelector('#category-action-name'));
   expect(host.querySelector('[role="dialog"][aria-label="Alpha actions"]')).not.toBeNull();
   act(() => host.querySelector<HTMLButtonElement>('.plan-category-actions-row > div:last-child button:first-child')!.click());
-  act(() => row.querySelector('.plan-row span:nth-child(3)')?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  vi.mocked(invoke).mockImplementation(async (command) => command === "get_plan_month" ? syntheticPlan() : command === "get_category_activity" ? { categoryId: "alpha", month, total: "-20", rows: [] } : undefined);
+  await act(async () => { row.querySelector<HTMLButtonElement>('.plan-activity-trigger')!.click(); await Promise.resolve(); });
+  expect(host.querySelector('[role="dialog"][aria-label="Alpha activity"]')).not.toBeNull();
+  act(() => host.querySelector<HTMLButtonElement>('.plan-activity-footer button')!.click());
+  act(() => row.querySelector('.plan-category-cell')?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
   expect(document.activeElement).toBe(input);
   expect([input.selectionStart, input.selectionEnd]).toEqual([0, input.value.length]);
   act(() => row.querySelector<HTMLButtonElement>('.plan-available')!.click());

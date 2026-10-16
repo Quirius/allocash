@@ -53,6 +53,22 @@ month changes the Plan. Escape, outside clicks and selection dismiss the popup.
 The current implementation is a first visual pass, not full pixel-identical UI
 coverage. Detailed menus and remaining screens need further owner references.
 
+## Category Activity
+
+A category's Activity amount turns blue and underlined on hover or keyboard
+focus. Clicking it opens an anchored Activity popup for the selected Plan month,
+with Account, Date, Payee, Memo and signed Amount columns. The rows use the same
+posted-transaction cutoff as the displayed Plan amount, including refunds and
+applicable transfer legs. Long lists scroll inside the popup while the column
+headings and Close button remain visible. Narrow windows keep the popup on-screen
+and allow horizontal scrolling of the table. Close, Escape and outside clicks
+dismiss it without changing the budget. Loading, empty and read-failure states
+are explicit; Retry repeats only the read. Changing month or category cannot show
+an earlier request's rows. Mapped card payment categories include explicitly
+labeled monthly funded-spending and payment totals with a dash for the date,
+rather than invented transaction dates. Every displayed row must reconcile to
+the same Plan Activity total.
+
 ## Ready to Assign
 
 The header uses green for money ready to assign, grey for zero (All Money

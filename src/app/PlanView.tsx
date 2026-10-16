@@ -1,7 +1,7 @@
 import { AmountInput } from "./AmountInput";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { assignReadyToAssign, deleteCategory, getSavedMutationVersion, hasSavedMutationPending, loadHiddenCategories, loadPlanMonth, movePlanMoney, renameCategory, setCategoryHidden, setCategoryNotes, setCategoryTarget, setCategoryTargetSnoozed, setPlanAssignment, type CreditPaymentCategory, type HiddenCategory, type PlanCategory, type PlanSnapshot, type RecurrenceMonths } from "../lib/desktop";
-import { formatHuf, localCalendarMonth, parseSignedHufInput, shiftCalendarMonth } from "../lib/format";
+import { formatHuf, localCalendarDate, localCalendarMonth, parseSignedHufInput, shiftCalendarMonth } from "../lib/format";
 import { CreditPaymentDetails } from "./CreditPaymentDetails";
 import { creditPaymentStatus } from "./credit-payment";
 import { recurrenceLabel } from "../lib/recurrence";
@@ -12,6 +12,7 @@ import { PlanMonthArrow, PlanMonthPicker } from "./PlanMonthPicker";
 import { ReadyToAssign } from "./ReadyToAssign";
 import { CategoryActionsPopover } from "./CategoryActionsPopover";
 import { categoryTargetPresentation, shouldShowTargetAvailableCheck } from "./plan-category-presentation";
+import { CategoryActivityPopover } from "./CategoryActivityPopover";
 
 export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending = false, onCategoryRenamed }: { refreshRevision?: number; readEpoch?: number; mutationPending?: boolean; onCategoryRenamed?: () => Promise<void> }) {
   const [month, setMonth] = useState(localCalendarMonth());
@@ -20,6 +21,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const planRequest = useRef(createRequestSequence());
+  const planAsOf = useRef(localCalendarDate());
   const currentMonth = useRef(month);
   const currentSelectedCategory = useRef<string | null>(null);
   const currentReadEpoch = useRef(readEpoch);
@@ -46,6 +48,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
   const previousReadEpoch = useRef(readEpoch);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [categoryPopup, setCategoryPopup] = useState<{ category: PlanCategory; anchor: HTMLButtonElement; readEpoch: number; refreshRevision: number } | null>(null);
+  const [activityPopup, setActivityPopup] = useState<{ category: PlanCategory; anchor: HTMLButtonElement } | null>(null);
   const [categoryPopupPosition, setCategoryPopupPosition] = useState({ left: 0, top: 0, above: false });
   const [hiddenCategories, setHiddenCategories] = useState<HiddenCategory[]>([]);
   const [hiddenCategoriesCurrent, setHiddenCategoriesCurrent] = useState(false);
@@ -95,15 +98,18 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
     if (restoreFocus) requestAnimationFrame(restoreMoveFocus);
   }
   useEffect(() => { setActionError(null); targetDirty.current = false; expectedTarget.current = null; hydratedTarget.current = ""; setTargetHydrationRevision((value) => value + 1); }, [month]);
+  useEffect(() => { setActivityPopup(null); }, [month]);
   useEffect(() => { closeMove(false, true); }, [month]);
   useEffect(() => { if (shouldDismissPlanMove(moveBusyRef.current, ownedMoveVersion.current, getSavedMutationVersion())) closeMove(false, true); }, [readEpoch, refreshRevision]);
   useEffect(() => { if (restoreFocusCategory.current) requestAnimationFrame(restoreMoveFocus); }, [plan]);
   async function reload(requestedMonth = month, requestedEpoch = currentReadEpoch.current) {
     if (requestedMonth !== currentMonth.current || requestedEpoch !== currentReadEpoch.current) return;
     const request = planRequest.current.begin();
+    const requestedAsOf = localCalendarDate();
     try {
-      const value = await loadPlanMonth(requestedMonth);
+      const value = await loadPlanMonth(requestedMonth, requestedAsOf);
       if (!planRequest.current.isCurrent(request) || requestedMonth !== currentMonth.current || requestedEpoch !== currentReadEpoch.current || hasSavedMutationPending() || getSavedMutationVersion() !== requestedEpoch) return;
+      planAsOf.current = requestedAsOf;
       latestPlan.current = value;
       if (value) {
         const notes = Object.fromEntries(value.categories.map((category) => [category.categoryId, category.notes]));
@@ -408,7 +414,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
             event.preventDefault();
             const anchor = event.currentTarget.querySelector<HTMLButtonElement>(".plan-category-name");
             if (anchor) openCategoryActions(category, anchor);
-          }} onFocusCapture={() => selectCategory(category.categoryId)}>
+          }} onFocusCapture={() => { selectCategory(category.categoryId); if (activityPopup && activityPopup.category.categoryId !== category.categoryId) setActivityPopup(null); }}>
             <div className="plan-category-cell">
               <span className="plan-category-topline">
                 <button className="plan-category-name" type="button" disabled={categoryActionBusy} aria-pressed={selectedCategoryId === category.categoryId} aria-haspopup="dialog" aria-expanded={categoryPopup?.category.categoryId === category.categoryId} aria-controls="plan-category-details" onClick={(event) => { event.stopPropagation(); openCategoryActions(category, event.currentTarget); }}><span className="plan-category-label">{category.categoryName}</span></button>
@@ -417,7 +423,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
               {target && <span className={"plan-target-meter" + (target.snoozed ? " snoozed" : "")} aria-label={targetPresentation?.status + "; " + targetPresentation?.detail}><i style={{ width: (percent ?? 100) + "%" }} /></span>}
             </div>
             <PlanAssignmentInput month={month} category={category} readOnly={!planCurrent} onSave={save} />
-            <span>{formatHuf(BigInt(category.activity))}</span>
+            <button type="button" className="plan-activity-trigger" disabled={!planCurrent} aria-label={`${category.categoryName} activity ${formatHuf(BigInt(category.activity))}; view transactions`} aria-haspopup="dialog" onClick={(event) => { event.stopPropagation(); setActivityPopup({ category, anchor: event.currentTarget }); }}>{formatHuf(BigInt(category.activity))}</button>
             <button type="button" data-category-id={category.categoryId} className={"plan-available " + availableState + (targetCheck ? " target-funded" + (BigInt(category.available) === 0n ? " fully-spent" : "") : "")} title={coverGap > 0n ? "Cover " + formatHuf(coverGap) + " for " + category.categoryName : planPaymentDescription(category, plan.creditPaymentCategories)} aria-label={category.categoryName + " available " + formatHuf(BigInt(category.available)) + (coverGap > 0n ? "; cover " + formatHuf(coverGap) : planPaymentDescription(category, plan.creditPaymentCategories) ? "; " + planPaymentDescription(category, plan.creditPaymentCategories) : "") + (coverGap > 0n ? "; cover money into this category" : "; move money from this category")} disabled={!planCurrent || moveBusy} onClick={(event) => openCategoryMoney(category, event.currentTarget)}>
               {targetCheck && <FundedCheckIcon />}<span>{formatHuf(BigInt(category.available))}</span>
             </button>
@@ -446,6 +452,7 @@ export function PlanView({ refreshRevision = 0, readEpoch = 0, mutationPending =
         </>}
       </form>}
       {categoryPopup && <CategoryActionsPopover key={categoryPopup.category.categoryId} ref={categoryPopupRef} inputRef={categoryNameInput} category={categoryPopup.category} destinations={(plan?.categories ?? []).filter((item) => item.categoryId !== categoryPopup.category.categoryId && !plan?.creditPaymentCategories.some((mapping) => mapping.categoryId === item.categoryId) && !isReadyToAssignPlanCategory(item))} protectedCategory={plan?.creditPaymentCategories.some((mapping) => mapping.categoryId === categoryPopup.category.categoryId) ?? false} position={categoryPopupPosition} canWrite={canWritePlan()} saving={categoryActionBusy} error={categoryActionError} onRename={(name) => void categoryAction("rename", categoryPopup.category, name)} onHide={() => void categoryAction("hide", categoryPopup.category)} onDelete={(destinationId) => void categoryAction("delete", categoryPopup.category, undefined, destinationId)} onCancel={() => setCategoryPopup(null)} />}
+      {activityPopup && <CategoryActivityPopover key={`${activityPopup.category.categoryId}:${month}`} categoryId={activityPopup.category.categoryId} categoryName={activityPopup.category.categoryName} month={month} asOf={planAsOf.current} anchor={activityPopup.anchor} onClose={() => setActivityPopup(null)} />}
   </section>;
 }
 

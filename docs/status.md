@@ -1,5 +1,25 @@
 # Implementation and validation status
 
+On 2026-10-16, category Activity amounts now turn blue and underlined on
+hover or keyboard focus and open a read-only popup for the selected Plan month.
+The table shows Account, Date, Payee, Memo and signed Amount, newest dates first;
+long lists scroll under sticky headings while Close remains visible. Narrow
+windows support horizontal table scrolling. The query uses the same captured
+as-of cutoff as Plan and includes eligible posted rows, refunds, closed-account
+history and the appropriate transfer legs. Mapped payment categories show clearly
+labeled monthly funded-spending and payment summary rows with no invented dates.
+Rows must sum exactly to the Plan-derived Activity total; mismatches fail the
+read. Loading, empty, error and read-only retry states, stale-response guards,
+month/category dismissal and focus restoration are covered. Outside clicks keep
+the newly clicked target's focus. All 312 frontend tests, 220 Rust tests,
+TypeScript, formatting, independent review and synthetic browser checks passed,
+including hover styling, long-list scrolling, pinned headings, Close/Escape,
+retry, empty activity and narrow popup bounds. Production/native builds passed.
+Installation preserved budget bytes, the installed executable matches the release
+build and Allocash reopened a responsive window. Generated build files were
+removed again while keeping the latest installer. Financial writes, schema and
+existing Plan calculations are unchanged. Owner Activity popup confirmation remains open.
+
 On 2026-10-15, yearly and quarterly refill targets now include the full
 active interval when added partway through it. Earlier assignments and opening
 Available satisfy the funding goal; period spending is not double-counted as

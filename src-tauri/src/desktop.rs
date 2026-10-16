@@ -14,7 +14,9 @@ use crate::ledger::{
     RegisterEntry, RegisterEntryEdit, ScheduledOccurrence, SpendingCategoryTotal,
     SpendingPayeeTotal, SpendingReportInput, TransactionFormOptions,
 };
-use crate::plan::{CategoryTargetDefinition, HiddenCategory, PlanMonth, PlanSnapshot};
+use crate::plan::{
+    CategoryActivity, CategoryTargetDefinition, HiddenCategory, PlanMonth, PlanSnapshot,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::Manager;
@@ -701,6 +703,29 @@ fn get_plan_month(
     })
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CategoryActivityInput {
+    category_id: String,
+    month: String,
+    as_of: String,
+}
+
+#[tauri::command]
+fn get_category_activity(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    input: CategoryActivityInput,
+) -> Result<CategoryActivity, String> {
+    let month = PlanMonth::parse(&input.month).map_err(ledger_error)?;
+    let as_of = CalendarDate::parse(&input.as_of).map_err(ledger_error)?;
+    with_database(&app, &state, |database| {
+        database
+            .category_activity_as_of(&input.category_id, &month, &as_of)
+            .map_err(ledger_error)
+    })
+}
+
 #[tauri::command]
 fn get_hidden_categories(
     app: tauri::AppHandle,
@@ -961,6 +986,7 @@ pub fn run() {
             preview_account_reconciliation,
             reconcile_account,
             get_plan_month,
+            get_category_activity,
             get_hidden_categories,
             set_plan_assignment,
             assign_ready_to_assign,

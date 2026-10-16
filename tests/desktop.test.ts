@@ -18,6 +18,7 @@ import {
   loadInflowOutflowByMonth,
   loadOutflowOverTime,
   loadPlanMonth,
+  loadCategoryActivity,
   loadHiddenCategories,
   loadSpendingByPayee,
   movePlanMoney,
@@ -48,6 +49,14 @@ import {
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: vi.fn() }));
 
 beforeEach(() => vi.resetAllMocks());
+
+it("loads category activity with its inclusive cutoff and preserves synthetic activity metadata", async () => {
+  vi.mocked(isTauri).mockReturnValue(true);
+  const activity = { categoryId: "food", month: "2026-10", total: "-80", rows: [{ id: "entry-1", accountName: "Wallet", date: "2026-10-02", payeeName: "Market", memo: "Groceries", amount: "-100", kind: "ledger" as const }, { id: "derived:food:2026-10", accountName: "Card", date: "2026-10-01", payeeName: "Credit-card activity", memo: "Funded spending", amount: "20", kind: "creditFunding" as const }] };
+  vi.mocked(invoke).mockResolvedValue(activity);
+  await expect(loadCategoryActivity("food", "2026-10", "2026-10-16")).resolves.toEqual(activity);
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("get_category_activity", { input: { categoryId: "food", month: "2026-10", asOf: "2026-10-16" } });
+});
 
 it("preserves exact HUF amounts and the saved-assignment guard when manually assigning Ready to Assign", async () => {
   const input = { categoryId: "groceries", month: "2026-10", amount: "9007199254740993", expectedAssigned: "12500" };

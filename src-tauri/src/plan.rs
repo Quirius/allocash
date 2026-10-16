@@ -83,6 +83,25 @@ pub struct PlanSnapshot {
 }
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CategoryActivity {
+    pub category_id: String,
+    pub month: String,
+    pub total: String,
+    pub rows: Vec<CategoryActivityRow>,
+}
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryActivityRow {
+    pub id: String,
+    pub account_name: String,
+    pub date: String,
+    pub payee_name: String,
+    pub memo: String,
+    pub amount: String,
+    pub kind: String,
+}
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadyToAssignBreakdown {
     pub leftover_from_last_month: String,
     pub income_this_month: String,
@@ -783,6 +802,138 @@ impl Database {
         as_of: &CalendarDate,
     ) -> LedgerResult<PlanSnapshot> {
         self.plan_month_with_cutoff(month, Some(as_of))
+    }
+
+    /// Returns posted ledger details plus an explicit derived card-activity row
+    /// when Plan Activity includes automatic credit-payment funding or payment
+    /// adjustments. The row amounts always add to the authoritative derivation.
+    pub fn category_activity_as_of(
+        &self,
+        category_id: &str,
+        month: &PlanMonth,
+        as_of: &CalendarDate,
+    ) -> LedgerResult<CategoryActivity> {
+        let derivation = derive_plan(&self.connection, month, Some(as_of))?;
+        let total = *derivation.activity.get(category_id).unwrap_or(&0);
+        let exists: bool = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM categories WHERE id=?1)",
+            [category_id],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Err(LedgerError::InvalidValue("Category not found."));
+        }
+        if ready_to_assign_category_ids(&self.connection)?.contains(category_id) {
+            return Ok(CategoryActivity {
+                category_id: category_id.into(),
+                month: month.as_str().into(),
+                total: "0".into(),
+                rows: Vec::new(),
+            });
+        }
+
+        let mut rows = Vec::new();
+        let mut statement = self.connection.prepare(
+            "SELECT t.id,a.name,t.transaction_date,
+                    CASE WHEN t.transfer_id IS NOT NULL THEN
+                        COALESCE(NULLIF(p.name,''),'Transfer: ' || (
+                            SELECT other_account.name FROM ledger_entries other
+                            JOIN accounts other_account ON other_account.id=other.account_id
+                            WHERE other.transfer_id=t.transfer_id AND other.account_id<>t.account_id
+                            LIMIT 1
+                        ),'')
+                    ELSE COALESCE(p.name,'') END,
+                    t.memo,t.amount_huf
+             FROM ledger_entries t JOIN accounts a ON a.id=t.account_id
+             LEFT JOIN payees p ON p.id=t.payee_id
+             WHERE t.category_id=?1 AND t.posting_state='posted'
+               AND t.transaction_date>=?2 AND t.transaction_date<?3
+               AND t.transaction_date<=?4 AND a.kind IN ('cash','credit')
+               AND (t.transfer_id IS NULL OR EXISTS(
+                   SELECT 1 FROM ledger_entries other JOIN accounts other_account ON other_account.id=other.account_id
+                   WHERE other.transfer_id=t.transfer_id AND other.account_id<>t.account_id
+                     AND other_account.kind IN ('tracking','loan')
+               ))
+             ORDER BY t.transaction_date,t.id",
+        )?;
+        let start = format!("{}-01", month.as_str());
+        let cutoff = as_of.as_str();
+        let mut raw_total = 0i128;
+        for row in statement.query_map(
+            params![category_id, start, month.next_start(), cutoff],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, i64>(5)?,
+                ))
+            },
+        )? {
+            let (id, account_name, date, payee_name, memo, amount) = row?;
+            raw_total = checked_add(raw_total, i128::from(amount))?;
+            rows.push(CategoryActivityRow {
+                id,
+                account_name,
+                date,
+                payee_name,
+                memo,
+                amount: amount.to_string(),
+                kind: "ledger".into(),
+            });
+        }
+
+        let mut mapped_accounts = self.connection.prepare(
+            "SELECT a.name FROM credit_payment_categories p JOIN accounts a ON a.id=p.account_id
+             WHERE p.category_id=?1 ORDER BY a.sort_order,a.id",
+        )?;
+        let account_names = mapped_accounts
+            .query_map([category_id], |row| row.get::<_, String>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        let is_payment_category = !account_names.is_empty();
+        let mut trace_total = raw_total;
+        if is_payment_category {
+            let funded = *derivation.payment_funded.get(category_id).unwrap_or(&0);
+            let paid = *derivation.payment_made.get(category_id).unwrap_or(&0);
+            if funded != 0 {
+                rows.push(CategoryActivityRow {
+                    id: format!("derived:funded:{category_id}:{}", month.as_str()),
+                    account_name: account_names.join(", "),
+                    date: String::new(),
+                    payee_name: "Funded spending".into(),
+                    memo: "Net funded card spending and refunds for this month.".into(),
+                    amount: funded.to_string(),
+                    kind: "creditFunding".into(),
+                });
+                trace_total = checked_add(trace_total, funded)?;
+            }
+            if paid != 0 {
+                rows.push(CategoryActivityRow {
+                    id: format!("derived:payments:{category_id}:{}", month.as_str()),
+                    account_name: account_names.join(", "),
+                    date: String::new(),
+                    payee_name: "Payments made".into(),
+                    memo: "Card payments reduce this category's Plan Activity.".into(),
+                    amount: (-paid).to_string(),
+                    kind: "creditPayment".into(),
+                });
+                trace_total = checked_sub(trace_total, paid)?;
+            }
+        }
+        if trace_total != total {
+            return Err(LedgerError::InvalidValue(
+                "Category activity details do not reconcile to the Plan.",
+            ));
+        }
+
+        Ok(CategoryActivity {
+            category_id: category_id.into(),
+            month: month.as_str().into(),
+            total: total.to_string(),
+            rows,
+        })
     }
 
     fn plan_month_with_cutoff(
@@ -1838,6 +1989,205 @@ mod tests {
                 .income_this_month,
             "800"
         );
+    }
+
+    #[test]
+    fn category_activity_matches_plan_with_refunds_transfers_cutoff_closed_accounts_and_card_funding(
+    ) {
+        let (_directory, mut database) = plan_fixture();
+        database
+            .create_category_group("payments", "Payments", 1)
+            .unwrap();
+        database
+            .create_category("payment", "payments", "Card payment", 0)
+            .unwrap();
+        database
+            .set_credit_payment_category("card", Some("payment"))
+            .unwrap();
+        database
+            .create_account(&Account {
+                id: "closed-cash".into(),
+                name: "Closed wallet".into(),
+                kind: AccountKind::Cash,
+                sort_order: 3,
+                closed: true,
+            })
+            .unwrap();
+        database
+            .create_account(&Account {
+                id: "tracking".into(),
+                name: "Tracking".into(),
+                kind: AccountKind::Tracking,
+                sort_order: 4,
+                closed: false,
+            })
+            .unwrap();
+        let month = PlanMonth::parse("2026-09").unwrap();
+        database
+            .set_monthly_assignment("food", &month, Huf(300))
+            .unwrap();
+        cash_spending(&mut database, "purchase", "2026-09-02", "food", 100);
+        let mut refund =
+            Entry::manual("refund", "cash", CalendarDate::parse("2026-09-03").unwrap());
+        refund.category_id = Some("food".into());
+        database.create_transaction(&refund, Huf(25)).unwrap();
+        let mut closed_purchase = Entry::manual(
+            "closed-purchase",
+            "closed-cash",
+            CalendarDate::parse("2026-09-04").unwrap(),
+        );
+        closed_purchase.category_id = Some("food".into());
+        database
+            .create_transaction(&closed_purchase, Huf(-10))
+            .unwrap();
+        let mut scheduled = Entry::scheduled(
+            "scheduled-purchase",
+            "cash",
+            CalendarDate::parse("2026-09-05").unwrap(),
+            "schedule",
+        );
+        scheduled.category_id = Some("food".into());
+        database.create_transaction(&scheduled, Huf(-999)).unwrap();
+        let mut future = Entry::manual(
+            "future-purchase",
+            "cash",
+            CalendarDate::parse("2026-09-20").unwrap(),
+        );
+        future.category_id = Some("food".into());
+        database.create_transaction(&future, Huf(-777)).unwrap();
+        let mut outflow = Entry::manual(
+            "tracking-out",
+            "cash",
+            CalendarDate::parse("2026-09-06").unwrap(),
+        );
+        outflow.category_id = Some("food".into());
+        let mut inflow = Entry::manual(
+            "tracking-in",
+            "tracking",
+            CalendarDate::parse("2026-09-06").unwrap(),
+        );
+        inflow.category_id = Some("food".into());
+        database
+            .create_transfer(&TransferDraft::manual(
+                "tracking-transfer",
+                Huf(30),
+                outflow,
+                inflow,
+                Direction::Outflow,
+            ))
+            .unwrap();
+        let mut internal_out = Entry::manual(
+            "internal-out",
+            "cash",
+            CalendarDate::parse("2026-09-07").unwrap(),
+        );
+        internal_out.category_id = Some("food".into());
+        let mut internal_in = Entry::manual(
+            "internal-in",
+            "card",
+            CalendarDate::parse("2026-09-07").unwrap(),
+        );
+        internal_in.category_id = Some("food".into());
+        database
+            .create_transfer(&TransferDraft::manual(
+                "internal-transfer",
+                Huf(40),
+                internal_out,
+                internal_in,
+                Direction::Outflow,
+            ))
+            .unwrap();
+        let mut card_purchase = Entry::manual(
+            "card-purchase",
+            "card",
+            CalendarDate::parse("2026-09-08").unwrap(),
+        );
+        card_purchase.category_id = Some("food".into());
+        database
+            .create_transaction(&card_purchase, Huf(-50))
+            .unwrap();
+        let payment = TransferDraft::manual(
+            "card-payment",
+            Huf(20),
+            Entry::manual(
+                "payment-cash",
+                "cash",
+                CalendarDate::parse("2026-09-09").unwrap(),
+            ),
+            Entry::manual(
+                "payment-card",
+                "card",
+                CalendarDate::parse("2026-09-09").unwrap(),
+            ),
+            Direction::Outflow,
+        );
+        database.create_transfer(&payment).unwrap();
+
+        let cutoff = CalendarDate::parse("2026-09-10").unwrap();
+        let plan = database.plan_month_as_of(&month, &cutoff).unwrap();
+        let activity = database
+            .category_activity_as_of("food", &month, &cutoff)
+            .unwrap();
+        assert_eq!(
+            activity.total,
+            category_in_plan_activity(&plan, "food").to_string()
+        );
+        assert_eq!(
+            activity
+                .rows
+                .iter()
+                .map(|row| row.amount.parse::<i128>().unwrap())
+                .sum::<i128>(),
+            activity.total.parse::<i128>().unwrap()
+        );
+        assert!(activity.rows.iter().any(|row| row.id == "closed-purchase"));
+        assert!(activity.rows.iter().any(|row| row.id == "tracking-out"));
+        assert_eq!(
+            activity
+                .rows
+                .iter()
+                .find(|row| row.id == "tracking-out")
+                .unwrap()
+                .payee_name,
+            "Transfer: Tracking"
+        );
+        assert!(!activity.rows.iter().any(|row| matches!(
+            row.id.as_str(),
+            "tracking-in"
+                | "internal-out"
+                | "internal-in"
+                | "scheduled-purchase"
+                | "future-purchase"
+        )));
+
+        let payment_activity = database
+            .category_activity_as_of("payment", &month, &cutoff)
+            .unwrap();
+        assert_eq!(
+            payment_activity.total,
+            category_in_plan_activity(&plan, "payment").to_string()
+        );
+        assert_eq!(
+            payment_activity
+                .rows
+                .iter()
+                .map(|row| row.amount.parse::<i128>().unwrap())
+                .sum::<i128>(),
+            payment_activity.total.parse::<i128>().unwrap()
+        );
+        assert!(payment_activity
+            .rows
+            .iter()
+            .any(|row| row.kind == "creditPayment"));
+    }
+
+    fn category_in_plan_activity(plan: &PlanSnapshot, category_id: &str) -> i64 {
+        plan.categories
+            .iter()
+            .find(|category| category.category_id == category_id)
+            .unwrap()
+            .activity
+            .0
     }
 
     #[test]

@@ -229,6 +229,8 @@ export interface PlanCategory { groupId: string; groupName: string; categoryId: 
 export interface CreditPaymentCategory { accountId: string; accountName: string; categoryId: string | null; currentBalance: string; priorBalance: string; spendingAndOutflows: string; paymentsAndInflows: string; cashLeftOverFromLastMonth: string; fundedSpending: string; paymentsMade: string; otherActivity: string; }
 export interface ReadyToAssignBreakdown { leftoverFromLastMonth: string; incomeThisMonth: string; assignedThisMonth: string; cashOverspendingFromLastMonth: string; }
 export interface PlanSnapshot { month: string; readyToAssign: string; readyToAssignBreakdown?: ReadyToAssignBreakdown; categories: PlanCategory[]; creditPaymentCategories: CreditPaymentCategory[]; }
+export interface CategoryActivityRow { id: string; accountName: string; date: string; payeeName: string; memo: string; amount: string; kind?: "ledger" | "creditFunding" | "creditPayment"; }
+export interface CategoryActivity { categoryId: string; month: string; rows: CategoryActivityRow[]; total: string; }
 export interface HiddenCategory { groupId: string; groupName: string; categoryId: string; categoryName: string; }
 export interface AssignReadyToAssignInput { categoryId: string; month: string; amount: string; expectedAssigned: string; }
 
@@ -322,6 +324,7 @@ export async function reconcileAccount(input: ReconciliationInput): Promise<Reco
   return savedMutation(() => invoke<ReconciliationResult>("reconcile_account", { input }));
 }
 export async function loadPlanMonth(month: string, asOf = localCalendarDate()): Promise<PlanSnapshot | null> { if (!isTauri()) return null; return invoke<PlanSnapshot>("get_plan_month", { month, asOf }); }
+export async function loadCategoryActivity(categoryId: string, month: string, asOf = localCalendarDate()): Promise<CategoryActivity | null> { if (!isTauri()) return null; return invoke<CategoryActivity>("get_category_activity", { input: { categoryId, month, asOf } }); }
 export async function loadHiddenCategories(): Promise<HiddenCategory[] | null> { if (!isTauri()) return null; return invoke<HiddenCategory[]>("get_hidden_categories"); }
 export async function setPlanAssignment(categoryId: string, month: string, amount: string): Promise<void> { return savedMutation(() => invoke("set_plan_assignment", { input: { categoryId, month, amount } })); }
 export async function assignReadyToAssign(input: AssignReadyToAssignInput): Promise<void> { return savedMutation(() => invoke("assign_ready_to_assign", { input })); }

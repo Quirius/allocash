@@ -280,3 +280,29 @@
 
 .plan-view .plan-category-cell { cursor: default; }
 .plan-view .plan-category-topline > .plan-category-name { width: auto; max-width: 100%; min-width: 0; flex: 0 1 auto; display: inline-flex; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+
+.plan-view .plan-activity-trigger { justify-self: end; width: max-content; max-width: 100%; padding: 0; border: 0; background: transparent; color: #c9c8d9; font: inherit; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; cursor: pointer; }
+.plan-view .plan-activity-trigger:not(:disabled):hover, .plan-view .plan-activity-trigger:not(:disabled):focus-visible { color: #74a9ff; text-decoration: underline; text-underline-offset: 2px; }
+.plan-activity-popover { position: fixed; z-index: 1000; display: flex; flex-direction: column; box-sizing: border-box; width: min(760px, calc(100vw - 16px)); max-height: min(560px, calc(100vh - 16px)); overflow: hidden; border: 0; border-radius: 9px; color: #eeedf6; background: #202037; box-shadow: 0 16px 48px #0009; }
+.plan-activity-heading { flex: 0 0 auto; padding: 14px 16px 11px; background: #202037; }
+.plan-activity-heading h2 { margin: 0; color: #fff; font-size: 18px; font-weight: 700; }
+.plan-activity-heading p { margin: 5px 0 0; color: #aaa9bf; font-size: 13px; }
+.plan-activity-content { display: flex; flex: 1 1 auto; min-height: 0; padding: 0 16px; overflow: hidden; }
+.plan-activity-status { display: flex; min-height: 110px; align-items: center; justify-content: center; gap: 12px; margin: 0; padding: 18px; color: #b9b8cb; }
+.plan-activity-status[role="alert"] { color: #f3a9b5; }
+.plan-activity-status button { border: 1px solid #4a4867; border-radius: 5px; padding: 6px 11px; color: #eeeefa; background: #292842; cursor: pointer; }
+.plan-activity-table-scroll { flex: 1 1 auto; min-height: 0; max-height: 224px; overflow: auto; overscroll-behavior: contain; scrollbar-color: #5c5b70 #1b1b2d; }
+.plan-activity-table-scroll table { width: 100%; min-width: 650px; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 13px; }
+.plan-activity-table-scroll th, .plan-activity-table-scroll td { overflow: hidden; padding: 8px 6px; border-bottom: 1px solid #38384e; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.plan-activity-table-scroll th { position: sticky; top: 0; z-index: 1; color: #eeedf6; background: #202037; font-size: 12px; font-weight: 650; text-transform: uppercase; }
+.plan-activity-table-scroll th:nth-child(1) { width: 18%; }
+.plan-activity-table-scroll th:nth-child(2) { width: 13%; }
+.plan-activity-table-scroll th:nth-child(3) { width: 23%; }
+.plan-activity-table-scroll th:nth-child(4) { width: 25%; }
+.plan-activity-table-scroll th:nth-child(5) { width: 21%; text-align: right; }
+.plan-activity-table-scroll td { color: #deddea; }
+.plan-activity-table-scroll .plan-activity-amount { color: #f4f3fa; text-align: right; font-variant-numeric: tabular-nums; }
+.plan-activity-footer { display: flex; flex: 0 0 auto; justify-content: flex-end; margin-top: auto; padding: 12px 16px; background: #202037; }
+.plan-activity-footer button { min-width: 73px; border: 0; border-radius: 8px; padding: 8px 17px; color: #fff; background: #5b52ff; font-weight: 650; cursor: pointer; }
+.plan-activity-footer button:hover, .plan-activity-footer button:focus-visible { background: #7765d2; }
+@media (max-width: 500px) { .plan-activity-table-scroll table { min-width: 620px; } .plan-activity-heading { padding: 14px 15px 11px; } }
