@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Check whether project-report metadata lags meaningful repository commits.
 
-This detects potentially stale reporting; it never updates project status itself.
+Stale reports warn by default; --strict fails for the agent completion gate.
+Invalid source metadata and checker errors always fail. This never updates status.
 Uses Python stdlib only and does not inspect or publish private budget data.
 """
 from __future__ import annotations
 
+import argparse
 import os
 from pathlib import Path
 import re
@@ -18,6 +20,11 @@ def git(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--strict", action="store_true",
+                        help="Fail on stale reports too; use before final reporting handoff.")
+    args = parser.parse_args()
+
     status_file = Path(".project/STATUS.yaml")
     if not status_file.exists():
         print("::error::Missing .project/STATUS.yaml")
@@ -62,15 +69,16 @@ def main() -> int:
             "Review the changes, then refresh the .project files and advance "
             "source.commit to the inspected pushed revision."
         )
-        print(f"::error::{message}")
+        print(f"::warning::{message}")
 
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as file:
             file.write(("\u26a0\ufe0f " if changed else "\u2705 ") + message + "\n")
 
-    return 1 if changed else 0
+    return 1 if changed and args.strict else 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

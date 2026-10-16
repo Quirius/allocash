@@ -94,3 +94,26 @@ pushes; pushed files alone do not mean Project HQ synchronized.
 - When switching unrelated tasks or handing off a long session, retain only the
   objective, relevant paths, decisions, checks and next step. Do not maintain a
   running transcript or claim that old context has been removed.
+
+## Reporting completion gate
+
+After substantive code/design work, finish the Project HQ reporting update before
+the final push/handoff. Review changes since STATUS.yaml source.commit and refresh
+affected status, plans, blockers, milestones, decisions and evidence. Set the
+source SHA only to the actual reviewed product/design commit, not the reporting
+commit; never advance it merely to suppress a warning or infer progress from
+activity. Preserve owner plans, stable IDs and unknown values.
+
+Run `python scripts/check_project_hq_freshness.py --strict` after the report
+update and before pushing its reporting commit. Resolve any stale-report result;
+if blocked, disclose the remaining stale scope rather than claiming completion.
+Follow existing Git rules, push the reporting commit, and confirm its remote
+publication before saying the report is published. Do not create timestamp-only
+follow-up commits or claim dashboard synchronization without checking it.
+
+The default GitHub Actions invocation is advisory for stale reports: it emits a
+warning and succeeds. Missing/invalid source metadata and checker/Git errors
+still fail. A successful Action does not certify report freshness; HQ retains its
+independent amber stale-report warning. The `--strict` mode is the agent's
+completion gate and fails on stale reports as well.
+

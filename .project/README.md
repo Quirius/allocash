@@ -1,7 +1,6 @@
 # Project HQ reporting contract
 
-These files prepare repository data for a future Project HQ importer. The dashboard
-does not yet consume them. `STATUS.yaml` summarizes the current published state;
+Project HQ reads these files from the published reporting branch. `STATUS.yaml` summarizes the current published state;
 the single YAML front matter blocks in `ROADMAP.md` and `DECISIONS.md` hold the
 machine-readable plans, milestones, and decisions. Markdown below those blocks
 provides context, not a second task list. Schema version 1 and stable IDs must be
@@ -47,3 +46,26 @@ without treating them as product-update times. A reporting-only commit does not
 require a timestamp-only follow-up. Report push failure or stale snapshots
 honestly, and do not claim Project HQ has synchronized until an importer confirms
 it. Keep private financial data, credentials, and machine paths out of these files.
+
+## Reporting completion gate
+
+After substantive code/design work, finish the Project HQ reporting update before
+the final push/handoff. Review changes since STATUS.yaml source.commit and refresh
+affected status, plans, blockers, milestones, decisions and evidence. Set the
+source SHA only to the actual reviewed product/design commit, not the reporting
+commit; never advance it merely to suppress a warning or infer progress from
+activity. Preserve owner plans, stable IDs and unknown values.
+
+Run `python scripts/check_project_hq_freshness.py --strict` after the report
+update and before pushing its reporting commit. Resolve any stale-report result;
+if blocked, disclose the remaining stale scope rather than claiming completion.
+Follow existing Git rules, push the reporting commit, and confirm its remote
+publication before saying the report is published. Do not create timestamp-only
+follow-up commits or claim dashboard synchronization without checking it.
+
+The default GitHub Actions invocation is advisory for stale reports: it emits a
+warning and succeeds. Missing/invalid source metadata and checker/Git errors
+still fail. A successful Action does not certify report freshness; HQ retains its
+independent amber stale-report warning. The `--strict` mode is the agent's
+completion gate and fails on stale reports as well.
+
