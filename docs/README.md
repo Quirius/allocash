@@ -1,6 +1,6 @@
 # Documentation map
 
-Start with [agent workflow](AGENTS.md) for repository work. Read only the topics
+Agents start with the root [AGENTS.md](../AGENTS.md). Read only the topics
 needed for the task; this index does not require loading every linked document.
 
 | Document | Owns |

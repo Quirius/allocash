@@ -5,24 +5,19 @@ User instructions take precedence; the root AGENTS.md provider note is advisory 
 
 ## Delegation
 
-- Prefer **GPT-6.1 Sol** (`gpt-6.1-sol`) or **GPT-6 Astra** (`gpt-6-astra`)
-  as the main coordinator. Both should use **GPT-6 Luna** (`gpt-6-luna`)
-  subagents for coding, light work, and independent critical review wherever needed
-  to improve token efficiency. Keep Luna scopes bounded, with clear ownership,
-  minimal context, and concrete acceptance checks. The main coordinator should
-  focus on broader decisions and especially heavy tasks, retaining responsibility
-  for integration and final validation. Escalate difficult or unresolved work to
-  the coordinator. Keep trivial work local only when delegation overhead would
-  outweigh the expected savings; never claim unmeasured token savings.
+- Model tiers (owner policy, configured globally on the owner's machine): Claude
+  sessions use Opus 5.5 (medium) to plan and decide, Sonnet 5.5 (medium) for routine
+  coding, documentation and tests, and Haiku 5.5 for searches, simple edits and
+  summaries. OpenAI sessions use GPT-6.1 Sol (medium) to plan and implement and
+  GPT-6 Luna for simple edits, searches and repetitive work. Use the cheapest model
+  that does the task reliably and escalate when it struggles; do trivial work
+  directly. Stay on subscription logins; never switch to paid API keys.
 - Use the lowest sufficient reasoning effort. Parallelize independent work when
   useful, accounting for setup, context transfer, coordination and review costs.
 - Give each worker a bounded deliverable, fresh minimal context, explicit owned
   files, relevant rules/skills and an acceptance check. Parallel workers must
   have nonoverlapping edit scopes. Avoid whole-chat copies and recursive
   delegation. Workers return paths, checks and blockers briefly.
-- Prefer GPT-6 subagents; do not substitute GPT-5.6 merely as a fallback. If a
-  requested override is unavailable, proceed with the available model and report
-  the limitation when relevant.
 - Seek an independent qualified review for consequential accounting, schema,
   migration, transfer, reconciliation, credit-card or budget-engine changes when
   practical. Review supplements deterministic tests; it does not replace them.

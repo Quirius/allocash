@@ -15,6 +15,9 @@ concrete regression risk. Do not repeat passing checks without a relevant change
 | `src-tauri/src/ledger.rs`: register, transfers, schedules, reports | `npm run test:core -- ledger_tests::` |
 | `src-tauri/src/plan.rs`: Plan, credit funding, targets | `npm run test:core -- plan::tests::` |
 | `src-tauri/src/ynab_import.rs` | `npm run test:core -- ynab_import_tests::` |
+| `src-tauri/src/account_management.rs` | `npm run test:core -- account_management::tests::` |
+| `src-tauri/src/undo.rs`, undo restore | `npm run test:core -- undo::tests::` and `npm run test:core -- undo_tests::` |
+| Category policy (budget-aware category entry) | `npm run test:core -- category_policy_tests::` |
 | `src-tauri/src/database.rs` | `npm run test:core -- database::tests::` |
 | `src-tauri/src/migrations.rs` and SQL schema | `npm run test:core -- migrations::tests::` and `npm run test:core -- schema_tests::` |
 | Backup/restore | Search `src-tauri/src/*tests.rs` for backup/restore cases; run the matching test filter with `npm run test:core -- <filter>` |
@@ -22,7 +25,7 @@ concrete regression risk. Do not repeat passing checks without a relevant change
 | Documentation only | Check changed links, facts and `git diff --check`; no application suite |
 
 For financial changes, also read the relevant safeguards/requirements routed from
-[AGENTS.md](AGENTS.md#task-routing). Shared accounting or schema changes can require
+[AGENTS.md](../AGENTS.md#where-to-find-things). Shared accounting or schema changes can require
 `npm run test:core` across modules. Full frontend checks are `npm test`.
 Desktop/native builds and toolchain instructions live in the root README; a browser
 preview or portable core test does not verify the Windows MSVC desktop build.
