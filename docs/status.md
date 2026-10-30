@@ -6,6 +6,9 @@ Navigation summary, reviewed 2026-10-30 against this file, `.project/STATUS.yaml
 and the source tree (documentation review only; no tests were rerun). The dated
 entries below remain the evidence; newest first.
 
+- **Migration:** the owner stated on 2026-10-31 that the 2026-10-21 date has passed
+  and the YNAB-to-Allocash migration is done. Remaining work is more live testing
+  during daily use and later feature upgrades.
 - **Implemented:** migrations `0001`-`0010`; integer-HUF ledger, linked transfers,
   editable register (All Accounts and per-account, search, session undo) and
   reconciliation; YNAB staging, mapping and reference validation; monthly Plan,
@@ -15,10 +18,10 @@ entries below remain the evidence; newest first.
 - **Validated with owner data:** installed account balances and current-month Ready
   to Assign matched YNAB (owner, 2026-10-10); a clean schema-10 migration candidate
   matched balances, Plan rows, Net Worth and supplied Income v Expense references.
-- **Open:** owner acceptance of recent register/Plan UI changes, target and
-  recurrence recreation, Spending by Payee/filter/forecast report references, full
-  native backup/reopen migration rehearsal, weekly/custom recurrence and automatic
-  backup retention.
+- **Open (follow-up testing and features, not migration-blocking):** owner
+  acceptance of recent register/Plan UI changes, target and recurrence recreation,
+  Spending by Payee/filter/forecast report references, native backup/reopen checks,
+  weekly/custom recurrence and automatic backup retention.
 - **Release:** no tag exists; tag only after owner-data validation. Current
   priorities and owner next actions: `.project/STATUS.yaml` (`next_action`).
 
