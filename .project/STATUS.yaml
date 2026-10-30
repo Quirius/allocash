@@ -11,13 +11,14 @@ progress:
   basis: "manual"
   rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
 next_action: "Complete owner acceptance of category actions and All Accounts; Plan assignment, cover/move and month navigation; account/transfer editing, status and scheduled realization; credit breakdowns; and date/repeat Save/Cancel/undo. Continue target/recurrence recreation, remaining view comparisons and native backup/reopen checks; detailed checks remain in summary.in_progress and docs/status.md."
-updated_at: "2026-10-16T19:10:48Z"
+updated_at: "2026-10-30T23:18:43Z"
 source:
   branch: "main"
-  commit: "80314b4102bb3e148a29fefffacc32dac688672d"
-  verified_at: "2026-10-16T19:10:48Z"
+  commit: "142a4c1a88a49dec3bd22a1db2c7e68b6cda6cf3"
+  verified_at: "2026-10-30T23:18:43Z"
 summary:
   completed:
+    - "Agent instructions were consolidated into one root AGENTS.md, which Claude Code loads through CLAUDE.md, and docs/status.md gained a current-state summary. Documentation only; product code, schema and tests are unchanged."
     - "Register search now suggests matching accounts, categories, category group names and coloured flags while typing. Identity suggestions narrow to the selected account/category/flag, while Find actions search any field, Payee, Category or Memo. Selected scopes remain visible and survive Enter; typing returns to any-field search. Keyboard, mouse, touch, Clear, Escape, outside dismissal and scrolling are supported. All 335 frontend tests, TypeScript, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes and reopened a responsive window; generated build files were cleaned after retaining the installer. Rust accounting, IPC and schema are unchanged; owner search and visual confirmation remains open."
     - "All Accounts and individual registers now support search across full loaded history before pagination and a View popup with date presets, month/year ranges, reconciled and flag visibility, and resizable/resettable columns. Individual registers add running balances from the complete posted ledger independent of filtering. Transaction images are omitted. All 322 frontend tests, 10 focused follow-up tests, TypeScript, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes and reopened a responsive window; generated build artifacts were cleaned after keeping the installer. Rust accounting and schema are unchanged; owner visual and daily-use confirmation remains open."
     - "Category Activity amounts now turn blue and underlined on hover or keyboard focus and open a read-only monthly breakdown with Account, Date, Payee, Memo and signed Amount. Long lists scroll under pinned headings, Close stays visible and narrow windows support horizontal table scrolling. Rows use the same captured cutoff as Plan, include eligible refunds, closed history and transfer legs, and must sum exactly to Plan Activity. Mapped card categories use explicitly labeled monthly funding and payment summaries without invented dates. Loading, empty, retry, stale reads and focus behavior are covered. All 312 frontend tests, 220 Rust tests, TypeScript, formatting, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes, matches the release executable and reopened a responsive window. Generated build files were removed while retaining the installer. Financial writes, schema and Plan calculations are unchanged; owner popup confirmation remains open."
@@ -122,6 +123,9 @@ summary:
   open_questions:
     - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "142a4c1a88a49dec3bd22a1db2c7e68b6cda6cf3"
+    note: "Current-state summary of implemented slices, owner-data validation and open gates."
   - path: "docs/status.md"
     ref: "80314b4102bb3e148a29fefffacc32dac688672d"
     note: "Records intelligent register search suggestions, field filters, validation and installation."
