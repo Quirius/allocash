@@ -75,6 +75,16 @@ decisions:
       - path: "docs/status.md"
         ref: "e7c17374a6b6ffab33daabeae32149e76370bae9"
         note: "Current implementation evidence for import, Plan, reports, register workflow, backup/restore, and remaining desktop rehearsal/release gates."
+  - id: "allocash-decision-008"
+    title: "Migration declared complete by owner; continue with live testing and feature upgrades"
+    context: "Owner statement recorded 2026-10-31: the 2026-10-21 date has passed and the app migration can be considered done. It still needs more live testing and feature upgrades later during usage."
+    state: "resolved"
+    resolution: "Treat the YNAB-to-Allocash migration as complete. Remaining work is live testing during daily use and later feature upgrades; the earlier migration-readiness scope and its percentage assessment are closed."
+    decided_at: null
+    evidence:
+      - path: "docs/status.md"
+        ref: "04e21c1e5b4a3f59d64eb49c86cc9659f48ba1cf"
+        note: "Records the owner's 2026-10-31 declaration; exact decision time is not recorded."
 ---
 
 # Decision context

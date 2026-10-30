@@ -4,20 +4,21 @@ name: "Allocash"
 repository: "Quirius/allocash"
 status: "In Progress"
 description: "Offline Windows desktop budgeting app for one local HUF budget."
-objective: "Reach a migration-ready local budgeting workflow by 2026-10-21, before the owner's vacation, while preserving YNAB history and reproducing balances, Plan values, and migration-critical reports."
-phase: "Priority #1 — migration readiness by 2026-10-21"
+objective: "Operate Allocash as the owner's daily budgeting app after the YNAB migration, which the owner declared done on 2026-10-31, with live testing and feature upgrades during use."
+phase: "Post-migration: live use, testing and feature upgrades"
 progress:
-  percent: 76
-  basis: "manual"
-  rationale: "Migration-readiness estimate using the owner-approved weighted model: accounting/import 30/30, Plan and credit-card correctness 20/20, historical reports/data integrity 10/10, daily workflow usability 6/15, backup and tested restore 9/10, Windows installer/release 1/5, full clean migration rehearsal 0/10. Reassess only when one of these migration gates materially changes."
-next_action: "Complete owner acceptance of category actions and All Accounts; Plan assignment, cover/move and month navigation; account/transfer editing, status and scheduled realization; credit breakdowns; and date/repeat Save/Cancel/undo. Continue target/recurrence recreation, remaining view comparisons and native backup/reopen checks; detailed checks remain in summary.in_progress and docs/status.md."
-updated_at: "2026-10-30T23:18:43Z"
+  percent: null
+  basis: "unknown"
+  rationale: "The earlier 76% manual estimate measured migration readiness; that assessment closed when the owner declared the migration done on 2026-10-31, and no new scoped assessment exists."
+next_action: "Continue live testing in daily use; collect owner-found issues and feature upgrades. Pending owner checks of recent register/Plan changes and target/recurrence recreation are now follow-up testing; details remain in summary.in_progress and docs/status.md."
+updated_at: "2026-10-30T23:27:56Z"
 source:
   branch: "main"
-  commit: "142a4c1a88a49dec3bd22a1db2c7e68b6cda6cf3"
-  verified_at: "2026-10-30T23:18:43Z"
+  commit: "04e21c1e5b4a3f59d64eb49c86cc9659f48ba1cf"
+  verified_at: "2026-10-30T23:27:56Z"
 summary:
   completed:
+    - "On 2026-10-31 the owner stated that the 2026-10-21 date has passed and the YNAB-to-Allocash migration can be considered done. Remaining work is more live testing during daily use and later feature upgrades."
     - "Agent instructions were consolidated into one root AGENTS.md, which Claude Code loads through CLAUDE.md, and docs/status.md gained a current-state summary. Documentation only; product code, schema and tests are unchanged."
     - "Register search now suggests matching accounts, categories, category group names and coloured flags while typing. Identity suggestions narrow to the selected account/category/flag, while Find actions search any field, Payee, Category or Memo. Selected scopes remain visible and survive Enter; typing returns to any-field search. Keyboard, mouse, touch, Clear, Escape, outside dismissal and scrolling are supported. All 335 frontend tests, TypeScript, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes and reopened a responsive window; generated build files were cleaned after retaining the installer. Rust accounting, IPC and schema are unchanged; owner search and visual confirmation remains open."
     - "All Accounts and individual registers now support search across full loaded history before pagination and a View popup with date presets, month/year ranges, reconciled and flag visibility, and resizable/resettable columns. Individual registers add running balances from the complete posted ledger independent of filtering. Transaction images are omitted. All 322 frontend tests, 10 focused follow-up tests, TypeScript, independent review, synthetic browser checks and production/native builds passed. Installation preserved budget bytes and reopened a responsive window; generated build artifacts were cleaned after keeping the installer. Rust accounting and schema are unchanged; owner visual and daily-use confirmation remains open."
@@ -116,13 +117,16 @@ summary:
     - "Budget-aware category rules are tested and installed; owner ordinary entry and crossing-transfer checks from both account sides remain open."
     - "The date/repeat dropdown and refined next-available-day Make repeating draft are installed; owner calendar, month-end recurrence, cancel-without-change and saved-draft checks remain open."
     - "Register responsiveness and upcoming deletion received owner confirmation. The owner accepted the installed unified upcoming display; the daily-workflow gate is verified. Clean import/reference rerun passed; owner desktop restore, view comparisons, required target/recurrence recreation and native backup/reopen remain open."
-    - "Native desktop backup/restore passed the owner rehearsal and synthetic desktop startup recovery passed. A full clean migration still needs verification before 2026-10-21; the owner confirmed the existing October 4 export remains current."
+    - "Native desktop backup/restore passed the owner rehearsal and synthetic desktop startup recovery passed. The owner declared the migration done on 2026-10-31, so the earlier pre-2026-10-21 clean-migration verification is no longer a gate; the owner confirmed the existing October 4 export remained current."
     - "The one-time desktop import handoff currently uses the verifier and a manual candidate copy into the rehearsal backup folder; no in-app YNAB import flow has been rehearsed."
     - "Spending by Payee, other report filters, forecast values, and broader schedule/target coverage remain secondary unless they block the owner's real migration workflow."
   blockers: []
   open_questions:
-    - "Which remaining workflow or validation gaps, if any, prove migration-blocking during the rehearsal?"
+    - "Which workflow or validation gaps, if any, does live daily use reveal?"
 evidence:
+  - path: "docs/status.md"
+    ref: "04e21c1e5b4a3f59d64eb49c86cc9659f48ba1cf"
+    note: "Records the owner's 2026-10-31 declaration that the migration is done, with live testing and feature upgrades remaining."
   - path: "docs/status.md"
     ref: "142a4c1a88a49dec3bd22a1db2c7e68b6cda6cf3"
     note: "Current-state summary of implemented slices, owner-data validation and open gates."
