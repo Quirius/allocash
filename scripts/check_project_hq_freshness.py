@@ -50,7 +50,7 @@ def main() -> int:
 
     ignored_prefixes = (".project/", ".github/", ".vscode/", ".codex/")
     ignored_names = {
-        "AGENTS.md", "docs/AGENTS.md", "docs/agent-operations.md",
+        "AGENTS.md", "CLAUDE.md", "docs/AGENTS.md", "docs/agent-operations.md",
         "docs/agent-project-rules.md", "docs/checks.md", ".gitignore",
         "scripts/check_project_hq_freshness.py",
     }
