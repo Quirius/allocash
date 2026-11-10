@@ -2887,6 +2887,12 @@ impl Database {
             transaction.commit()?;
             return Ok(());
         }
+        // A posted schedule occurrence points at its entry; release that link so the entry can go
+        // and the occurrence stays recorded as skipped instead of being generated again.
+        transaction.execute(
+            "UPDATE schedule_occurrences SET transaction_id=NULL,state='skipped' WHERE state='posted' AND transaction_id IN (SELECT id FROM transactions WHERE id=?1 OR (transfer_id IS NOT NULL AND transfer_id=(SELECT transfer_id FROM transactions WHERE id=?1)))",
+            [id],
+        )?;
         if let Some(transfer_id) = transfer {
             transaction.execute(
                 "DELETE FROM transactions WHERE transfer_id=?1",

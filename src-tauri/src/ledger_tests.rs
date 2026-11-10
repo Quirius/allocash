@@ -600,6 +600,61 @@ fn account_schedule(
 }
 
 #[test]
+fn a_posted_schedule_occurrence_entry_can_be_deleted_and_is_not_generated_again() {
+    for with_transfer in [false, true] {
+        let (_directory, mut database) = database();
+        database
+            .create_account(&account("peer", AccountKind::Tracking, 1))
+            .unwrap();
+        let schedule = account_schedule(
+            "cash",
+            with_transfer.then_some("peer"),
+            Some("test-expense"),
+        );
+        database.create_monthly_schedule(&schedule).unwrap();
+        database
+            .realize_due_scheduled_transactions(&date("2026-09-10"))
+            .unwrap();
+        let posted = database
+            .entries("cash")
+            .unwrap()
+            .into_iter()
+            .find(|row| row.entry.posting_state == PostingState::Posted)
+            .unwrap();
+        database.delete_entry(&posted.entry.id, false).unwrap();
+        assert!(!database
+            .entries("cash")
+            .unwrap()
+            .iter()
+            .any(|row| row.entry.id == posted.entry.id));
+        // Only the following month's pending occurrence may remain on the peer side.
+        assert!(database
+            .entries("peer")
+            .unwrap()
+            .iter()
+            .all(|row| row.entry.date != date("2026-09-10")));
+        let occurrences: i64 = database
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM schedule_occurrences WHERE occurrence_date='2026-09-10' AND state='skipped' AND transaction_id IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(occurrences, 1);
+        database
+            .realize_due_scheduled_transactions(&date("2026-09-10"))
+            .unwrap();
+        assert!(!database
+            .entries("cash")
+            .unwrap()
+            .iter()
+            .any(|row| row.entry.posting_state == PostingState::Posted
+                && row.entry.date == date("2026-09-10")));
+    }
+}
+
+#[test]
 fn closing_account_rejects_active_primary_schedule_until_deactivated() {
     let (_directory, mut database) = database();
     database
