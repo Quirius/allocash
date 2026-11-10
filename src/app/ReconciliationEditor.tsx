@@ -49,7 +49,19 @@ export function ReconciliationEditor({ account, onSaved, onCancel }: {
     try {
       setSaving(true); setError(null);
       const amount = parseSignedHufInput(bankBalance);
-      setReview(await previewAccountReconciliation({ accountId: account.id, asOf, bankClearedBalance: amount.toString(), expectedClearedBalance: null }));
+      const preview = await previewAccountReconciliation({ accountId: account.id, asOf, bankClearedBalance: amount.toString(), expectedClearedBalance: null });
+      if (BigInt(preview.adjustmentAmount) === 0n) {
+        // The bank balance already matches Allocash: reconcile straight away, with nothing to review.
+        try {
+          await reconcileAccount({ accountId: account.id, asOf, bankClearedBalance: preview.bankClearedBalance, expectedClearedBalance: preview.appClearedBalance });
+        } catch (cause) {
+          if (cause === RECONCILIATION_OUT_OF_DATE) { setError("The account changed. Enter the balance again to reconcile."); return; }
+          throw cause;
+        }
+        await onSaved(); onCancel();
+        return;
+      }
+      setReview(preview);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not review this account."); }
     finally { setSaving(false); }
   }
@@ -82,8 +94,8 @@ export function ReconciliationEditor({ account, onSaved, onCancel }: {
   const candidates = entries ? reconciliationCandidates(entries, asOf) : [];
   return <section className="transaction-editor reconciliation-editor" aria-labelledby="reconcile-title">
     <div className="editor-heading"><div><p className="eyebrow">RECONCILIATION</p><h2 id="reconcile-title">Reconcile {account.name}</h2></div><button className="text-button" onClick={onCancel} disabled={saving}>Cancel</button></div>
-    <p className="editor-help">Enter the cleared balance shown by your bank, then match cleared transactions before creating an adjustment. Pending items stay uncleared.</p>
-    <div className="editor-grid"><label>Through date<input type="date" value={asOf} onChange={(event) => { setAsOf(event.target.value); invalidate(); }} disabled={saving} /></label><label>Bank cleared balance<AmountInput value={bankBalance} onChange={(event) => { setBankBalance(event.target.value); invalidate(); }} placeholder="e.g. -12 500" inputMode="text" disabled={saving} /></label></div>
+    <p className="editor-help">Enter the cleared balance shown by your bank. If it matches Allocash, the account is reconciled right away; otherwise you can match transactions before creating an adjustment. Pending items stay uncleared.</p>
+    <div className="editor-grid"><label>Through date<input type="date" value={asOf} onChange={(event) => { setAsOf(event.target.value); invalidate(); }} disabled={saving} /></label><label>Bank cleared balance<AmountInput value={bankBalance} onChange={(event) => { setBankBalance(event.target.value); invalidate(); }} onKeyDown={(event) => { if (event.key === "Enter" && !review && !saving && bankBalance.trim()) { event.preventDefault(); void reviewAccount(); } }} placeholder="e.g. -12 500" inputMode="text" disabled={saving} /></label></div>
     {error && <p className="editor-error" role="alert">{error}</p>}
     {!review ? <button onClick={reviewAccount} disabled={saving}>{saving ? "Reviewing…" : "Review reconciliation"}</button> : <div className="reconciliation-review">
       <dl><div><dt>Allocash cleared</dt><dd>{formatHuf(BigInt(review.appClearedBalance))}</dd></div><div><dt>Bank cleared</dt><dd>{formatHuf(BigInt(review.bankClearedBalance))}</dd></div><div><dt>Entries to reconcile</dt><dd>{review.clearedEntryCount}</dd></div></dl>
