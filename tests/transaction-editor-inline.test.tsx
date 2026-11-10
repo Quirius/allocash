@@ -283,6 +283,19 @@ it("treats Enter without a named submit button as save and add another", async (
   expect(view.querySelector(".date-picker-trigger")?.getAttribute("aria-label")).toBe(formatDate("2026-10-02"));
 });
 
+it("saves and adds another when Enter is pressed in an amount field", async () => {
+  tauri.invoke.mockResolvedValue("new-entry");
+  const onCancel = vi.fn();
+  const onSaved = vi.fn(async () => {});
+  const view = mount(<TransactionComposer account={cash} accounts={[cash, bank]} options={options} inline onSaved={onSaved} onCancel={onCancel}
+    initialDraft={{ kind: "transaction", date: "2026-10-02", repeat: "never", payee: "Shop", categoryId: "food", counterpartId: "", memo: "", flagId: "", outflow: "1200", inflow: "" }} />);
+  const amount = view.querySelector<HTMLInputElement>('input[placeholder="0 Ft"]')!;
+  await act(async () => { amount.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); });
+  expect(tauri.invoke).toHaveBeenCalledOnce(); expect(onSaved).toHaveBeenCalledOnce(); expect(onCancel).not.toHaveBeenCalled();
+  expect(view.querySelector<HTMLInputElement>('input[list="payees-cash"]')?.value).toBe("");
+  expect(view.querySelector(".date-picker-trigger")?.getAttribute("aria-label")).toBe(formatDate("2026-10-02"));
+});
+
 it("retries only the register refresh after a transaction was written successfully", async () => {
   tauri.invoke.mockResolvedValue("new-entry");
   const onCancel = vi.fn();

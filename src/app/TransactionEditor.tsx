@@ -1,5 +1,5 @@
 import { AmountInput } from "./AmountInput";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import {
   createManualTransfer,
   deleteRegisterEntry,
@@ -71,6 +71,13 @@ function tabCompletion(event: { key: string; shiftKey: boolean; altKey: boolean;
   const query = typed.trim().toLowerCase();
   if (!query || suggestions.some((name) => name.toLowerCase() === query)) return null;
   return suggestions.find((name) => name.toLowerCase().startsWith(query)) ?? suggestions.find((name) => name.toLowerCase().includes(query)) ?? null;
+}
+
+/** AmountInput blurs on Enter, which cancels the browser's implicit form submission, so submit explicitly. */
+function submitOnEnter(event: KeyboardEvent<HTMLInputElement>) {
+  if (event.key !== "Enter" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
+  event.preventDefault();
+  event.currentTarget.form?.requestSubmit();
 }
 
 function errorText(error: unknown): string {
@@ -375,9 +382,9 @@ export function TransactionComposer({
           </select>
         </label> : <label>Category<select disabled value=""><option value="">Not used</option></select></label>}
         <label className="memo-field">Memo<input value={memo} onChange={(event) => setMemo(event.target.value)} placeholder="Optional note" /></label>
-        <label>Outflow<AmountInput inputMode="numeric" value={outflow} onChange={(event) => { setOutflow(event.target.value); if (event.target.value) setInflow(""); }} placeholder="0 Ft" /></label>
-        <label>Inflow<AmountInput inputMode="numeric" value={inflow} onChange={(event) => { setInflow(event.target.value); if (event.target.value) setOutflow(""); }} placeholder="0 Ft" /></label>
-        <div className="inline-status" aria-label="Transaction status"><TransactionStatusIcon state="uncleared" pending={scheduled} />{scheduled ? "Scheduled" : "Uncleared"}</div>
+        <label>Outflow<AmountInput onKeyDown={submitOnEnter} inputMode="numeric" value={outflow} onChange={(event) => { setOutflow(event.target.value); if (event.target.value) setInflow(""); }} placeholder="0 Ft" /></label>
+        <label>Inflow<AmountInput onKeyDown={submitOnEnter} inputMode="numeric" value={inflow} onChange={(event) => { setInflow(event.target.value); if (event.target.value) setOutflow(""); }} placeholder="0 Ft" /></label>
+        <div className="inline-status" aria-label="Transaction status"><TransactionStatusIcon state={!scheduled && date <= localCalendarDate() ? "cleared" : "uncleared"} pending={scheduled} />{scheduled ? "Scheduled" : date > localCalendarDate() ? "Upcoming" : "Cleared"}</div>
       </div>
 
       {(inline || kind === "transfer") && <details className="inline-secondary"><summary>Account and entry options</summary><div>
@@ -673,8 +680,8 @@ export function RegisterEntryEditor({
         </datalist></label>
         {editCategoryRule.show ? <label>Category<select data-register-editor-field="category" value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setCategoryOrigin(event.target.value ? "explicit" : "empty"); setCategoryTouched(true); setCategoryPeerId(editedTransferPeer?.id ?? null); setCategoryAccountId(editAccount.id); setCategoryDirection(direction); }}><option value="">{categoryEmptyLabel}</option>{entry.categoryId && !options.categories.some((option) => option.id === entry.categoryId) && <option value={entry.categoryId}>{entry.categoryGroupName} / {entry.categoryName} (hidden)</option>}{options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}</select></label> : <label>Category<select data-register-editor-field="category" disabled value=""><option value="">Not used</option></select></label>}
         <label className="memo-field">Memo<input data-register-editor-field="memo" value={memo} onChange={(event) => setMemo(event.target.value)} /></label>
-        <label>Outflow<AmountInput data-register-editor-field="outflow" required={direction === "outflow"} inputMode="numeric" value={direction === "outflow" ? amount : ""} onChange={(event) => { setAmount(event.target.value); if (event.target.value) setDirection("outflow"); }} placeholder="0 Ft" /></label>
-        <label>Inflow<AmountInput data-register-editor-field="inflow" required={direction === "inflow"} inputMode="numeric" value={direction === "inflow" ? amount : ""} onChange={(event) => { setAmount(event.target.value); if (event.target.value) setDirection("inflow"); }} placeholder="0 Ft" /></label>
+        <label>Outflow<AmountInput onKeyDown={submitOnEnter} data-register-editor-field="outflow" required={direction === "outflow"} inputMode="numeric" value={direction === "outflow" ? amount : ""} onChange={(event) => { setAmount(event.target.value); if (event.target.value) setDirection("outflow"); }} placeholder="0 Ft" /></label>
+        <label>Inflow<AmountInput onKeyDown={submitOnEnter} data-register-editor-field="inflow" required={direction === "inflow"} inputMode="numeric" value={direction === "inflow" ? amount : ""} onChange={(event) => { setAmount(event.target.value); if (event.target.value) setDirection("inflow"); }} placeholder="0 Ft" /></label>
         <div className="inline-status"><TransactionStatusIcon state={clearedState} pending={pendingOrFuture || (upcomingRepeatEligible && repeatIntervalMonths > 0)} />{pendingOrFuture || (upcomingRepeatEligible && repeatIntervalMonths > 0) ? (scheduled ? "Scheduled" : "Upcoming") : clearedState[0]!.toUpperCase() + clearedState.slice(1)}</div>
       </div>
       <details className="inline-secondary"><summary>Account and entry options</summary><div>
