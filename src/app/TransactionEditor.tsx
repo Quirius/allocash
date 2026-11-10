@@ -59,6 +59,14 @@ export function draftFromPostedEntry(entry: RegisterEntry, sourceAccountId: stri
   };
 }
 
+/** On a plain Tab with partial text, returns the first matching suggestion to fill in (focus still moves on). */
+function tabCompletion(event: { key: string; shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean }, typed: string, suggestions: string[]): string | null {
+  if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return null;
+  const query = typed.trim().toLowerCase();
+  if (!query || suggestions.some((name) => name.toLowerCase() === query)) return null;
+  return suggestions.find((name) => name.toLowerCase().startsWith(query)) ?? suggestions.find((name) => name.toLowerCase().includes(query)) ?? null;
+}
+
 function errorText(error: unknown): string {
   if (typeof error === "string" && error !== RECONCILED_CONFIRMATION_REQUIRED) return error;
   if (error instanceof Error) return error.message;
@@ -316,6 +324,7 @@ export function TransactionComposer({
               list={`payees-${account.id}`}
               value={payee}
               onChange={(event) => setPayee(event.target.value)}
+              onKeyDown={(event) => { const match = tabCompletion(event, payee, [...openCounterparts.flatMap((option) => [`Transfer: ${option.name}`, `Payment: ${option.name}`]), ...options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => option.name)]); if (match) setPayee(match); }}
               placeholder="Name or new payee"
             />
             <datalist id={`payees-${account.id}`}>
@@ -326,6 +335,12 @@ export function TransactionComposer({
             <input list={`transfer-payees-${account.id}`} value={transferPayee} onChange={(event) => {
               const value = event.target.value; setTransferPayee(value);
               if (isTransferPayee(value)) { try { setCounterpartId(resolveTransferPayee(value, account.id, accounts) ?? ""); } catch { setCounterpartId(""); } }
+              else setCounterpartId("");
+            }} onKeyDown={(event) => {
+              const match = tabCompletion(event, transferPayee, [...options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => option.name), ...openCounterparts.flatMap((option) => [`Transfer: ${option.name}`, `Payment: ${option.name}`])]);
+              if (!match) return;
+              setTransferPayee(match);
+              if (isTransferPayee(match)) { try { setCounterpartId(resolveTransferPayee(match, account.id, accounts) ?? ""); } catch { setCounterpartId(""); } }
               else setCounterpartId("");
             }} placeholder="Transfer: account name or payee" />
             <datalist id={`transfer-payees-${account.id}`}>

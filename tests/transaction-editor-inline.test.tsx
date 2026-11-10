@@ -221,6 +221,23 @@ it("ignores a repeated Enter submit while the first transaction write is pending
   expect(onSaved).toHaveBeenCalledOnce();
 });
 
+it("fills the first matching payee suggestion when Tab leaves the payee field", async () => {
+  const view = mount(<TransactionComposer account={cash} accounts={[cash, bank]} options={options} inline onSaved={vi.fn(async () => {})} onCancel={vi.fn()} />);
+  const input = view.querySelector<HTMLInputElement>('input[list="payees-cash"]')!;
+  const type = async (value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => { setter.call(input, value); input.dispatchEvent(new Event("input", { bubbles: true })); });
+  };
+  const tab = async (init: KeyboardEventInit = {}) => { await act(async () => { input.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, ...init })); }); };
+
+  await type("Sh"); await tab({ shiftKey: true });
+  expect(input.value).toBe("Sh");
+  await tab();
+  expect(input.value).toBe("Shop");
+  await type("Zzz"); await tab();
+  expect(input.value).toBe("Zzz");
+});
+
 it("saves and adds another by resetting to a blank today draft and focusing Payee", async () => {
   tauri.invoke.mockResolvedValue("new-entry");
   const onCancel = vi.fn();
