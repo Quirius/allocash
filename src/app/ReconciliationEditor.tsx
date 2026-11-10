@@ -98,7 +98,7 @@ export function ReconciliationEditor({ account, onSaved, onCancel }: {
     <div className="editor-grid"><label>Through date<input type="date" value={asOf} onChange={(event) => { setAsOf(event.target.value); invalidate(); }} disabled={saving} /></label><label>Bank cleared balance<AmountInput value={bankBalance} onChange={(event) => { setBankBalance(event.target.value); invalidate(); }} onKeyDown={(event) => { if (event.key === "Enter" && !review && !saving && bankBalance.trim()) { event.preventDefault(); void reviewAccount(); } }} placeholder="e.g. -12 500" inputMode="text" disabled={saving} /></label></div>
     {error && <p className="editor-error" role="alert">{error}</p>}
     {!review ? <button onClick={reviewAccount} disabled={saving}>{saving ? "Reviewing…" : "Review reconciliation"}</button> : <div className="reconciliation-review">
-      <dl><div><dt>Allocash cleared</dt><dd>{formatHuf(BigInt(review.appClearedBalance))}</dd></div><div><dt>Bank cleared</dt><dd>{formatHuf(BigInt(review.bankClearedBalance))}</dd></div><div><dt>Entries to reconcile</dt><dd>{review.clearedEntryCount}</dd></div></dl>
+      <dl><div><dt>Allocash cleared</dt><dd>{formatHuf(BigInt(review.appClearedBalance))}</dd></div><div><dt>Bank cleared</dt><dd>{formatHuf(BigInt(review.bankClearedBalance))}</dd></div><div><dt>Difference</dt><dd>{formatHuf(adjustment)}</dd></div><div><dt>Entries to reconcile</dt><dd>{review.clearedEntryCount}</dd></div></dl>
       <fieldset className="reconciliation-candidates" disabled={saving}>
         <legend>Match cleared transactions</legend>
         <p>Checked transactions will be reconciled. Reconciled history and future or scheduled rows stay unchanged.</p>
@@ -110,7 +110,7 @@ export function ReconciliationEditor({ account, onSaved, onCancel }: {
           </label>)}
         </div>}
       </fieldset>
-      {adjustment === 0n ? <p className="reconciliation-match">The cleared balance matches. No adjustment will be created.</p> : <details className="reconciliation-adjustment"><summary>Still does not match?</summary><p className="reconciliation-warning">A reconciled adjustment of {formatHuf(adjustment)} will be added to match the bank balance. Use this only for genuinely missing history.</p><button onClick={finish} disabled={saving}>{saving ? "Reconciling…" : "Create adjustment & reconcile"}</button></details>}
+      {adjustment === 0n ? <p className="reconciliation-match">The cleared balance matches. No adjustment will be created.</p> : <details className="reconciliation-adjustment" open><summary>Still does not match?</summary><p className="reconciliation-warning">A reconciled adjustment of {formatHuf(adjustment)} will be added to match the bank balance. Use this only for genuinely missing history.</p><button onClick={finish} disabled={saving}>{saving ? "Reconciling…" : "Create adjustment & reconcile"}</button></details>}
       <div className="editor-actions">{adjustment === 0n && <button onClick={finish} disabled={saving}>{saving ? "Reconciling…" : "Reconcile account"}</button>}<button className="text-button" onClick={() => setReview(null)} disabled={saving}>Edit details</button></div>
     </div>}
   </section>;
