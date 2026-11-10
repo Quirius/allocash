@@ -639,6 +639,7 @@ export function AccountRegister({
   readPending?: boolean;
   readError?: boolean;
 }) {
+  const [carryDate, setCarryDate] = useState<string | null>(null);
   const [editor, setEditor] = useState<"new" | "choose-account" | "reconcile" | { kind: "edit-entry"; key: number; entry: RegisterEntry | AllAccountsRegisterEntry; focusField: RegisterEntryFocusField; baselineFingerprint: string } | { kind: "duplicate"; key: number; draft: TransactionDraft; sourceAccountId: string } | null>(null);
   const [scheduleAction, setScheduleAction] = useState(false);
   const actionLock = useRef(false);
@@ -913,8 +914,10 @@ export function AccountRegister({
           accounts={accounts}
           options={options}
           readOnly={(allAccounts && !readCurrent) || editorRowChanged}
+          carryDate={carryDate}
+          onCarryDate={setCarryDate}
           onSaved={onChanged}
-          onCancel={() => setEditor(null)}
+          onCancel={() => { setCarryDate(null); setEditor(null); }}
         />
       )}
       {editor === "new" && allAccounts && !newEntryAccount && <div className="all-account-composer-choice" role="alert"><span>The selected account is no longer available. Choose an open account again.</span><button type="button" onClick={() => setEditor("choose-account")}>Choose account</button><button type="button" className="secondary" onClick={() => setEditor(null)}>Cancel</button></div>}

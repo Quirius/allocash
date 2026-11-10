@@ -111,6 +111,8 @@ export function TransactionComposer({
   accounts,
   options,
   initialDraft,
+  carryDate,
+  onCarryDate,
   onSaved,
   onCancel,
   inline = false,
@@ -120,13 +122,16 @@ export function TransactionComposer({
   accounts: AccountOverview[];
   options: TransactionFormOptions;
   initialDraft?: TransactionDraft;
+  /** Date of the entry just saved with "add another". The parent keeps it because the register refresh can remount the composer. */
+  carryDate?: string | null;
+  onCarryDate?: (date: string) => void;
   onSaved: () => Promise<void>;
   onCancel: () => void;
   inline?: boolean;
   readOnly?: boolean;
 }) {
   const [kind, setKind] = useState<"transaction" | "transfer">(initialDraft?.kind ?? "transaction");
-  const [date, setDate] = useState(initialDraft?.date ?? localCalendarDate());
+  const [date, setDate] = useState(initialDraft?.date ?? carryDate ?? localCalendarDate());
   const [repeat, setRepeat] = useState<EntryRepeat>(initialDraft?.repeat ?? "never");
   const [payee, setPayee] = useState(initialDraft?.payee ?? "");
   const [categoryId, setCategoryId] = useState(initialDraft?.categoryId ?? "");
@@ -300,6 +305,7 @@ export function TransactionComposer({
         else await createPayeeEntry(input, accounts);
       }
       writeCompleted = true;
+      if (action === "another") onCarryDate?.(date);
       await onSaved();
       finishAfterRefresh(action);
     } catch (caught) {

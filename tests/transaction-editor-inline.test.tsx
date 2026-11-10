@@ -283,6 +283,18 @@ it("treats Enter without a named submit button as save and add another", async (
   expect(view.querySelector(".date-picker-trigger")?.getAttribute("aria-label")).toBe(formatDate("2026-10-02"));
 });
 
+it("reports the saved date for add-another and starts from a carried date after a remount", async () => {
+  tauri.invoke.mockResolvedValue("new-entry");
+  const onCarryDate = vi.fn();
+  const view = mount(<TransactionComposer account={cash} accounts={[cash, bank]} options={options} inline onCarryDate={onCarryDate} onSaved={vi.fn(async () => {})} onCancel={vi.fn()}
+    initialDraft={{ kind: "transaction", date: "2026-10-02", repeat: "never", payee: "Shop", categoryId: "food", counterpartId: "", memo: "", flagId: "", outflow: "1200", inflow: "" }} />);
+  await act(async () => { view.querySelector<HTMLButtonElement>('button[name="action"][value="another"]')!.click(); });
+  expect(onCarryDate).toHaveBeenCalledWith("2026-10-02");
+  act(() => root.unmount()); host.remove();
+  const next = mount(<TransactionComposer account={cash} accounts={[cash, bank]} options={options} inline carryDate="2026-10-02" onSaved={vi.fn(async () => {})} onCancel={vi.fn()} />);
+  expect(next.querySelector(".date-picker-trigger")?.getAttribute("aria-label")).toBe(formatDate("2026-10-02"));
+});
+
 it("saves and adds another when Enter is pressed in an amount field", async () => {
   tauri.invoke.mockResolvedValue("new-entry");
   const onCancel = vi.fn();
