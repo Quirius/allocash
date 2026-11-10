@@ -941,7 +941,9 @@ impl Database {
         month: &PlanMonth,
         as_of: Option<&CalendarDate>,
     ) -> LedgerResult<PlanSnapshot> {
-        let derivation = derive_plan(&self.connection, month, as_of)?;
+        // Entries are read once; every earlier month's derivation reuses their prefix.
+        let plan_entries = load_plan_entries(&self.connection, month, as_of)?;
+        let derivation = derive_plan_with(&self.connection, month, &plan_entries)?;
         let ready_category_ids = ready_to_assign_category_ids(&self.connection)?;
         let target_definitions = target_definitions_for(&self.connection, month)?;
         let target_snoozes = target_snoozes_for(&self.connection, month)?;
@@ -994,7 +996,7 @@ impl Database {
                                         .unwrap_or(&0),
                                     assigned,
                                     target_snoozes.contains(&category_id),
-                                    as_of,
+                                    &plan_entries,
                                     &derivation.activity,
                                     &mut historical_derivations,
                                 )
@@ -1140,11 +1142,84 @@ fn ready_to_assign_category_ids(
 /// Replays the budget one calendar month at a time. A closed month carries only
 /// positive category money forward; cash overspending reduces Ready to Assign
 /// in the following month, while credit overspending remains card debt.
+/// One posted on-budget entry: category, amount, date, account kind, account, transfer id,
+/// and the counterpart account's kind for transfers.
+type PlanEntry = (
+    Option<String>,
+    i64,
+    String,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+);
+
+/// Posted cash/credit entries dated before the month after `upto` (and through `as_of`), in
+/// derivation order. Ordered here rather than with SQL ORDER BY, whose sorter dominated this
+/// query's runtime; Option ordering puts None first like SQLite NULLs, String ordering is
+/// bytewise like BINARY. Sorted by date first, so any earlier month's entries are a prefix.
+fn load_plan_entries(
+    connection: &rusqlite::Connection,
+    upto: &PlanMonth,
+    as_of: Option<&CalendarDate>,
+) -> LedgerResult<Vec<PlanEntry>> {
+    let mut statement = connection.prepare(
+        "SELECT t.category_id,t.amount_huf,t.transaction_date,a.kind,t.account_id,t.transfer_id,
+                (SELECT other_account.kind FROM ledger_entries other JOIN accounts other_account ON other_account.id=other.account_id WHERE other.transfer_id=t.transfer_id AND other.account_id<>t.account_id),
+                source.source_file,source.row_number,t.id
+         FROM ledger_entries t JOIN accounts a ON a.id=t.account_id
+         LEFT JOIN import_rows source ON source.id=t.import_row_id
+         WHERE t.posting_state='posted' AND t.transaction_date<?1 AND (?2 IS NULL OR t.transaction_date<=?2) AND a.kind IN ('cash','credit')",
+    )?;
+    let mut keyed = statement
+        .query_map(
+            params![upto.next_start(), as_of.map(CalendarDate::as_str)],
+            |row| {
+                Ok((
+                    (
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(7)?,
+                        row.get::<_, Option<i64>>(8)?,
+                        row.get::<_, String>(9)?,
+                    ),
+                    (
+                        row.get::<_, Option<String>>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, String>(3)?,
+                        row.get::<_, String>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                    ),
+                ))
+            },
+        )?
+        .collect::<Result<Vec<_>, _>>()?;
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(keyed.into_iter().map(|(_, entry)| entry).collect())
+}
+
 fn derive_plan(
     connection: &rusqlite::Connection,
     target: &PlanMonth,
     as_of: Option<&CalendarDate>,
 ) -> LedgerResult<PlanDerivation> {
+    derive_plan_with(
+        connection,
+        target,
+        &load_plan_entries(connection, target, as_of)?,
+    )
+}
+
+/// Derives `target` from `all_entries`, which must cover at least every entry before the month
+/// after `target`.
+fn derive_plan_with(
+    connection: &rusqlite::Connection,
+    target: &PlanMonth,
+    all_entries: &[PlanEntry],
+) -> LedgerResult<PlanDerivation> {
+    let next_start = target.next_start();
+    let entries = &all_entries[..all_entries.partition_point(|entry| entry.2 < next_start)];
     let ready_category_ids = ready_to_assign_category_ids(connection)?;
     let payment_categories: BTreeMap<String, String> = connection
         .prepare("SELECT account_id,category_id FROM credit_payment_categories")?
@@ -1178,37 +1253,13 @@ fn derive_plan(
             .or_default();
         activity.assignment = checked_add(activity.assignment, amount)?;
     }
-    let mut entries = connection.prepare(
-        "SELECT t.category_id,t.amount_huf,t.transaction_date,a.kind,t.account_id,t.transfer_id,
-                (SELECT other_account.kind FROM ledger_entries other JOIN accounts other_account ON other_account.id=other.account_id WHERE other.transfer_id=t.transfer_id AND other.account_id<>t.account_id)
-         FROM ledger_entries t JOIN accounts a ON a.id=t.account_id
-         LEFT JOIN import_rows source ON source.id=t.import_row_id
-         WHERE t.posting_state='posted' AND t.transaction_date<?1 AND (?2 IS NULL OR t.transaction_date<=?2) AND a.kind IN ('cash','credit')
-         ORDER BY t.transaction_date,source.source_file,source.row_number,t.id",
-    )?;
-    let entries = entries
-        .query_map(
-            params![target.next_start(), as_of.map(CalendarDate::as_str)],
-            |row| {
-                Ok((
-                    row.get::<_, Option<String>>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, Option<String>>(5)?,
-                    row.get::<_, Option<String>>(6)?,
-                ))
-            },
-        )?
-        .collect::<Result<Vec<_>, _>>()?;
 
     // Credit-to-cash transfers are RTA income only to the extent that they
     // increase borrowing. Precompute how much of each credit debit consumes
     // an existing positive card balance, using only entries in this as-of view.
     let mut transfer_positive_balance_coverage = BTreeMap::<String, i128>::new();
     let mut coverage_credit_balances = BTreeMap::<String, i128>::new();
-    for (_, raw_amount, _, kind, account_id, transfer_id, counterpart_kind) in &entries {
+    for (_, raw_amount, _, kind, account_id, transfer_id, counterpart_kind) in entries {
         if kind != "credit" {
             continue;
         }
@@ -1229,7 +1280,8 @@ fn derive_plan(
         *balance = checked_add(*balance, amount)?;
     }
 
-    for (category_id, raw_amount, date, kind, account_id, transfer_id, counterpart_kind) in entries
+    for (category_id, raw_amount, date, kind, account_id, transfer_id, counterpart_kind) in
+        entries.iter().cloned()
     {
         let amount = i128::from(raw_amount);
         let mut credit_positive_balance_delta = 0i128;
@@ -1638,7 +1690,7 @@ fn periodic_target_progress(
     starting_available: i128,
     assigned: i128,
     snoozed: bool,
-    as_of: Option<&CalendarDate>,
+    plan_entries: &[PlanEntry],
     current_activity: &BTreeMap<String, i128>,
     historical_derivations: &mut BTreeMap<String, PlanDerivation>,
 ) -> LedgerResult<CategoryTargetProgress> {
@@ -1683,7 +1735,7 @@ fn periodic_target_progress(
             starting_available
         } else {
             let previous = shift_month(&cycle_start, -1)?;
-            *cached_plan_derivation(connection, &previous, as_of, historical_derivations)?
+            *cached_plan_derivation(connection, &previous, plan_entries, historical_derivations)?
                 .available
                 .get(category_id)
                 .unwrap_or(&0)
@@ -1697,11 +1749,16 @@ fn periodic_target_progress(
             let activity = if activity_month == *month {
                 current_activity.get(category_id).copied().unwrap_or(0)
             } else {
-                cached_plan_derivation(connection, &activity_month, as_of, historical_derivations)?
-                    .activity
-                    .get(category_id)
-                    .copied()
-                    .unwrap_or(0)
+                cached_plan_derivation(
+                    connection,
+                    &activity_month,
+                    plan_entries,
+                    historical_derivations,
+                )?
+                .activity
+                .get(category_id)
+                .copied()
+                .unwrap_or(0)
             };
             spent = checked_sub(spent, activity)?;
             if activity_month == *month {
@@ -1741,13 +1798,13 @@ fn periodic_target_progress(
 fn cached_plan_derivation<'a>(
     connection: &rusqlite::Connection,
     month: &PlanMonth,
-    as_of: Option<&CalendarDate>,
+    plan_entries: &[PlanEntry],
     cache: &'a mut BTreeMap<String, PlanDerivation>,
 ) -> LedgerResult<&'a PlanDerivation> {
     if !cache.contains_key(month.as_str()) {
         cache.insert(
             month.as_str().to_owned(),
-            derive_plan(connection, month, as_of)?,
+            derive_plan_with(connection, month, plan_entries)?,
         );
     }
     Ok(cache

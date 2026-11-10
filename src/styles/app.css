@@ -142,7 +142,7 @@ details { border-top: 1px solid #323d49; padding-top: 16px; margin-top: 20px; fo
 .plan-row .plan-available.funded,.credit-payment-amount.funded { color: #b0efbd; background: #24452d; }
 .plan-row .plan-available.underfunded,.credit-payment-amount.underfunded { color: #ffeb9b; background: #554413; }
 .plan-row .plan-available.overspent,.credit-payment-amount.overspent { color: #ffc2c2; background: #612b32; }
-.credit-payment-details { display: grid; gap: 12px; }
+.credit-payment-details { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }.credit-payment-details > * { min-width: 0; }.credit-payment-shortfall,.credit-payment-breakdown dl { grid-template-columns: minmax(0, 1fr); }.credit-payment-details dt { min-width: 0; overflow-wrap: anywhere; }
 .credit-payment-status,.credit-payment-shortfall,.credit-payment-breakdown { margin: 0; padding: 14px; border-radius: 7px; background: #202c35; }
 .credit-payment-status { border-top: 3px solid #6eac80; }
 .credit-payment-status h4 { margin: 0 0 14px; font-size: 12px; }

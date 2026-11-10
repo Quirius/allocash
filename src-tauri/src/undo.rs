@@ -57,7 +57,8 @@ impl UndoHistory {
         connection
             .backup("main", &path, None::<fn(rusqlite::backup::Progress)>)
             .map_err(|_| "Could not create an undo snapshot.".to_owned())?;
-        verify_snapshot(&path)?;
+        // No integrity scan here: it cost about as much as the copy on every write, and
+        // `restore_verified` validates a snapshot before any undo or failure rollback uses it.
         let snapshot = UndoSnapshot {
             path,
             label: label.to_owned(),
