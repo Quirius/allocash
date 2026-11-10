@@ -14,7 +14,11 @@ describe("parseAmountExpression", () => {
     expect(parseAmountExpression("-(9223372036854775808)")).toBe(-9223372036854775808n);
   });
 
-  it.each(["1 00", "1 +", "1 / 0", "1 / 3", "9223372036854775808", "-(9223372036854775809)", "1 ** 2", "()"])("rejects %s", (value) => {
+  it.each([["10 / 3", 3n], ["20 / 3", 7n], ["5 / 2", 3n], ["1 / 2", 1n], ["1 / 3", 0n], ["-5 / 2", -3n], ["-(5 / 2)", -3n], ["-10 / 3", -3n], ["1 000 / 3 * 3", 1000n], ["7 / 2 + 7 / 2", 7n]])("rounds the final result of %s to the nearest whole HUF, halves away from zero", (value, expected) => {
+    expect(parseAmountExpression(value)).toBe(expected);
+  });
+
+  it.each(["1 00", "1 +", "1 / 0", "9223372036854775808", "-(9223372036854775809)", "1 ** 2", "()"])("rejects %s", (value) => {
     expect(() => parseAmountExpression(value)).toThrow();
   });
 });

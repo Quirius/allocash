@@ -102,7 +102,10 @@ export function parseAmountExpression(value: string): bigint {
 
   const result = parseSum();
   if (peek() !== undefined) throw new Error("Unexpected text in amount expression.");
-  if (result.denominator !== 1n) throw new Error("The result must be a whole HUF amount.");
-  if (result.numerator < MIN || result.numerator > MAX) throw new Error("The amount exceeds the supported HUF range.");
-  return result.numerator;
+  // Only the final result is rounded, to the nearest whole HUF; exact halves go away from zero (2.5 -> 3, -2.5 -> -3).
+  let whole = result.numerator / result.denominator;
+  const remainder = result.numerator % result.denominator;
+  if ((remainder < 0n ? -remainder : remainder) * 2n >= result.denominator) whole += result.numerator < 0n ? -1n : 1n;
+  if (whole < MIN || whole > MAX) throw new Error("The amount exceeds the supported HUF range.");
+  return whole;
 }
