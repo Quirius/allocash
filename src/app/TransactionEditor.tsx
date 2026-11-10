@@ -59,6 +59,11 @@ export function draftFromPostedEntry(entry: RegisterEntry, sourceAccountId: stri
   };
 }
 
+/** Payee suggestions for moving money to these accounts: loans also offer `Payment:`, every other kind only `Transfer:`. */
+function transferLabels(accounts: AccountOverview[]): string[] {
+  return accounts.flatMap((account) => account.kind === "loan" ? [`Transfer: ${account.name}`, `Payment: ${account.name}`] : [`Transfer: ${account.name}`]);
+}
+
 /** The category last used with this exact payee in the same direction, if it is still offered. */
 function lastPayeeCategory(name: string, direction: "inflow" | "outflow", options: TransactionFormOptions): string {
   const payee = options.payees.find((item) => item.name.toLowerCase() === name.trim().toLowerCase());
@@ -363,11 +368,11 @@ export function TransactionComposer({
               list={`payees-${account.id}`}
               value={payee}
               onChange={(event) => changePayee(event.target.value)}
-              onKeyDown={(event) => { const match = tabCompletion(event, payee, [...openCounterparts.flatMap((option) => [`Transfer: ${option.name}`, `Payment: ${option.name}`]), ...options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => option.name)]); if (match) changePayee(match); }}
+              onKeyDown={(event) => { const match = tabCompletion(event, payee, [...transferLabels(openCounterparts), ...options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => option.name)]); if (match) changePayee(match); }}
               placeholder="Name or new payee"
             />
             <datalist id={`payees-${account.id}`}>
-              {openCounterparts.flatMap((option) => [<option key={`transfer-${option.id}`} value={`Transfer: ${option.name}`} />, <option key={`payment-${option.id}`} value={`Payment: ${option.name}`} />])}
+              {transferLabels(openCounterparts).map((label) => <option key={label} value={label} />)}
               {options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => <option key={option.id} value={option.name} />)}
             </datalist>
           </label> : <label>Payee
@@ -376,7 +381,7 @@ export function TransactionComposer({
               if (isTransferPayee(value)) { try { setCounterpartId(resolveTransferPayee(value, account.id, accounts) ?? ""); } catch { setCounterpartId(""); } }
               else setCounterpartId("");
             }} onKeyDown={(event) => {
-              const match = tabCompletion(event, transferPayee, [...options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => option.name), ...openCounterparts.flatMap((option) => [`Transfer: ${option.name}`, `Payment: ${option.name}`])]);
+              const match = tabCompletion(event, transferPayee, [...options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => option.name), ...transferLabels(openCounterparts)]);
               if (!match) return;
               setTransferPayee(match);
               if (isTransferPayee(match)) { try { setCounterpartId(resolveTransferPayee(match, account.id, accounts) ?? ""); } catch { setCounterpartId(""); } }
@@ -384,7 +389,7 @@ export function TransactionComposer({
             }} placeholder="Transfer: account name or payee" />
             <datalist id={`transfer-payees-${account.id}`}>
               {options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => <option key={`payee-${option.id}`} value={option.name} />)}
-              {openCounterparts.flatMap((option) => [<option key={`transfer-${option.id}`} value={`Transfer: ${option.name}`} />, <option key={`payment-${option.id}`} value={`Payment: ${option.name}`} />])}
+              {transferLabels(openCounterparts).map((label) => <option key={label} value={label} />)}
             </datalist>
           </label>}
         {categoryRule.show ? <label>Category
@@ -688,7 +693,7 @@ export function RegisterEntryEditor({
         </div>
         <label>Payee<input data-register-editor-field="payee" list={`edit-payees-${entry.id}`} value={payee} onChange={(event) => changePayee(event.target.value)} /><datalist id={`edit-payees-${entry.id}`}>
           {options.payees.map((option) => <option key={option.id} value={option.name} />)}
-          {accounts.filter((option) => option.id !== editAccount.id && (!option.closed || option.id === transferPeer?.id)).flatMap((option) => [<option key={`transfer-${option.id}`} value={`Transfer: ${option.name}`} />, <option key={`payment-${option.id}`} value={`Payment: ${option.name}`} />])}
+          {transferLabels(accounts.filter((option) => option.id !== editAccount.id && (!option.closed || option.id === transferPeer?.id))).map((label) => <option key={label} value={label} />)}
         </datalist></label>
         {editCategoryRule.show ? <label>Category<select data-register-editor-field="category" value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setCategoryOrigin(event.target.value ? "explicit" : "empty"); setCategoryTouched(true); setCategoryPeerId(editedTransferPeer?.id ?? null); setCategoryAccountId(editAccount.id); setCategoryDirection(direction); }}><option value="">{categoryEmptyLabel}</option>{entry.categoryId && !options.categories.some((option) => option.id === entry.categoryId) && <option value={entry.categoryId}>{entry.categoryGroupName} / {entry.categoryName} (hidden)</option>}{options.categories.map((option) => <option key={option.id} value={option.id}>{option.groupName} / {option.name}</option>)}</select></label> : <label>Category<select data-register-editor-field="category" disabled value=""><option value="">Not used</option></select></label>}
         <label className="memo-field">Memo<input data-register-editor-field="memo" value={memo} onChange={(event) => setMemo(event.target.value)} /></label>

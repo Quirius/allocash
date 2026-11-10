@@ -64,7 +64,7 @@ it("shows a transfer's peer as a fixed payee in the same grid slot", () => {
   const payee = view.querySelector<HTMLInputElement>('input[list="edit-payees-entry"]');
   expect(payee?.value).toBe("Transfer: Bank");
   expect(view.querySelector("#edit-payees-entry option[value='Transfer: Bank']")).not.toBeNull();
-  expect(view.querySelector("#edit-payees-entry option[value='Payment: Bank']")).not.toBeNull();
+  expect(view.querySelector("#edit-payees-entry option[value='Payment: Bank']")).toBeNull(); // only loans offer Payment:
   expect(view.querySelector("#edit-payees-entry option[value='Transfer: Cash']")).toBeNull();
   expect([...view.querySelectorAll(".inline-fields > label")].filter((label) => label.textContent?.startsWith("Category"))).toHaveLength(1);
 });
