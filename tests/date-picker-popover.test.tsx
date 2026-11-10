@@ -10,6 +10,20 @@ let root: Root;
 let host: HTMLDivElement;
 afterEach(() => { act(() => root?.unmount()); host?.remove(); });
 
+it("moves focus to the next field when Tab is pressed on a calendar day", () => {
+  host = document.createElement("div"); document.body.append(host);
+  root = createRoot(host);
+  act(() => root.render(<form><DateRepeatPicker date="2026-10-15" onDateChange={vi.fn()} repeat="never" onRepeatChange={vi.fn()} /><input aria-label="Payee" /></form>));
+  act(() => host.querySelector<HTMLButtonElement>(".date-picker-trigger")!.click());
+  const day = document.body.querySelector<HTMLButtonElement>('.calendar-grid button[aria-pressed="true"]')!;
+  day.focus();
+  const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+  act(() => { day.dispatchEvent(event); });
+  expect(event.defaultPrevented).toBe(true);
+  expect(document.body.querySelector('[role="dialog"][aria-label="Choose date and repeat"]')).toBeNull();
+  expect(document.activeElement).toBe(host.querySelector('input[aria-label="Payee"]'));
+});
+
 it("keeps the portaled picker open for inside clicks and closes it on outside pointerdown without writes", () => {
   const onDateChange = vi.fn();
   const onRepeatChange = vi.fn();
