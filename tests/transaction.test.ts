@@ -22,14 +22,14 @@ it.each(["Transfer: Cash", " transfer: cash ", "Payment: Cash"])("creates a link
     accountId: "bank", counterpartAccountId: "cash", date: "2026-10-05",
     memo: "Test transfer", flagId: null, amount: "1000", direction: "outflow",
     categoryId: "food",
-  } });
+  }, asOf: expect.any(String) });
 });
 
 it("creates the inflow side without losing integer precision", async () => {
   await createPayeeEntry({ ...draft, amount: "9007199254740993" }, accounts);
   expect(invoke).toHaveBeenCalledWith("create_manual_transfer", { input: expect.objectContaining({
     amount: "9007199254740993", direction: "inflow", counterpartAccountId: "cash",
-  }) });
+  }), asOf: expect.any(String) });
 });
 
 it.each(["Transfer:", "Transfer: Ca", "Transfer: Missing", "Transfer: Bank"])("rejects unresolved or same-account payee %s without writing", async (payeeName) => {
@@ -46,7 +46,7 @@ it("refuses closed or ambiguous destination accounts", async () => {
 it("keeps ordinary payees and their categories unchanged", async () => {
   const ordinary = { ...draft, payeeName: "Shop" };
   await createPayeeEntry(ordinary, accounts);
-  expect(invoke).toHaveBeenCalledExactlyOnceWith("create_manual_transaction", { input: ordinary });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("create_manual_transaction", { input: ordinary, asOf: expect.any(String) });
 });
 
 it.each([3, 12] as const)("schedules a transfer payee every %i months through the linked-transfer schedule input", async (intervalMonths) => {
@@ -73,7 +73,7 @@ it("routes future Never dates to a one-occurrence scheduled entry", async () => 
 it.each(["2026-10-05", "2026-10-04"]) ("keeps current or past Never date %s manual", async (date) => {
   expect(scheduleForEntry(date, "never", "2026-10-05")).toBeNull();
   await createPayeeEntry({ ...draft, date, payeeName: "Shop" }, accounts);
-  expect(invoke).toHaveBeenCalledExactlyOnceWith("create_manual_transaction", { input: expect.objectContaining({ date, payeeName: "Shop" }) });
+  expect(invoke).toHaveBeenCalledExactlyOnceWith("create_manual_transaction", { input: expect.objectContaining({ date, payeeName: "Shop" }), asOf: expect.any(String) });
 });
 
 it("schedules an ordinary yearly entry", async () => {

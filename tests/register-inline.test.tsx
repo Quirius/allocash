@@ -176,7 +176,7 @@ it("allows creating a transaction from the empty register through the existing c
   await act(async () => button("Save transaction", form).click());
   expect(invoke).toHaveBeenCalledWith("create_manual_transaction", { input: expect.objectContaining({
     accountId: "cash", payeeName: "Market", categoryId: "food", amount: "-1200",
-  }) });
+  }), asOf: expect.any(String) });
 });
 
 it("uses the existing edit command and requires explicit confirmation for reconciled changes", async () => {

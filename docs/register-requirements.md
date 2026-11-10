@@ -192,7 +192,8 @@ The schema may leave room to add them later without destructive migration.
 
 Normal manually created transaction:
 
-- defaults to ****Uncleared****
+- defaults to ****Cleared****, or ****Uncleared**** when dated after today
+- defaults its category to the one last used with the same payee
 
 Scheduled transaction:
 
@@ -233,8 +234,9 @@ and linked-transfer paths.
 
 Transfer defaults:
 
-- manually entered side is Uncleared
-- automatically generated paired side is Cleared
+- manually entered side is Cleared
+- automatically generated paired side is Uncleared
+- both sides are Uncleared when dated after today
 
 Example:
 
@@ -244,8 +246,8 @@ User enters in OTP:
 
 Expected:
 
-- OTP side: Uncleared
-- Cash counterpart: Cleared
+- OTP side: Cleared
+- Cash counterpart: Uncleared
 
 This behavior is intentional. Pending scheduled entries begin Uncleared; posting
 them marks the occurrence Cleared, including both legs of a scheduled transfer.

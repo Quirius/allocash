@@ -350,7 +350,9 @@ visual confirmation remains open. Rust and schema are unchanged.
 On 2026-10-10, register status icons, context actions and due-schedule catch-up
 were implemented.
 New ordinary manual entries default to Uncleared; the entered and generated
-sides of a manual transfer default to Uncleared and Cleared. Posting a due
+sides of a manual transfer default to Uncleared and Cleared (superseded on
+2026-11-10: entered Cleared, generated counterpart and upcoming entries
+Uncleared). Posting a due
 scheduled occurrence marks it Cleared, including both transfer legs. The
 dedicated status command is limited to posted, through-today, non-reconciled
 entries and changes only the selected transfer leg. Catch-up posts through the

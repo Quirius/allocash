@@ -280,11 +280,15 @@ fn create_manual_transaction(
     app: tauri::AppHandle,
     state: tauri::State<'_, BudgetState>,
     input: ManualTransactionDraft,
+    as_of: Option<String>,
 ) -> Result<String, String> {
+    let as_of = as_of
+        .map(|value| CalendarDate::parse(&value).map_err(ledger_error))
+        .transpose()?;
     with_database(&app, &state, |database| {
         database.undoable("Add transaction", |database| {
             database
-                .create_manual_transaction(&input)
+                .create_manual_transaction_as_of(&input, as_of.as_ref())
                 .map_err(ledger_error)
         })
     })
@@ -295,11 +299,15 @@ fn create_manual_transfer(
     app: tauri::AppHandle,
     state: tauri::State<'_, BudgetState>,
     input: ManualTransferInput,
+    as_of: Option<String>,
 ) -> Result<String, String> {
+    let as_of = as_of
+        .map(|value| CalendarDate::parse(&value).map_err(ledger_error))
+        .transpose()?;
     with_database(&app, &state, |database| {
         database.undoable("Add transfer", |database| {
             database
-                .create_manual_transfer(&input)
+                .create_manual_transfer_as_of(&input, as_of.as_ref())
                 .map_err(ledger_error)
         })
     })

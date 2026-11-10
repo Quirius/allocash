@@ -55,9 +55,12 @@ keys ensure both legs belong to that transfer at commit, and a transfer must use
 two different accounts. Amount changes affect both legs; deleting either leg
 deletes the pair in one SQL transaction. Any failure rolls back the entire write.
 
-New ordinary manual entries default to Uncleared. For a manually created
-transfer, the side entered by the user defaults to Uncleared and the generated
-counterpart defaults to Cleared, in either transfer direction. Scheduled
+New ordinary manual entries default to Cleared, or Uncleared when dated after
+the local current day (upcoming). For a manually created transfer, the side
+entered by the user defaults to Cleared and the generated counterpart to
+Uncleared, in either transfer direction; both are Uncleared when upcoming.
+The composer and editor also default a payee's category to the one last used
+with that payee in the same direction until the user picks a category. Scheduled
 occurrences are Uncleared while pending; automatic due realization and explicit
 posting mark realized entries Cleared, including both legs of a scheduled transfer.
 

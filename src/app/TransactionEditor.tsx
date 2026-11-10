@@ -59,6 +59,12 @@ export function draftFromPostedEntry(entry: RegisterEntry, sourceAccountId: stri
   };
 }
 
+/** The category last used with this exact payee in the same direction, if it is still offered. */
+function lastPayeeCategory(name: string, direction: "inflow" | "outflow", options: TransactionFormOptions): string {
+  const payee = options.payees.find((item) => item.name.toLowerCase() === name.trim().toLowerCase());
+  return payee?.lastCategoryId && payee.lastDirection === direction && options.categories.some((item) => item.id === payee.lastCategoryId) ? payee.lastCategoryId : "";
+}
+
 /** On a plain Tab with partial text, returns the first matching suggestion to fill in (focus still moves on). */
 function tabCompletion(event: { key: string; shiftKey: boolean; altKey: boolean; ctrlKey: boolean; metaKey: boolean }, typed: string, suggestions: string[]): string | null {
   if (event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return null;
@@ -172,6 +178,19 @@ export function TransactionComposer({
       : undefined;
   const initialCategoryRule = initialDirection ? categoryPolicy(account, initialDirection, initialTransferDestination) : null;
   const readyId = readyToAssignCategoryId(options.categories);
+  const defaultedCategoryRef = useRef("");
+
+  // Defaults the category to the payee's last one unless the user chose a category themselves.
+  function changePayee(value: string) {
+    setPayee(value);
+    if (!categoryRule.show) return;
+    const last = lastPayeeCategory(value, direction, options);
+    if (!last) return;
+    if (categoryOrigin === "empty" || categoryOrigin === "automatic-ready" || (categoryId !== "" && categoryId === defaultedCategoryRef.current)) {
+      defaultedCategoryRef.current = last;
+      setCategoryId(last); setCategoryOrigin("existing"); setCategoryPeerId(transferDestination?.id ?? null); setCategoryDirection(direction);
+    }
+  }
 
   useEffect(() => {
     const scopeChanged = categoryPeerId !== (transferDestination?.id ?? null) || categoryDirection !== direction;
@@ -323,8 +342,8 @@ export function TransactionComposer({
               ref={payeeInputRef}
               list={`payees-${account.id}`}
               value={payee}
-              onChange={(event) => setPayee(event.target.value)}
-              onKeyDown={(event) => { const match = tabCompletion(event, payee, [...openCounterparts.flatMap((option) => [`Transfer: ${option.name}`, `Payment: ${option.name}`]), ...options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => option.name)]); if (match) setPayee(match); }}
+              onChange={(event) => changePayee(event.target.value)}
+              onKeyDown={(event) => { const match = tabCompletion(event, payee, [...openCounterparts.flatMap((option) => [`Transfer: ${option.name}`, `Payment: ${option.name}`]), ...options.payees.filter((option) => !isTransferPayee(option.name)).map((option) => option.name)]); if (match) changePayee(match); }}
               placeholder="Name or new payee"
             />
             <datalist id={`payees-${account.id}`}>
@@ -466,6 +485,15 @@ export function RegisterEntryEditor({
     : editCategoryRule.readyToAssignDefault && (categoryTouched || direction !== initialDirection || accountId !== account.id)
       ? "Ready to Assign (automatic)"
       : "Uncategorized";
+
+  // Switching to a different known payee defaults the category to that payee's last one, unless the user picked a category.
+  function changePayee(value: string) {
+    setPayee(value);
+    if (categoryTouched || !editCategoryRule.show || value.trim().toLowerCase() === (entry.payeeName ?? "").toLowerCase()) return;
+    const last = lastPayeeCategory(value, direction, options);
+    if (!last) return;
+    setCategoryId(last); setCategoryOrigin("existing"); setCategoryPeerId(editedTransferPeer?.id ?? null); setCategoryAccountId(editAccount.id); setCategoryDirection(direction);
+  }
 
   useEffect(() => {
     if (!initialFocusField || initialFocusApplied.current) return;
@@ -638,7 +666,7 @@ export function RegisterEntryEditor({
           {!inline && (scheduled || upcomingRepeatEligible) && repeatIntervalMonths === 0 && <button type="button" className="secondary" disabled={saving} onClick={() => setRepeatIntervalMonths(1)}>Make repeating</button>}
           {!inline && !scheduled && !upcomingRepeatEligible && entry.postingState === "posted" && entry.date <= localCalendarDate() && <button type="button" className="secondary" disabled={saving} onClick={onMakeRepeating}>Make repeating</button>}
         </div>
-        <label>Payee<input data-register-editor-field="payee" list={`edit-payees-${entry.id}`} value={payee} onChange={(event) => setPayee(event.target.value)} /><datalist id={`edit-payees-${entry.id}`}>
+        <label>Payee<input data-register-editor-field="payee" list={`edit-payees-${entry.id}`} value={payee} onChange={(event) => changePayee(event.target.value)} /><datalist id={`edit-payees-${entry.id}`}>
           {options.payees.map((option) => <option key={option.id} value={option.name} />)}
           {accounts.filter((option) => option.id !== editAccount.id && (!option.closed || option.id === transferPeer?.id)).flatMap((option) => [<option key={`transfer-${option.id}`} value={`Transfer: ${option.name}`} />, <option key={`payment-${option.id}`} value={`Payment: ${option.name}`} />])}
         </datalist></label>

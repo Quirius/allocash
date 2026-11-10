@@ -342,9 +342,9 @@ it("sends typed manual transaction and transfer inputs", async () => {
     direction: "outflow" as const,
   };
   await expect(createManualTransaction(transaction)).resolves.toBe("created-id");
-  expect(invoke).toHaveBeenCalledWith("create_manual_transaction", { input: transaction });
+  expect(invoke).toHaveBeenCalledWith("create_manual_transaction", { input: transaction, asOf: expect.any(String) });
   await expect(createManualTransfer(transfer)).resolves.toBe("created-id");
-  expect(invoke).toHaveBeenCalledWith("create_manual_transfer", { input: transfer });
+  expect(invoke).toHaveBeenCalledWith("create_manual_transfer", { input: transfer, asOf: expect.any(String) });
 });
 
 it("sends atomic register edits and confirmed deletions", async () => {

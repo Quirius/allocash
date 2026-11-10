@@ -238,6 +238,24 @@ it("fills the first matching payee suggestion when Tab leaves the payee field", 
   expect(input.value).toBe("Zzz");
 });
 
+it("defaults the category to the payee's last one until the user picks their own", async () => {
+  const view = mount(<TransactionComposer account={cash} accounts={[cash, bank]} options={{ ...options, categories: [...options.categories, { id: "fun", groupName: "Daily", name: "Fun" }] }} inline onSaved={vi.fn(async () => {})} onCancel={vi.fn()} />);
+  const input = view.querySelector<HTMLInputElement>('input[list="payees-cash"]')!;
+  const category = () => [...view.querySelectorAll(".inline-fields > label")].find((label) => label.textContent?.startsWith("Category"))!.querySelector("select")!;
+  const type = async (value: string) => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => { setter.call(input, value); input.dispatchEvent(new Event("input", { bubbles: true })); });
+  };
+  await type("Shop");
+  expect(category().value).toBe("food");
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+    setter.call(category(), "fun"); category().dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await type("Shop");
+  expect(category().value).toBe("fun");
+});
+
 it("saves and adds another by resetting to a blank today draft and focusing Payee", async () => {
   tauri.invoke.mockResolvedValue("new-entry");
   const onCancel = vi.fn();

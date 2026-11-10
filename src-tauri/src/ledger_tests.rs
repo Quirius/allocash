@@ -28,7 +28,7 @@ fn manual_entries_and_transfers_use_new_register_status_defaults_in_both_directi
                 .unwrap()
                 .entry
                 .cleared_state,
-            ClearedState::Uncleared
+            ClearedState::Cleared
         );
         database.delete_entry(&id, false).unwrap();
         database
@@ -57,10 +57,33 @@ fn manual_entries_and_transfers_use_new_register_status_defaults_in_both_directi
             .find(|row| row.entry.id == entered_id)
             .unwrap();
         let mirror = database.entries("peer").unwrap().remove(0);
-        assert_eq!(entered.entry.cleared_state, ClearedState::Uncleared);
-        assert_eq!(mirror.entry.cleared_state, ClearedState::Cleared);
+        assert_eq!(entered.entry.cleared_state, ClearedState::Cleared);
+        assert_eq!(mirror.entry.cleared_state, ClearedState::Uncleared);
         assert_eq!(mirror.entry.category_id, None);
         database.delete_entry(&entered_id, false).unwrap();
+        // Dated after the as-of day, both sides are upcoming and stay Uncleared.
+        let upcoming_id = database
+            .create_manual_transfer_as_of(
+                &ManualTransferInput {
+                    account_id: "cash".into(),
+                    counterpart_account_id: "peer".into(),
+                    date: date("2026-09-11"),
+                    memo: String::new(),
+                    flag_id: None,
+                    amount: Huf(25),
+                    direction: Direction::Inflow,
+                    category_id: None,
+                },
+                Some(&date("2026-09-10")),
+            )
+            .unwrap();
+        assert!(database
+            .entries("cash")
+            .unwrap()
+            .iter()
+            .chain(database.entries("peer").unwrap().iter())
+            .all(|row| row.entry.cleared_state == ClearedState::Uncleared));
+        database.delete_entry(&upcoming_id, false).unwrap();
         database
             .connection
             .execute("DELETE FROM accounts WHERE id='peer'", [])
@@ -87,8 +110,12 @@ fn status_change_affects_only_one_posted_leg_and_rejects_reconciled_scheduled_or
         })
         .unwrap();
     let mirror = database.entries("tracking").unwrap()[0].entry.id.clone();
+    assert_eq!(
+        database.entries("tracking").unwrap()[0].entry.cleared_state,
+        ClearedState::Uncleared
+    );
     database
-        .set_register_entry_cleared_state(&entered, "cleared", &date("2026-09-10"))
+        .set_register_entry_cleared_state(&mirror, "cleared", &date("2026-09-10"))
         .unwrap();
     assert_eq!(
         database.entries("cash").unwrap()[0].entry.cleared_state,
@@ -116,16 +143,30 @@ fn status_change_affects_only_one_posted_leg_and_rejects_reconciled_scheduled_or
         .set_register_entry_cleared_state(&mirror, "reconciled", &date("2026-09-10"))
         .is_err());
     let future = database
-        .create_manual_transaction(&ManualTransactionDraft {
-            account_id: "cash".into(),
-            date: date("2026-09-11"),
-            payee_name: None,
-            category_id: Some("test-expense".into()),
-            memo: String::new(),
-            flag_id: None,
-            amount: Huf(-1),
-        })
+        .create_manual_transaction_as_of(
+            &ManualTransactionDraft {
+                account_id: "cash".into(),
+                date: date("2026-09-11"),
+                payee_name: None,
+                category_id: Some("test-expense".into()),
+                memo: String::new(),
+                flag_id: None,
+                amount: Huf(-1),
+            },
+            Some(&date("2026-09-10")),
+        )
         .unwrap();
+    assert_eq!(
+        database
+            .entries("cash")
+            .unwrap()
+            .into_iter()
+            .find(|row| row.entry.id == future)
+            .unwrap()
+            .entry
+            .cleared_state,
+        ClearedState::Uncleared
+    );
     assert!(database
         .set_register_entry_cleared_state(&future, "cleared", &date("2026-09-10"))
         .is_err());
@@ -402,7 +443,7 @@ fn status_and_due_realization_mutations_are_undoable_without_noop_undo_steps() {
     database
         .undoable("Change status", |database| {
             database
-                .set_register_entry_cleared_state(&id, "cleared", &date("2026-09-10"))
+                .set_register_entry_cleared_state(&id, "uncleared", &date("2026-09-10"))
                 .map_err(|error| error.to_string())
         })
         .unwrap();
@@ -413,7 +454,7 @@ fn status_and_due_realization_mutations_are_undoable_without_noop_undo_steps() {
     database.undo_last_action().unwrap();
     assert_eq!(
         database.entries("cash").unwrap()[0].entry.cleared_state,
-        ClearedState::Uncleared
+        ClearedState::Cleared
     );
     assert_eq!(
         database
@@ -2703,7 +2744,7 @@ fn manual_entry_creates_payees_and_remembers_their_defaults_atomically() {
     let register = database.register_entries("cash").unwrap();
     assert_eq!(register[0].payee_name.as_deref(), Some("Market"));
     assert_eq!(register[0].memo, "Weekly shop");
-    assert_eq!(register[0].cleared_state, ClearedState::Uncleared);
+    assert_eq!(register[0].cleared_state, ClearedState::Cleared);
     assert_eq!(register[0].amount, Huf(-2500));
     let options = database.transaction_form_options().unwrap();
     let market = options
@@ -2758,9 +2799,9 @@ fn manual_transfer_and_register_edit_preserve_pair_and_confirmation_rules() {
     let other = database.entries("other").unwrap();
     assert_eq!(cash[0].entry.id, entered_id);
     assert_eq!(cash[0].amount, Huf(-1000));
-    assert_eq!(cash[0].entry.cleared_state, ClearedState::Uncleared);
+    assert_eq!(cash[0].entry.cleared_state, ClearedState::Cleared);
     assert_eq!(other[0].amount, Huf(1000));
-    assert_eq!(other[0].entry.cleared_state, ClearedState::Cleared);
+    assert_eq!(other[0].entry.cleared_state, ClearedState::Uncleared);
     database
         .set_cleared_state(&other[0].entry.id, ClearedState::Reconciled, false)
         .unwrap();
@@ -2900,9 +2941,11 @@ fn posted_transfer_retarget_from_either_leg_preserves_identity_and_shared_fields
             })
             .unwrap();
         let mirror = database.entries("peer").unwrap()[0].entry.id.clone();
-        database
-            .set_cleared_state(&mirror, ClearedState::Uncleared, false)
-            .unwrap();
+        for id in [&anchor, &mirror] {
+            database
+                .set_cleared_state(id, ClearedState::Uncleared, false)
+                .unwrap();
+        }
         let selected = if select_mirror { &mirror } else { &anchor };
         let result = database.update_register_entry(&RegisterEntryEdit {
             id: selected.clone(),
@@ -3371,15 +3414,18 @@ fn future_repeating_promotion_combines_with_both_transfer_conversions() {
         .create_account(&account("peer", AccountKind::Tracking, 1))
         .unwrap();
     let ordinary = database
-        .create_manual_transaction(&ManualTransactionDraft {
-            account_id: "cash".into(),
-            date: date("2026-10-31"),
-            payee_name: Some("Future merchant".into()),
-            category_id: Some("test-expense".into()),
-            memo: "Future".into(),
-            flag_id: None,
-            amount: Huf(-100),
-        })
+        .create_manual_transaction_as_of(
+            &ManualTransactionDraft {
+                account_id: "cash".into(),
+                date: date("2026-10-31"),
+                payee_name: Some("Future merchant".into()),
+                category_id: Some("test-expense".into()),
+                memo: "Future".into(),
+                flag_id: None,
+                amount: Huf(-100),
+            },
+            Some(&date("2026-10-10")),
+        )
         .unwrap();
     let promote_to_transfer = RegisterEntryEdit {
         id: ordinary.clone(),

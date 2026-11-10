@@ -2152,6 +2152,15 @@ impl Database {
         &mut self,
         draft: &ManualTransactionDraft,
     ) -> LedgerResult<String> {
+        self.create_manual_transaction_as_of(draft, None)
+    }
+
+    /// Manual entries are Cleared unless dated after `as_of` (upcoming), then Uncleared.
+    pub fn create_manual_transaction_as_of(
+        &mut self,
+        draft: &ManualTransactionDraft,
+        as_of: Option<&CalendarDate>,
+    ) -> LedgerResult<String> {
         if draft.amount.0 == 0 {
             return Err(LedgerError::InvalidValue(
                 "A manual transaction amount cannot be zero.",
@@ -2171,7 +2180,9 @@ impl Database {
         let id = random_id(&transaction, "manual-transaction")?;
         let payee_id = resolve_payee(&transaction, draft.payee_name.as_deref())?;
         let mut entry = Entry::manual(&id, &draft.account_id, draft.date.clone());
-        entry.cleared_state = ClearedState::Uncleared;
+        if as_of.is_some_and(|as_of| draft.date.as_str() > as_of.as_str()) {
+            entry.cleared_state = ClearedState::Uncleared;
+        }
         entry.payee_id = payee_id.clone();
         entry.category_id = category_id.clone();
         entry.memo = draft.memo.trim().to_owned();
@@ -2193,6 +2204,16 @@ impl Database {
     }
 
     pub fn create_manual_transfer(&mut self, input: &ManualTransferInput) -> LedgerResult<String> {
+        self.create_manual_transfer_as_of(input, None)
+    }
+
+    /// The entered side is Cleared and the generated counterpart Uncleared; both are
+    /// Uncleared when dated after `as_of` (upcoming).
+    pub fn create_manual_transfer_as_of(
+        &mut self,
+        input: &ManualTransferInput,
+        as_of: Option<&CalendarDate>,
+    ) -> LedgerResult<String> {
         if input.account_id == input.counterpart_account_id {
             return Err(LedgerError::InvalidValue(
                 "A transfer needs two different accounts.",
@@ -2256,13 +2277,21 @@ impl Database {
                 counterpart.category_id = category_id;
             }
         }
-        let draft = TransferDraft::manual(
+        let upcoming = as_of.is_some_and(|as_of| input.date.as_str() > as_of.as_str());
+        let mut draft = TransferDraft::manual(
             &transfer_id,
             input.amount,
             entered,
             counterpart,
             input.direction,
         );
+        for entry in [&mut draft.outflow, &mut draft.inflow] {
+            entry.cleared_state = if upcoming || entry.id == counterpart_id {
+                ClearedState::Uncleared
+            } else {
+                ClearedState::Cleared
+            };
+        }
         transaction.execute(
             "INSERT INTO transfers (id,amount_huf,outflow_id,inflow_id) VALUES (?1,?2,?3,?4)",
             params![draft.id, draft.amount.0, draft.outflow.id, draft.inflow.id],

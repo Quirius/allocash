@@ -275,11 +275,11 @@ export async function loadAllAccountsRegister(): Promise<AllAccountsRegisterEntr
 }
 
 export async function createManualTransaction(input: ManualTransactionInput): Promise<string> {
-  return savedMutation(() => invoke<string>("create_manual_transaction", { input }));
+  return savedMutation(() => invoke<string>("create_manual_transaction", { input, asOf: localCalendarDate() }));
 }
 
 export async function createManualTransfer(input: ManualTransferInput): Promise<string> {
-  return savedMutation(() => invoke<string>("create_manual_transfer", { input }));
+  return savedMutation(() => invoke<string>("create_manual_transfer", { input, asOf: localCalendarDate() }));
 }
 export async function loadScheduledOccurrences(): Promise<ScheduledOccurrence[] | null> { if (!isTauri()) return null; return invoke("get_scheduled_occurrences"); }
 export async function createMonthlySchedule(input: MonthlyScheduleInput): Promise<void> { return savedMutation(() => invoke("create_monthly_schedule", { input })); }
