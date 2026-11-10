@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { RegisterEntryEditor, TransactionComposer } from "../src/app/TransactionEditor";
 import type { AccountOverview, RegisterEntry, TransactionFormOptions } from "../src/lib/desktop";
-import { formatDate, localCalendarDate } from "../src/lib/format";
+import { formatDate } from "../src/lib/format";
 
 const tauri = vi.hoisted(() => ({ invoke: vi.fn(), isTauri: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => tauri);
@@ -256,7 +256,7 @@ it("defaults the category to the payee's last one until the user picks their own
   expect(category().value).toBe("fun");
 });
 
-it("saves and adds another by resetting to a blank today draft and focusing Payee", async () => {
+it("saves and adds another by resetting to a blank draft on the same date and focusing Payee", async () => {
   tauri.invoke.mockResolvedValue("new-entry");
   const onCancel = vi.fn();
   const onSaved = vi.fn(async () => {});
@@ -269,7 +269,18 @@ it("saves and adds another by resetting to a blank today draft and focusing Paye
   expect(view.querySelectorAll<HTMLInputElement>('input[placeholder="0 Ft"]')[0]?.value).toBe("");
   expect(view.querySelectorAll<HTMLInputElement>('input[placeholder="0 Ft"]')[1]?.value).toBe("");
   expect(view.querySelector<HTMLSelectElement>(".inline-secondary select")?.value).toBe("transaction");
-  expect(view.querySelector(".date-picker-trigger")?.getAttribute("aria-label")).toBe(formatDate(localCalendarDate()));
+  expect(view.querySelector(".date-picker-trigger")?.getAttribute("aria-label")).toBe(formatDate("2026-10-02"));
+});
+
+it("treats Enter without a named submit button as save and add another", async () => {
+  tauri.invoke.mockResolvedValue("new-entry");
+  const onCancel = vi.fn();
+  const view = mount(<TransactionComposer account={cash} accounts={[cash, bank]} options={options} inline onSaved={vi.fn(async () => {})} onCancel={onCancel}
+    initialDraft={{ kind: "transaction", date: "2026-10-02", repeat: "never", payee: "Shop", categoryId: "food", counterpartId: "", memo: "", flagId: "", outflow: "1200", inflow: "" }} />);
+  await act(async () => { view.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+  expect(onCancel).not.toHaveBeenCalled();
+  expect(view.querySelector<HTMLInputElement>('input[list="payees-cash"]')?.value).toBe("");
+  expect(view.querySelector(".date-picker-trigger")?.getAttribute("aria-label")).toBe(formatDate("2026-10-02"));
 });
 
 it("retries only the register refresh after a transaction was written successfully", async () => {
@@ -278,7 +289,7 @@ it("retries only the register refresh after a transaction was written successful
   const onSaved = vi.fn().mockRejectedValueOnce(new Error("Refresh unavailable")).mockResolvedValueOnce(undefined);
   const view = mount(<TransactionComposer account={cash} accounts={[cash, bank]} options={options} inline onSaved={onSaved} onCancel={onCancel}
     initialDraft={{ kind: "transaction", date: "2026-10-02", repeat: "never", payee: "Shop", categoryId: "food", counterpartId: "", memo: "", flagId: "", outflow: "1200", inflow: "" }} />);
-  await act(async () => { view.querySelector<HTMLButtonElement>('button[type="submit"]:not([name])')!.click(); });
+  await act(async () => { view.querySelector<HTMLButtonElement>('button[type="submit"][value="close"]')!.click(); });
   expect(tauri.invoke).toHaveBeenCalledOnce(); expect(onSaved).toHaveBeenCalledOnce(); expect(onCancel).not.toHaveBeenCalled();
   await act(async () => { [...view.querySelectorAll("button")].find((button) => button.textContent === "Retry refresh")!.click(); });
   expect(tauri.invoke).toHaveBeenCalledOnce(); expect(onSaved).toHaveBeenCalledTimes(2); expect(onCancel).toHaveBeenCalledOnce();

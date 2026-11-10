@@ -220,7 +220,7 @@ export function TransactionComposer({
 
   function resetComposer() {
     setSourceDraft(undefined);
-    setKind("transaction"); setDate(localCalendarDate()); setRepeat("never"); setPayee("");
+    setKind("transaction"); setRepeat("never"); setPayee("");
     setCategoryId(""); setCategoryOrigin("empty"); setCounterpartId(""); setTransferPayee(""); setCategoryPeerId(null); setCategoryDirection(null); setMemo(""); setFlagId("");
     setOutflow(""); setInflow(""); setError(null); setRefreshPending(null); setStatus("editing");
     savingRef.current = false;
@@ -310,7 +310,8 @@ export function TransactionComposer({
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
-    await saveComposer(submitter?.value === "another" ? "another" : "close");
+    // Enter (no submitter) and "Save and add another" both continue with a new entry.
+    await saveComposer(submitter?.value === "close" ? "close" : "another");
   }
 
   const openCounterparts = accounts.filter((item) => !item.closed && item.id !== account.id);
@@ -391,13 +392,13 @@ export function TransactionComposer({
       </div>
       <div className={`editor-footer${inline ? " inline-footer" : ""}`}>
         <p className={error ? "form-error" : "form-hint"} role={error ? "alert" : undefined}>
-          {error || (scheduled ? "Scheduled entries become Cleared when their date arrives." : (kind === "transfer" ? hasTransferDestination : !!resolvedPayeeTransfer) ? "Saving creates both linked transfer entries. The entered side will be Uncleared; its counterpart will be Cleared." : "New manual transactions default to Uncleared.")}
+          {error || (scheduled ? "Scheduled entries become Cleared when their date arrives." : (kind === "transfer" ? hasTransferDestination : !!resolvedPayeeTransfer) ? "Saving creates both linked transfer entries. The entered side will be Cleared; its counterpart will be Uncleared." : "New manual transactions default to Cleared.")}
         </p>
         <div>
           {refreshPending && <button type="button" className="secondary" disabled={status === "saving"} onClick={() => void retryRefresh()}>Retry refresh</button>}
           <button type="button" className="secondary" disabled={status === "saving" || refreshPending !== null} onClick={onCancel}>Cancel</button>
           {inline && <button type="submit" name="action" value="another" disabled={readOnly || status === "saving" || refreshPending !== null}>{status === "saving" ? "Saving…" : "Save and add another"}</button>}
-          <button type="submit" disabled={readOnly || status === "saving" || refreshPending !== null}>{status === "saving" ? "Saving…" : "Save transaction"}</button>
+          <button type="submit" name="action" value="close" disabled={readOnly || status === "saving" || refreshPending !== null}>{status === "saving" ? "Saving…" : "Save transaction"}</button>
         </div>
       </div>
     </form>
