@@ -540,6 +540,36 @@ fn create_monthly_schedule(
         })
     })
 }
+/// Saves a past or current-day entry together with the recurring schedule that continues it,
+/// as one undo step; a failure restores the pre-action snapshot, so neither half is kept alone.
+#[tauri::command]
+fn create_recurring_entry(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, BudgetState>,
+    transaction: Option<ManualTransactionDraft>,
+    transfer: Option<ManualTransferInput>,
+    schedule: MonthlyScheduleDraft,
+    as_of: String,
+) -> Result<String, String> {
+    let as_of = CalendarDate::parse(&as_of).map_err(ledger_error)?;
+    with_database(&app, &state, |database| {
+        database.undoable("Add recurring transaction", |database| {
+            let id = match (&transaction, &transfer) {
+                (Some(input), None) => database
+                    .create_manual_transaction_as_of(input, Some(&as_of))
+                    .map_err(ledger_error)?,
+                (None, Some(input)) => database
+                    .create_manual_transfer_as_of(input, Some(&as_of))
+                    .map_err(ledger_error)?,
+                _ => return Err("Provide either a transaction or a transfer.".to_owned()),
+            };
+            database
+                .create_monthly_schedule(&schedule)
+                .map_err(ledger_error)?;
+            Ok(id)
+        })
+    })
+}
 #[tauri::command]
 fn post_scheduled_occurrence(
     app: tauri::AppHandle,
@@ -981,6 +1011,7 @@ pub fn run() {
             get_forecast,
             get_net_worth_report,
             create_monthly_schedule,
+            create_recurring_entry,
             post_scheduled_occurrence,
             set_register_entry_cleared_state,
             realize_due_scheduled_transactions,

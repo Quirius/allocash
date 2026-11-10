@@ -12,7 +12,7 @@ import {
   type TransactionFormOptions,
 } from "../lib/desktop";
 import { formatDate, localCalendarDate, parseHufInput, parseSignedHufInput } from "../lib/format";
-import { createPayeeEntry, createScheduledPayeeEntry, isTransferPayee, resolveTransferPayee, scheduleForEntry, type EntryRepeat } from "../lib/transaction";
+import { createPayeeEntry, createRecurringPayeeEntry, createScheduledPayeeEntry, isTransferPayee, resolveTransferPayee, scheduleForEntry, type EntryRepeat } from "../lib/transaction";
 import { categoryPolicy, inheritedReadyNeedsReset, readyToAssignCategoryId, transitionCategoryOrigin } from "../lib/categoryPolicy";
 import { DateRepeatPicker, nextRepeatDate } from "./DateRepeatPicker";
 import { TransactionStatusIcon } from "./TransactionStatusIcon";
@@ -272,11 +272,16 @@ export function TransactionComposer({
       if (applicableRule.required && (!categoryId || categoryOrigin === "automatic-ready" || inheritedReadyMustReset)) throw new Error("Choose a category for this budget outflow.");
       if (applicableRule.required && categoryPeerId !== (transferDestination?.id ?? null)) throw new Error("Choose a category for this budget outflow after changing the transfer account.");
       setStatus("saving");
-      const schedule = scheduleForEntry(date, repeat, localCalendarDate());
+      const today = localCalendarDate();
+      const schedule = scheduleForEntry(date, repeat, today);
+      // A repeating entry dated today or earlier is a normal entry; only its next occurrence is scheduled.
+      const pastRecurring = schedule !== null && repeat !== "never" && date <= today;
       const dayOfMonth = sourceDraft && date === sourceDraft.date && repeat !== "never" ? sourceDraft.repeatDayOfMonth : undefined;
       if (kind === "transfer" && resolvedCounterpartId) {
         if (BigInt(parsed.positive) > 9223372036854775807n) throw new Error("Transfer amounts must fit the supported positive HUF range.");
-        if (schedule) {
+        if (pastRecurring) {
+          await createRecurringPayeeEntry({ accountId: account.id, date, payeeName: null, categoryId: submittedCategoryId, memo, flagId: flagId || null, amount: parsed.amount }, schedule.intervalMonths, accounts, resolvedCounterpartId);
+        } else if (schedule) {
           await createScheduledPayeeEntry({ accountId: account.id, counterpartAccountId: resolvedCounterpartId, startDate: date, endDate: schedule.endDate,
             payeeName: null, categoryId: submittedCategoryId, memo, flagId: flagId || null, amount: parsed.amount, intervalMonths: schedule.intervalMonths, ...(dayOfMonth ? { dayOfMonth } : {}) }, accounts);
         } else {
@@ -301,7 +306,8 @@ export function TransactionComposer({
           flagId: flagId || null,
           amount: parsed.amount,
         };
-        if (schedule) await createScheduledPayeeEntry({ ...input, startDate: date, endDate: schedule.endDate, intervalMonths: schedule.intervalMonths, ...(dayOfMonth ? { dayOfMonth } : {}) }, accounts);
+        if (pastRecurring) await createRecurringPayeeEntry(input, schedule.intervalMonths, accounts);
+        else if (schedule) await createScheduledPayeeEntry({ ...input, startDate: date, endDate: schedule.endDate, intervalMonths: schedule.intervalMonths, ...(dayOfMonth ? { dayOfMonth } : {}) }, accounts);
         else await createPayeeEntry(input, accounts);
       }
       writeCompleted = true;

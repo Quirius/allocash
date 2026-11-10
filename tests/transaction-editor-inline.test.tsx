@@ -295,6 +295,27 @@ it("reports the saved date for add-another and starts from a carried date after 
   expect(next.querySelector(".date-picker-trigger")?.getAttribute("aria-label")).toBe(formatDate("2026-10-02"));
 });
 
+it("saves a repeating entry dated in the past as a normal entry plus a schedule starting one interval later", async () => {
+  tauri.invoke.mockResolvedValue("new-entry");
+  const view = mount(<TransactionComposer account={cash} accounts={[cash, bank]} options={options} inline onSaved={vi.fn(async () => {})} onCancel={vi.fn()}
+    initialDraft={{ kind: "transaction", date: "2026-01-31", repeat: "monthly", payee: "Shop", categoryId: "food", counterpartId: "", memo: "", flagId: "", outflow: "1200", inflow: "" }} />);
+  await act(async () => { view.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+  expect(tauri.invoke).toHaveBeenCalledOnce();
+  expect(tauri.invoke).toHaveBeenCalledWith("create_recurring_entry", expect.objectContaining({
+    transaction: expect.objectContaining({ date: "2026-01-31", payeeName: "Shop", amount: "-1200" }),
+    schedule: expect.objectContaining({ startDate: "2026-02-28", dayOfMonth: 31, intervalMonths: 1, endDate: null, payeeName: "Shop" }),
+  }));
+});
+
+it("saves a repeating entry dated in the future as a schedule only", async () => {
+  tauri.invoke.mockResolvedValue(undefined);
+  const view = mount(<TransactionComposer account={cash} accounts={[cash, bank]} options={options} inline onSaved={vi.fn(async () => {})} onCancel={vi.fn()}
+    initialDraft={{ kind: "transaction", date: "2999-01-15", repeat: "monthly", payee: "Shop", categoryId: "food", counterpartId: "", memo: "", flagId: "", outflow: "1200", inflow: "" }} />);
+  await act(async () => { view.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })); });
+  expect(tauri.invoke).toHaveBeenCalledOnce();
+  expect(tauri.invoke).toHaveBeenCalledWith("create_monthly_schedule", expect.objectContaining({ input: expect.objectContaining({ startDate: "2999-01-15" }) }));
+});
+
 it("saves and adds another when Enter is pressed in an amount field", async () => {
   tauri.invoke.mockResolvedValue("new-entry");
   const onCancel = vi.fn();

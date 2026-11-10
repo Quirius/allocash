@@ -92,6 +92,53 @@ fn manual_entries_and_transfers_use_new_register_status_defaults_in_both_directi
 }
 
 #[test]
+fn past_entry_with_next_occurrence_schedule_keeps_a_posted_entry_and_a_pending_one() {
+    let (_directory, mut database) = database();
+    database
+        .create_manual_transaction_as_of(
+            &ManualTransactionDraft {
+                account_id: "cash".into(),
+                date: date("2026-01-31"),
+                payee_name: Some("Rent".into()),
+                category_id: Some("test-expense".into()),
+                memo: String::new(),
+                flag_id: None,
+                amount: Huf(-100),
+            },
+            Some(&date("2026-03-01")),
+        )
+        .unwrap();
+    database
+        .create_monthly_schedule(&MonthlyScheduleDraft {
+            account_id: "cash".into(),
+            start_date: date("2026-02-28"),
+            day_of_month: Some(31),
+            end_date: None,
+            payee_name: Some("Rent".into()),
+            category_id: Some("test-expense".into()),
+            memo: String::new(),
+            flag_id: None,
+            amount: Huf(-100),
+            interval_months: 1,
+            counterpart_account_id: None,
+        })
+        .unwrap();
+    let entries = database.entries("cash").unwrap();
+    let posted = entries
+        .iter()
+        .find(|row| row.entry.date == date("2026-01-31"))
+        .unwrap();
+    assert_eq!(posted.entry.posting_state, PostingState::Posted);
+    assert_eq!(posted.entry.cleared_state, ClearedState::Cleared);
+    let pending = entries
+        .iter()
+        .find(|row| row.entry.date == date("2026-02-28"))
+        .unwrap();
+    assert_eq!(pending.entry.posting_state, PostingState::Scheduled);
+    assert_eq!(pending.entry.cleared_state, ClearedState::Uncleared);
+}
+
+#[test]
 fn status_change_affects_only_one_posted_leg_and_rejects_reconciled_scheduled_or_future() {
     let (_directory, mut database) = database();
     database

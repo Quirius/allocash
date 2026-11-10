@@ -195,7 +195,11 @@ Normal manually created transaction:
 - defaults to ****Cleared****, or ****Uncleared**** when dated after today
 - defaults its category to the one last used with the same payee
 
-Scheduled transaction:
+Repeating entry dated today or earlier: saved as a normal posted entry, and the
+repeat becomes a schedule whose first pending occurrence is one interval later
+(same day of month, clamped to short months), written in one undo step.
+
+Scheduled transaction (repeating entry dated in the future):
 
 - defaults to ****Uncleared****
 - is entered in the register using Date and Repeat, without requiring a separate

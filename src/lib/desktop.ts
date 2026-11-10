@@ -281,6 +281,10 @@ export async function createManualTransaction(input: ManualTransactionInput): Pr
 export async function createManualTransfer(input: ManualTransferInput): Promise<string> {
   return savedMutation(() => invoke<string>("create_manual_transfer", { input, asOf: localCalendarDate() }));
 }
+/** Saves a past or current-day entry and the recurring schedule continuing it atomically. */
+export async function createRecurringEntry(input: { transaction?: ManualTransactionInput; transfer?: ManualTransferInput; schedule: MonthlyScheduleInput }): Promise<string> {
+  return savedMutation(() => invoke<string>("create_recurring_entry", { ...input, asOf: localCalendarDate() }));
+}
 export async function loadScheduledOccurrences(): Promise<ScheduledOccurrence[] | null> { if (!isTauri()) return null; return invoke("get_scheduled_occurrences"); }
 export async function createMonthlySchedule(input: MonthlyScheduleInput): Promise<void> { return savedMutation(() => invoke("create_monthly_schedule", { input })); }
 export async function postScheduledOccurrence(transactionId: string): Promise<void> { return savedMutation(() => invoke("post_scheduled_occurrence", { transactionId })); }
