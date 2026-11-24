@@ -32,17 +32,20 @@ plans:
         note: "Requires Plan verification in the final migration."
   - id: "allocash-plan-002"
     title: "Complete target and recurrence coverage"
-    state: "planned"
+    state: "completed"
     window: "Backlog"
     priority: "medium"
     due_date: null
     completed_at: null
-    details: "Owner-required monthly, quarterly and yearly targets and income/expense/transfer schedules are implemented and tested. Weekly/custom recurrence remains deferred; owner desktop rehearsal of the migration subset is still open."
+    details: "Monthly, quarterly and yearly targets and income, expense and transfer schedules cover the migration scope. The owner confirmed the migration rehearsal and migration were complete on 2026-11-24. Weekly and custom recurrence remain deferred feature ideas."
     acceptance_criteria:
       - "Documented target frequency behavior is implemented and tested."
       - "Recurring transfers preserve linked account movements and are tested."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "eb39a46bf8426674235c2f9b4f87958a60326cb5"
+        note: "Records the owner's confirmation of completed migration and live beta use."
       - path: "docs/status.md"
         ref: "7089bc2bc70a75caeb275701704b7e9d4caab3d9"
         note: "Records monthly/quarterly/yearly targets and schedules, linked transfers and checks; weekly/custom recurrence and owner rehearsal remain open."
@@ -90,17 +93,20 @@ plans:
         note: "Lists restore and retention outside implemented slices."
   - id: "allocash-plan-004"
     title: "Validate migration-critical Plan and report values with owner data"
-    state: "planned"
+    state: "completed"
     window: "Backlog"
     priority: "medium"
     due_date: null
     completed_at: null
-    details: "The October 2026 export already matches all 34 current account balances and all 1,326 Plan rows. Historical Net Worth and January–October 2026 Income v Expense references also match. Before migration, validate only additional report/filter/forecast behavior that is actually used by the owner or that the migration rehearsal reveals as blocking; non-critical completeness moves after migration."
+    details: "The October export matched all 34 account balances and all 1,326 Plan rows, as well as historical Net Worth and the supplied Income v Expense references. The owner confirmed completion of the migration rehearsal and migration on 2026-11-24. Further report gaps can be handled individually during beta use."
     acceptance_criteria:
       - "Representative recent Plan months match verified reference values or discrepancies are resolved."
       - "Required historical report values match verified reference values or discrepancies are resolved."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "eb39a46bf8426674235c2f9b4f87958a60326cb5"
+        note: "Records the owner's confirmation of completed migration and live beta use."
       - path: "docs/status.md"
         ref: "208165612a2370be70c81441a71b4664e5cd9aa3"
         note: "Records successful per-user x64 installer packaging, with installation and first launch still unverified."
@@ -127,12 +133,12 @@ plans:
         note: "Lists Plan and report verification in final migration."
   - id: "allocash-plan-005"
     title: "Package and verify the 2026-10-21 migration-ready Windows release"
-    state: "planned"
+    state: "completed"
     window: "Backlog"
     priority: "high"
     due_date: null
     completed_at: null
-    details: "The normal per-user x64 NSIS installer built and installed successfully; the installed app opened a responsive window and the owner confirmed the normal app screen. Installation and first launch are verified. Native restore/recovery is verified, and the October export matches account balances, Plan rows and supplied report references. Final clean migration and final owner-data checks remain before the 2026-10-21 release; 2026-10-22 through 2026-10-30 is emergency-only contingency."
+    details: "The Windows installer built, installed and opened successfully. The owner confirmed on 2026-11-24 that the migration is complete and the beta is in daily use. The live beta supersedes this dated migration checkpoint. A published release tag is a separate milestone."
     acceptance_criteria:
       - "A Windows installer is built and verified."
       - "The final YNAB export imports with account balances, Plan months, and reports verified."
@@ -141,6 +147,9 @@ plans:
       - "allocash-plan-003"
       - "allocash-plan-004"
     evidence:
+      - path: "docs/status.md"
+        ref: "eb39a46bf8426674235c2f9b4f87958a60326cb5"
+        note: "Records the owner's confirmation of completed migration and live beta use."
       - path: "docs/status.md"
         ref: "dab87706b3a1726d65be8efe1289ead0c25ddd4c"
         note: "Records successful installation and owner-confirmed normal first-launch screen; final migration and release remain open."
@@ -176,18 +185,21 @@ plans:
         note: "Records the dated check sequence and successful native desktop build."
   - id: "allocash-plan-007"
     title: "Close migration-critical daily workflow gaps"
-    state: "planned"
+    state: "completed"
     window: "Backlog"
     priority: "high"
     due_date: null
     completed_at: null
-    details: "Owner-confirmed core entry/edit/delete, transfers, Plan moves, clearing/reconciliation, register responsiveness, upcoming display/deletion, session undo and current balances/Ready to Assign are recorded in docs/status.md. Expanded Plan, category, account, All Accounts, credit-payment and date/repeat workflows are implemented, tested and installed, but owner acceptance remains open. Verify category name/right-click actions, hide/unhide/history merge and undo; All Accounts search/editing; Plan assignment, cover/move and month navigation; account and transfer actions; credit breakdowns; and upcoming repeat Save/Cancel/undo. Finish required target/recurrence recreation, remaining view comparisons and native backup/reopen checks in the clean migration rehearsal. Detailed dated implementation, test, installation and owner evidence remains in docs/status.md and the evidence refs below. Keep this gate planned until the remaining migration-critical owner checks pass. Update 2026-10-31: the owner declared the migration done, so these remaining owner checks continue as live-use testing rather than migration gates. Yearly refill target progress now includes the full active target interval, including funding and spending before late target creation. Yearly refill completion and quiet-month Fully Spent are installed; owner confirmation remains open. Category Activity hover and a scrollable monthly breakdown are installed; owner confirmation remains open. Register search, View options and individual running balances are installed; owner confirmation remains open. Intelligent search suggestions and field filters are installed; owner confirmation remains open."
+    details: "The owner confirmed on 2026-11-24 that the migration and rehearsal are complete and most key workflows work in daily beta use. The migration gate is closed. Any remaining workflow issue is tracked as a specific bug or enhancement."
     acceptance_criteria:
       - "The owner can perform the ordinary budgeting workflow needed after YNAB cancellation."
       - "Any migration-blocking workflow bug found in testing is fixed or explicitly tracked on the critical path."
       - "Non-essential feature expansion is deferred until after migration."
     blocked_by: []
     evidence:
+      - path: "docs/status.md"
+        ref: "eb39a46bf8426674235c2f9b4f87958a60326cb5"
+        note: "Records the owner's confirmation of completed migration and live beta use."
       - path: "docs/status.md"
         ref: "80314b4102bb3e148a29fefffacc32dac688672d"
         note: "Records intelligent register search suggestions, field filters, validation and installation."
@@ -346,12 +358,12 @@ plans:
         note: "Register corrections are implemented and checked; the complete owner workflow still needs rehearsal."
   - id: "allocash-plan-008"
     title: "Run a full owner-data migration rehearsal"
-    state: "planned"
+    state: "completed"
     window: "Backlog"
     priority: "high"
     due_date: null
     completed_at: null
-    details: "A checked candidate output and isolated desktop identity now provide a safe handoff from the verifier to a rehearsal budget. Perform the clean rehearsal from the October 4 export, confirmed unchanged/current by the owner on October 8, verify balances, recent Plan state, migration-critical reports, and native backup/restore behavior in the desktop app, then record every blocking discrepancy. The clean candidate rerun passed all supplied references on October 8 and is staged in the installed app backup list. Owner clean-candidate restore, view comparisons, required target/recurrence recreation and native backup/reopen remain open; the full rehearsal is not complete. On October 10, the owner confirmed installed account balances and current-month Ready to Assign match their latest YNAB data. Required target/recurrence recreation, remaining view comparisons and native backup/reopen checks remain open. Update 2026-10-31: the owner declared the migration done; these checks continue as live-use testing rather than migration gates."
+    details: "On 2026-11-24 the owner confirmed that the full migration rehearsal and the live migration were complete and that the beta was in daily use."
     acceptance_criteria:
       - "The confirmed-current export imports without unresolved migration-blocking errors."
       - "Current account balances and recent Plan values match the verified source."
@@ -361,6 +373,9 @@ plans:
       - "allocash-plan-003"
       - "allocash-plan-007"
     evidence:
+      - path: "docs/status.md"
+        ref: "eb39a46bf8426674235c2f9b4f87958a60326cb5"
+        note: "Records the owner's confirmation of completed migration and live beta use."
       - path: "docs/status.md"
         ref: "70b4a258c82c7cba2e6dfa5e1f828bb143ae8bc0"
         note: "Records owner confirmation that installed account balances and current-month Ready to Assign match latest YNAB data; target/recurrence recreation and full backup/reopen rehearsal remain open."
@@ -388,7 +403,7 @@ milestones:
   - id: "allocash-milestone-001"
     title: "v0.1 Import, Accounts, and Register"
     state: "planned"
-    details: "Most listed slices are implemented, but the milestone remains open pending complete owner-data and scope validation; no release tag is documented."
+    details: "The import and register support the live beta. This historical version milestone remains a reference for full scope and release criteria."
     evidence:
       - path: "docs/product-scope.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
@@ -413,8 +428,11 @@ milestones:
   - id: "allocash-milestone-003"
     title: "v0.3 Scheduling, Targets, and Workflow"
     state: "planned"
-    details: "Monthly, quarterly and yearly targets and schedules, including linked transfers, are implemented and tested. Owner workflow rehearsal and weekly/custom recurrence remain open; this milestone is not complete."
+    details: "Monthly, quarterly and yearly targets and schedules, including linked transfers, are implemented and tested. The owner confirmed the migration rehearsal is complete. Weekly and custom recurrence remain deferred feature ideas."
     evidence:
+      - path: "docs/status.md"
+        ref: "eb39a46bf8426674235c2f9b4f87958a60326cb5"
+        note: "Records the live beta and completed migration."
       - path: "docs/status.md"
         ref: "7089bc2bc70a75caeb275701704b7e9d4caab3d9"
         note: "Records periodic funding guidance and transfer schedules with validation and remaining workflow limits."
@@ -452,8 +470,11 @@ milestones:
   - id: "allocash-milestone-006"
     title: "v1.0 Migration-ready release"
     state: "planned"
-    details: "Requires installer, restore/backup completion, final import, and account, Plan, and report validation."
+    details: "The owner migration and rehearsal are complete. Allocash is in daily use as a beta. A formal v1.0 release remains a separate milestone."
     evidence:
+      - path: "docs/status.md"
+        ref: "eb39a46bf8426674235c2f9b4f87958a60326cb5"
+        note: "Records the live beta and completed migration."
       - path: "docs/product-scope.md"
         ref: "f19a28b118a220b32f4104d751df3cf97839284b"
         note: "Defines v1.0 gates and final migration sequence."
@@ -463,8 +484,11 @@ milestones:
   - id: "allocash-milestone-007"
     title: "Owner migration target — 2026-10-21"
     state: "completed"
-    details: "Highest-priority project milestone: reach a safe, usable YNAB-replacement release before the owner's vacation. The following week is contingency-only. On 2026-10-31 the owner declared the date passed and the migration done; remaining work is live testing during daily use and later feature upgrades."
+    details: "Historical owner target. On 2026-11-24 the owner confirmed that the full rehearsal and migration are complete and the beta is in daily use. Remaining work consists of bugs and feature improvements as they arise."
     evidence:
+      - path: "docs/status.md"
+        ref: "eb39a46bf8426674235c2f9b4f87958a60326cb5"
+        note: "Records the live beta and completed migration."
       - path: "docs/status.md"
         ref: "04e21c1e5b4a3f59d64eb49c86cc9659f48ba1cf"
         note: "Records the owner's 2026-10-31 declaration that the migration is done; live testing and feature upgrades remain."
@@ -479,5 +503,4 @@ Requirements describe intent, not completed behavior. The v0.1 through v0.5
 labels above are scope milestones; their historical sequence does not assert that
 later implementation waited for an earlier release.
 
-The completed build gate has no verified completion time, so `completed_at` is
-null. Backlog and medium are reporting defaults only where the owner has not supplied a deadline or priority. The 2026-10-21 migration target, highest-project priority, and emergency-only contingency window are explicit owner plans as of 2026-10-04.
+Completed items with no verified completion timestamp use `completed_at: null`. Backlog and medium are reporting defaults only where the owner has not supplied a deadline or priority. The 2026-10-21 migration target, highest-project priority, and emergency-only contingency window are explicit owner plans as of 2026-10-04.
