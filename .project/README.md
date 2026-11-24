@@ -1,6 +1,11 @@
-# Project HQ reporting contract
+# Notion reporting contract
 
-Project HQ reads these files from the published reporting branch. `STATUS.yaml` summarizes the current published state;
+The [GitHub project reports to Notion](https://github.com/Quirius/personal-dashboard-sync/actions/workflows/report-sync.yml) workflow reads these files and syncs project status, plans and decisions to the
+[Notion Personal Dashboard](https://app.notion.com/p/4216a203213b81c6a5b0c042a1a940cd) every six hours.
+For a manual import, run the workflow with `dry_run` disabled. Verify the result
+in Notion before reporting that it synced. Milestones remain in `ROADMAP.md`.
+
+The Notion importer reads these files from the published reporting branch. `STATUS.yaml` summarizes the current published state;
 the single YAML front matter blocks in `ROADMAP.md` and `DECISIONS.md` hold the
 machine-readable plans, milestones, and decisions. Markdown below those blocks
 provides context, not a second task list. Schema version 1 and stable IDs must be
@@ -44,12 +49,12 @@ not mark unpushed work complete in a published snapshot; describe it in the
 session handoff. Use actual UTC times for report edits and verified evidence,
 without treating them as product-update times. A reporting-only commit does not
 require a timestamp-only follow-up. Report push failure or stale snapshots
-honestly, and do not claim Project HQ has synchronized until an importer confirms
+honestly, and do not claim Notion has synchronized until the importer confirms
 it. Keep private financial data, credentials, and machine paths out of these files.
 
 ## Reporting completion gate
 
-After substantive code/design work, finish the Project HQ reporting update before
+After substantive code/design work, finish the repository reporting update before
 the final push/handoff. Review changes since STATUS.yaml source.commit and refresh
 affected status, plans, blockers, milestones, decisions and evidence. Set the
 source SHA only to the actual reviewed product/design commit, not the reporting
@@ -65,7 +70,6 @@ follow-up commits or claim dashboard synchronization without checking it.
 
 The default GitHub Actions invocation is advisory for stale reports: it emits a
 warning and succeeds. Missing/invalid source metadata and checker/Git errors
-still fail. A successful Action does not certify report freshness; HQ retains its
-independent amber stale-report warning. The `--strict` mode is the agent's
-completion gate and fails on stale reports as well.
+still fail. Review the check output for stale reports. The `--strict` mode is the
+agent's completion gate and fails on stale reports as well.
 

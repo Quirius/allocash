@@ -96,7 +96,9 @@ that owns a changed fact.
   consequential accounting, schema or migration changes. Delegation rules:
   [agent-operations](docs/agent-operations.md#delegation).
 
-## Project HQ reporting
+## Notion reporting
+
+The [Notion Personal Dashboard](https://app.notion.com/p/4216a203213b81c6a5b0c042a1a940cd) imports the published GitHub reports.
 
 `.project/` holds the schema-version-1 status, roadmap and decisions published from
 `main`; [.project/README.md](.project/README.md) owns the contract and the
@@ -104,4 +106,4 @@ that owns a changed fact.
 pushed work, refresh the affected `.project/` records, set `source.commit` to the
 reviewed product commit, run `python scripts/check_project_hq_freshness.py --strict`,
 and publish reporting as a separate commit. Never infer completion from activity,
-mark unpushed work complete, or claim Project HQ synchronized without checking.
+mark unpushed work complete, or claim Notion synchronized without checking.
