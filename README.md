@@ -10,11 +10,14 @@ ignored `.tools/` folder for portable Node.js, npm cache, browser checks and pre
 
 ## Project status and documentation
 
+Allocash is in daily use as a beta. The YNAB migration and its rehearsal are
+complete. Remaining work is feature improvements and fixes for issues found
+during use.
+
 The app includes the import/register foundation plus monthly Plan, targets,
 schedules, reports, forecasting and verified local backup slices. See
 [implementation status](docs/status.md) for validation evidence, feature limits
-and the verified native Windows MSVC build gate. Owner-data validation remains
-required before tagging a release.
+and the verified native Windows MSVC build gate.
 
 The [documentation map](docs/README.md) routes to architecture, implemented
 accounting rules and topic-specific product requirements. Repository agents start

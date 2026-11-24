@@ -2,13 +2,9 @@
 
 ## Current summary
 
-Navigation summary, reviewed 2026-10-30 against this file, `.project/STATUS.yaml`
-and the source tree (documentation review only; no tests were rerun). The dated
-entries below remain the evidence; newest first.
-
-- **Migration:** the owner stated on 2026-10-31 that the 2026-10-21 date has passed
-  and the YNAB-to-Allocash migration is done. Remaining work is more live testing
-  during daily use and later feature upgrades.
+- **Live beta:** on 2026-11-24, the owner confirmed that the migration rehearsal
+  and YNAB-to-Allocash migration are complete. Allocash is in daily use and most
+  key workflows are working.
 - **Implemented:** migrations `0001`-`0010`; integer-HUF ledger, linked transfers,
   editable register (All Accounts and per-account, search, session undo) and
   reconciliation; YNAB staging, mapping and reference validation; monthly Plan,
@@ -18,14 +14,20 @@ entries below remain the evidence; newest first.
 - **Validated with owner data:** installed account balances and current-month Ready
   to Assign matched YNAB (owner, 2026-10-10); a clean schema-10 migration candidate
   matched balances, Plan rows, Net Worth and supplied Income v Expense references.
-- **Open (follow-up testing and features, not migration-blocking):** owner
-  acceptance of recent register/Plan UI changes, target and recurrence recreation,
-  Spending by Payee/filter/forecast report references, native backup/reopen checks,
-  weekly/custom recurrence and automatic backup retention.
-- **Release:** no tag exists; tag only after owner-data validation. Current
-  priorities and owner next actions: `.project/STATUS.yaml` (`next_action`).
+- **Remaining work:** record bugs and additional features as they come up in
+  daily use. Weekly and custom recurrence and automatic backup retention remain
+  deferred feature ideas.
+- **Release:** the owner is using the beta. A tagged release is a separate
+  milestone. See the [project status](../.project/STATUS.yaml) for the current
+  next action.
 
 ## Dated log
+
+On 2026-11-24, the owner confirmed that the full migration rehearsal and live
+migration were complete and the beta was already in use. This closes the
+migration follow-ups recorded below. The confirmation covers day-to-day use
+and most key workflows. The earlier entries retain the evidence for specific
+checks and the limits observed at the time.
 
 On 2026-10-16, register search gained a scrollable, keyboard-accessible
 suggestion menu that responds to typed text. All Accounts suggests matching
